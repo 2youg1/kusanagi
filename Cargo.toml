@@ -1,0 +1,70 @@
+[workspace]
+resolver = "3"
+members = ["crates/kernel", "crates/chain", "crates/waypoint", "crates/kusanagi"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MPL-2.0"
+repository = "https://github.com/2youg1/kusanagi"
+authors = ["2youg1 and the kusanagi contributors"]
+
+[workspace.dependencies]
+kusanagi-kernel = { path = "crates/kernel" }
+kusanagi-chain = { path = "crates/chain" }
+kusanagi-waypoint = { path = "crates/waypoint" }
+blake3 = { version = "1.8", default-features = false, features = ["std"] }
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The production allowlist for lint suppression (rust-hardening §"allow/expect policy").
+# A `#[expect]` in non-test code is permitted ONLY for a lint named here:
+#   (empty)
+# Adding a row to this list requires an explicit ruling recorded as a `Verdict:` trailer.
+[workspace.lints.rust]
+warnings = "deny"
+unsafe_code = "forbid"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+unwrap_in_result = "deny"
+arithmetic_side_effects = "deny"
+let_underscore_must_use = "deny"
+as_conversions = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+cast_lossless = "warn"
+float_cmp = "deny"
+lossy_float_literal = "deny"
+# `allow_attributes` is deliberately off. It exists to push `#[allow]` toward the
+# self-cleaning `#[expect]`, which is right for a single production suppression and
+# wrong for a test module: the set of lints a `mod tests` trips changes every time a
+# test is added, so `#[expect]` there is not self-cleaning but self-churning.
+# The gate that actually enforces the policy is the next line — no suppression
+# compiles without a written reason — plus the (currently empty) production
+# allowlist above.
+allow_attributes = "allow"
+allow_attributes_without_reason = "deny"
+pedantic = { level = "warn", priority = -1 }
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

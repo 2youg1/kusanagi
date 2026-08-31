@@ -1,0 +1,185 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// Copyright (c) 2youg1 and the kusanagi contributors.
+
+//! The contract every waypoint must satisfy.
+//!
+//! This is a function rather than a set of `#[test]`s for two reasons that both
+//! matter. An adapter written outside this repository — a company's own object
+//! store — must be able to run the same clauses, and `kusanagi doctor` must be
+//! able to run them against a **live host** and print which clause failed. A
+//! failing clause is therefore data, not a panic.
+//!
+//! Clause names are published identifiers: they will appear in `doctor` output,
+//! so renaming one is a change to a public interface.
+
+use core::fmt;
+
+use kusanagi_kernel::{DropAddr, Handle, PutOutcome, Waypoint, WaypointError, public_v0};
+
+/// A clause the waypoint under test did not satisfy.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Failure {
+    /// A clause produced the wrong answer.
+    #[error("clause `{clause}` failed: {detail}")]
+    Clause {
+        /// The published name of the clause.
+        clause: &'static str,
+        /// What was expected and what happened instead.
+        detail: String,
+    },
+    /// The waypoint failed outright while a clause was running.
+    #[error("clause `{clause}` could not run: {source}")]
+    Unavailable {
+        /// The published name of the clause.
+        clause: &'static str,
+        /// The failure the waypoint reported.
+        #[source]
+        source: WaypointError,
+    },
+}
+
+impl Failure {
+    /// The clause that failed.
+    #[must_use]
+    pub const fn clause(&self) -> &'static str {
+        match self {
+            Self::Clause { clause, .. } | Self::Unavailable { clause, .. } => clause,
+        }
+    }
+}
+
+/// One clause of the contract, mid-execution.
+struct Clause<'a> {
+    name: &'static str,
+    waypoint: &'a dyn Waypoint,
+}
+
+impl Clause<'_> {
+    fn put(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, Failure> {
+        self.waypoint
+            .put_if_absent(addr, bytes)
+            .map_err(|source| Failure::Unavailable {
+                clause: self.name,
+                source,
+            })
+    }
+
+    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, Failure> {
+        self.waypoint
+            .get(addr)
+            .map_err(|source| Failure::Unavailable {
+                clause: self.name,
+                source,
+            })
+    }
+
+    fn require(&self, held: bool, detail: impl fmt::Display) -> Result<(), Failure> {
+        if held {
+            return Ok(());
+        }
+        Err(Failure::Clause {
+            clause: self.name,
+            detail: detail.to_string(),
+        })
+    }
+}
+
+/// Runs every clause against `waypoint`.
+///
+/// Addresses are derived from `namespace`, so a caller may point this at a live
+/// host without colliding with real traffic — pass a handle nobody else uses.
+///
+/// # Errors
+///
+/// The first [`Failure`], naming the clause that broke.
+pub fn run(waypoint: &impl Waypoint, namespace: &Handle) -> Result<(), Failure> {
+    let addr = |step: u64| public_v0(namespace, step);
+    let clause = |name| Clause { name, waypoint };
+
+    let empty = clause("empty-address-reads-nothing");
+    empty.require(
+        empty.get(&addr(0))?.is_none(),
+        "an address never written to returned bytes",
+    )?;
+
+    let stored = clause("write-then-read");
+    stored.require(
+        stored.put(&addr(1), b"first")? == PutOutcome::Stored,
+        "writing to an empty address did not report Stored",
+    )?;
+    stored.require(
+        stored.get(&addr(1))? == Some(b"first".to_vec()),
+        "the bytes read back differ from the bytes written",
+    )?;
+
+    // The load-bearing clause: everything above this file assumes a drop receives
+    // exactly one segment, and a host that quietly overwrites breaks that silently
+    // rather than loudly.
+    let once = clause("write-once");
+    once.require(
+        once.put(&addr(1), b"second")? == PutOutcome::AlreadyPresent,
+        "a second write to an occupied address was not refused",
+    )?;
+    once.require(
+        once.get(&addr(1))? == Some(b"first".to_vec()),
+        "a second write replaced the bytes already at the address",
+    )?;
+
+    let independent = clause("addresses-are-independent");
+    independent.require(
+        independent.put(&addr(2), b"other")? == PutOutcome::Stored,
+        "a write to a fresh address was refused",
+    )?;
+    independent.require(
+        independent.get(&addr(1))? == Some(b"first".to_vec()),
+        "writing one address disturbed another",
+    )?;
+
+    let empty_payload = clause("empty-payload-round-trips");
+    empty_payload.require(
+        empty_payload.put(&addr(3), b"")? == PutOutcome::Stored,
+        "an empty payload was refused",
+    )?;
+    empty_payload.require(
+        empty_payload.get(&addr(3))? == Some(Vec::new()),
+        "an empty payload read back as absent; empty and missing are different",
+    )?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code"
+)]
+mod tests {
+    use super::run;
+    use crate::{DirWaypoint, MemoryWaypoint};
+    use kusanagi_kernel::Handle;
+
+    #[test]
+    fn the_memory_adapter_satisfies_the_contract() {
+        run(&MemoryWaypoint::new(), &Handle::from_name("conformance"))
+            .expect("memory waypoint broke the contract");
+    }
+
+    #[test]
+    fn the_directory_adapter_satisfies_the_contract() {
+        // A root nobody else can be using, so the test needs no pre-cleanup and
+        // can run beside its neighbours.
+        let root = std::env::temp_dir().join(format!(
+            "kusanagi-conformance-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        run(&DirWaypoint::new(&root), &Handle::from_name("conformance"))
+            .expect("directory waypoint broke the contract");
+        std::fs::remove_dir_all(&root).expect("could not clean up the test root");
+    }
+}

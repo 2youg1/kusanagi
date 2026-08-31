@@ -1,0 +1,16 @@
+[package]
+name = "kusanagi-waypoint"
+description = "Adapters for the Waypoint seam, and the conformance suite a replacement must pass."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+kusanagi-kernel.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

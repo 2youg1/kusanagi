@@ -1,0 +1,16 @@
+[package]
+name = "kusanagi-chain"
+description = "The rules a sequence of segments must satisfy to be a chain, and what a fork looks like."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+kusanagi-kernel.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
