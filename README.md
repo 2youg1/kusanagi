@@ -7,13 +7,7 @@ trusts and neither of them runs.
 There is no server to operate, no account, no directory, and no configuration
 file. Joining is one line of text.
 
-> Not the WordPress runtime by Prime Strategy, and not the Kubernetes dashboard —
-> those are the other things called kusanagi. This one is a single Rust binary
-> that leaves sealed bytes in dead drops.
-
-**v0.0.1 · pre-alpha.** The protocol works end to end and is tested. It has not
-been audited, the wire format will change, and several parts named below do not
-exist yet. Read the next table before you rely on anything.
+**v0.0.1 · pre-alpha.** 
 
 ## What works, and what does not
 
