@@ -1,20 +1,22 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-// Copyright (c) 2youg1 and the kusanagi contributors.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
 
 //! A fixed-width opaque identifier and its one textual form.
 //!
 //! Several things in this network are fixed-width opaque identifiers of different
 //! widths: a [`Handle`](crate::Handle), a [`SegmentId`](crate::SegmentId), a
-//! [`DropAddr`](crate::DropAddr), and more to come. They share exactly one rule —
-//! the text form is lowercase hexadecimal of the full width, and nothing else
-//! parses. Keeping that rule in one place is why this type exists; it owns the
-//! policy that an identifier has one spelling, not merely the syntax of printing
-//! bytes.
+//! [`DropAddr`](crate::DropAddr), a [`Signature`](crate::Signature). They share
+//! exactly one rule — the text form is lowercase hexadecimal of the full width,
+//! and nothing else parses. Keeping that rule in one place is why this type
+//! exists; it owns the policy that an identifier has one spelling, not merely the
+//! syntax of printing bytes.
 
 use core::fmt;
 use core::str::FromStr;
+
+use crate::wire::{self, Hex};
 
 /// A fixed-width opaque identifier, rendered and parsed as lowercase hexadecimal.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -36,10 +38,7 @@ impl<const N: usize> Digest<N> {
 
 impl<const N: usize> fmt::Display for Digest<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in &self.0 {
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
+        fmt::Display::fmt(&Hex(&self.0), f)
     }
 }
 
@@ -56,36 +55,19 @@ impl<const N: usize> FromStr for Digest<N> {
         let expected = N
             .checked_mul(2)
             .ok_or(DigestParseError::WidthUnrepresentable)?;
-        let bytes = text.as_bytes();
-        if bytes.len() != expected {
+        if text.len() != expected {
             return Err(DigestParseError::Length {
                 expected,
-                found: bytes.len(),
+                found: text.len(),
             });
         }
-
-        let mut out = [0_u8; N];
-        for (slot, pair) in out.iter_mut().zip(bytes.chunks_exact(2)) {
-            let high = pair.first().and_then(|c| nibble(*c));
-            let low = pair.get(1).and_then(|c| nibble(*c));
-            *slot = high
-                .zip(low)
-                .and_then(|(high, low)| high.checked_mul(16)?.checked_add(low))
-                .ok_or(DigestParseError::Charset)?;
-        }
-        Ok(Self(out))
-    }
-}
-
-/// Decodes one lowercase hexadecimal character.
-///
-/// Uppercase is rejected rather than folded: an identifier with two spellings is
-/// an identifier with two identities, and this network addresses by exact bytes.
-fn nibble(character: u8) -> Option<u8> {
-    match character {
-        b'0'..=b'9' => character.checked_sub(b'0'),
-        b'a'..=b'f' => character.checked_sub(b'a')?.checked_add(10),
-        _ => None,
+        let bytes = wire::unhex(text)?;
+        let sized =
+            <[u8; N]>::try_from(bytes.as_slice()).map_err(|_| DigestParseError::Length {
+                expected,
+                found: text.len(),
+            })?;
+        Ok(Self(sized))
     }
 }
 
@@ -95,17 +77,18 @@ fn nibble(character: u8) -> Option<u8> {
 /// same way; three hand-written copies of those four impls is three chances for
 /// one of them to drift. Each type still adds its own inherent methods below its
 /// declaration — the macro supplies only what is common to all of them.
+#[macro_export]
 macro_rules! identifier {
     ($(#[$meta:meta])* $name:ident, $width:literal) => {
         $(#[$meta])*
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-        pub struct $name($crate::digest::Digest<$width>);
+        pub struct $name($crate::Digest<$width>);
 
         impl $name {
             /// Wraps the raw bytes.
             #[must_use]
             pub const fn from_bytes(bytes: [u8; $width]) -> Self {
-                Self($crate::digest::Digest::from_bytes(bytes))
+                Self($crate::Digest::from_bytes(bytes))
             }
 
             /// Borrows the raw bytes.
@@ -122,7 +105,7 @@ macro_rules! identifier {
         }
 
         impl ::core::str::FromStr for $name {
-            type Err = $crate::digest::DigestParseError;
+            type Err = $crate::DigestParseError;
 
             fn from_str(text: &str) -> ::core::result::Result<Self, Self::Err> {
                 text.parse().map($name)
@@ -130,8 +113,6 @@ macro_rules! identifier {
         }
     };
 }
-
-pub(crate) use identifier;
 
 /// Why a piece of text is not an identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -145,9 +126,9 @@ pub enum DigestParseError {
         /// How many characters the text actually had.
         found: usize,
     },
-    /// The text contains something other than `0-9` or `a-f`.
-    #[error("an identifier is lowercase hexadecimal; uppercase is not folded")]
-    Charset,
+    /// The text is the right length but is not hexadecimal.
+    #[error(transparent)]
+    Hex(#[from] wire::HexError),
     /// The identifier's width cannot be expressed as a character count.
     #[error("identifier width is too large to render as text")]
     WidthUnrepresentable,
@@ -159,7 +140,7 @@ impl DigestParseError {
     pub const fn code(&self) -> &'static str {
         match self {
             Self::Length { .. } => "digest.length",
-            Self::Charset => "digest.charset",
+            Self::Hex(error) => error.code(),
             Self::WidthUnrepresentable => "digest.width",
         }
     }
@@ -175,6 +156,7 @@ impl DigestParseError {
 )]
 mod tests {
     use super::{Digest, DigestParseError};
+    use crate::wire::HexError;
     use core::str::FromStr;
 
     #[test]
@@ -188,7 +170,7 @@ mod tests {
     fn rejects_uppercase() {
         assert_eq!(
             Digest::<4>::from_str("000FA0FF"),
-            Err(DigestParseError::Charset)
+            Err(DigestParseError::Hex(HexError::Charset))
         );
     }
 
@@ -207,7 +189,7 @@ mod tests {
     fn rejects_non_hexadecimal() {
         assert_eq!(
             Digest::<4>::from_str("000fa0fz"),
-            Err(DigestParseError::Charset)
+            Err(DigestParseError::Hex(HexError::Charset))
         );
     }
 

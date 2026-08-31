@@ -1,0 +1,18 @@
+[package]
+name = "kusanagi-seal"
+description = "Drop-address derivation and content sealing: the two operations that make a host unable to link or read anything."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+kusanagi-kernel.workspace = true
+blake3.workspace = true
+chacha20poly1305.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

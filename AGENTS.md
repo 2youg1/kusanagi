@@ -9,7 +9,7 @@ Every rule below exists for one reason that applies to a person just as much: **
 ## The loop
 
 ```bash
-just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tests
+just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tests + budget + cargo-deny
 ```
 
 **A change is finished when `just check` is green.** "I finished it" is a claim; a green run is the evidence.
@@ -20,12 +20,14 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 | `just fmt` | apply rustfmt |
 | `just lint` | clippy alone |
 | `just test` | tests alone |
-| `just demo` | stage 0 end to end, in a throwaway directory |
-| `just budget` | line counts against the budget in `ARCHITECTURE.md` §4.2 |
+| `just deny` | licences, advisories and banned crates, against `deny.toml` |
+| `just demo` | two identities, one host, one verifiable exchange, in a throwaway directory |
+| `just budget` | line counts against the budget in `ARCHITECTURE.md` §5 |
+| `just dist` | a stripped release binary and its SHA-256 |
 
 ## Read before you write
 
-1. [`ARCHITECTURE.md`](ARCHITECTURE.md) — what this is, why the dead drop is the substrate, the six words, the crate graph, the seams, the line budget.
+1. [`ARCHITECTURE.md`](ARCHITECTURE.md) — what this is, why the dead drop is the substrate, the words, the crate graph, the seams, the line budget, and the decisions already taken.
 2. The SPEC of the crate you are touching, `crates/<crate>/<crate>-SPEC.md`. **It is written before the code and changed before the code changes.**
 3. The tests next to the code you are about to change.
 
@@ -46,18 +48,19 @@ Violating any of these turns the build red.
 | Write it this way | Held by |
 |---|---|
 | Return failure through `Result`. No `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`, bare indexing or slicing in non-test code. Checked arithmetic. No `as` casts. No `unsafe` anywhere. | `[workspace.lints]` in `Cargo.toml`, with `-D warnings` |
-| Every suppression carries `reason = "…"`. In non-test code a suppression is allowed **only** for a lint on the allowlist written in `Cargo.toml` — which is currently **empty**. | `allow_attributes_without_reason = "deny"`, plus review |
+| Every suppression carries `reason = "…"`. In non-test code a suppression is allowed **only** for a lint on the allowlist written in `Cargo.toml` — which currently holds exactly one entry, `clippy::disallowed_methods`, at the one function that reads the clock. | `allow_attributes_without_reason = "deny"`, plus review |
 | Test code (`#[cfg(test)]`, `tests/`, `benches/`) relaxes freely with a scoped `#[allow(…, reason = "test code")]`. | the tier policy above |
 | One module, one file, semantically named. `lib.rs` holds the module index and nothing else. | review |
 | Default to private. A `pub trait` is a seam, and **a seam ships with two implementations plus a conformance suite**. One adapter is a hypothetical seam; two make it real. | review, and `waypoint::conformance` as the worked example |
 | Start every `.rs` file with the MPL-2.0 notice and the copyright line. | review |
-| Take the time as a parameter. The single sampling point is `kusanagi::assembly`. | `clippy.toml` disallowed methods |
-| One name per concept, taken from `ARCHITECTURE.md` §4.1. A word with no implementation does not enter the code. | review |
-| Keep the whole workspace under **25,000 lines** of Rust and each crate under **2,500**. | `just budget` |
+| Take the time as a parameter. The single sampling point is `kusanagi::world::sample`, and randomness has one source beside it. | `clippy.toml` disallowed methods |
+| One name per concept, taken from `ARCHITECTURE.md` §4. A word with no implementation does not enter the code. | review |
+| Keep each crate's `src/` under **2,500 lines** and the whole workspace, tests included, under **25,000**. | `just budget` |
+| Anything hashed or signed is encoded by hand. `serde` is for `--json` output and nothing else. | review |
 
 **Two laws that are not lints, and matter more than any of them:**
 
-- **No resident state.** Every verb must work as a one-shot command that exits; killing any process changes no result. The stage-0 CLI holds this by construction — it discovers a chain's height from the waypoint and writes nothing local.
+- **No resident state.** Every verb must work as a one-shot command that exits; killing any process changes no result. The CLI holds this by construction — it discovers a stream's height from the waypoint, never from a local file. Asserted by `a_command_keeps_no_state_that_a_kill_could_lose`.
 - **Memory does not grow with the work.** `Verifier` holds one author and one head for a chain of any length; `Segment::extend` takes a `ChainHead`, not a predecessor. A change that buffers a whole chain is a change that broke the design, not one that needs more memory.
 
 ## Language

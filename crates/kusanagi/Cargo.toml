@@ -1,12 +1,16 @@
 [package]
 name = "kusanagi"
-description = "A decentralised collaboration network for agents. Stage 0: one directory, two identities, one verifiable chain."
+description = "A decentralised collaboration network for agents: unlinkable dead drops on a host nobody has to trust."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+
+[lib]
+name = "kusanagi"
+path = "src/lib.rs"
 
 [[bin]]
 name = "kusanagi"
@@ -15,8 +19,11 @@ path = "src/main.rs"
 [dependencies]
 kusanagi-kernel.workspace = true
 kusanagi-chain.workspace = true
+kusanagi-grant.workspace = true
+kusanagi-seal.workspace = true
 kusanagi-waypoint.workspace = true
 clap.workspace = true
+getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

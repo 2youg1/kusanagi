@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-// Copyright (c) 2youg1 and the kusanagi contributors.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
 
 //! Two segments that cannot both be true.
 
@@ -84,18 +84,18 @@ pub fn fork(left: &Segment, right: &Segment) -> Option<Fork> {
 )]
 mod tests {
     use super::fork;
-    use kusanagi_kernel::{Handle, Segment};
+    use kusanagi_kernel::{Segment, Signer};
 
-    fn alice() -> Handle {
-        Handle::from_name("alice")
+    fn alice() -> Signer {
+        Signer::from_seed(&[1_u8; 32])
     }
 
     #[test]
     fn one_author_two_segments_one_height_is_a_fork() {
-        let left = Segment::genesis(alice(), b"a".to_vec()).unwrap();
-        let right = Segment::genesis(alice(), b"b".to_vec()).unwrap();
+        let left = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
+        let right = Segment::genesis(&alice(), b"b".to_vec()).unwrap();
         let found = fork(&left, &right).unwrap();
-        assert_eq!(found.author(), alice());
+        assert_eq!(found.author(), alice().handle());
         assert_eq!(found.index(), 0);
         assert_eq!(found.left(), left.id());
         assert_eq!(found.right(), right.id());
@@ -103,21 +103,21 @@ mod tests {
 
     #[test]
     fn a_redelivery_is_not_a_fork() {
-        let segment = Segment::genesis(alice(), b"a".to_vec()).unwrap();
+        let segment = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
         assert!(fork(&segment, &segment.clone()).is_none());
     }
 
     #[test]
     fn two_authors_are_not_a_fork() {
-        let left = Segment::genesis(alice(), b"a".to_vec()).unwrap();
-        let right = Segment::genesis(Handle::from_name("bob"), b"b".to_vec()).unwrap();
+        let left = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
+        let right = Segment::genesis(&Signer::from_seed(&[2_u8; 32]), b"b".to_vec()).unwrap();
         assert!(fork(&left, &right).is_none());
     }
 
     #[test]
     fn two_heights_are_not_a_fork() {
-        let first = Segment::genesis(alice(), b"a".to_vec()).unwrap();
-        let second = Segment::extend(alice(), b"b".to_vec(), first.head()).unwrap();
+        let first = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
+        let second = Segment::extend(&alice(), b"b".to_vec(), first.head()).unwrap();
         assert!(fork(&first, &second).is_none());
     }
 }

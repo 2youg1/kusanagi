@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-// Copyright (c) 2youg1 and the kusanagi contributors.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
 
 //! A directory on this machine, used as a waypoint.
 //!
@@ -155,7 +155,7 @@ impl Waypoint for DirWaypoint {
 )]
 mod tests {
     use super::DirWaypoint;
-    use kusanagi_kernel::{Handle, PutOutcome, Waypoint, public_v0};
+    use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint};
 
     fn fresh_root(tag: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("kusanagi-dir-{}-{tag}", std::process::id()))
@@ -165,7 +165,7 @@ mod tests {
     fn the_tree_is_created_on_demand() {
         let root = fresh_root("on-demand");
         let waypoint = DirWaypoint::new(&root);
-        let addr = public_v0(&Handle::from_name("alice"), 0);
+        let addr = DropAddr::from_bytes([0xa1; 20]);
 
         assert!(
             !root.exists(),
@@ -184,7 +184,7 @@ mod tests {
     fn reading_creates_nothing() {
         let root = fresh_root("read-only");
         let waypoint = DirWaypoint::new(&root);
-        let addr = public_v0(&Handle::from_name("alice"), 0);
+        let addr = DropAddr::from_bytes([0xa1; 20]);
 
         assert!(waypoint.get(&addr).unwrap().is_none());
         assert!(
@@ -198,7 +198,7 @@ mod tests {
         let root = fresh_root("root-is-a-file");
         std::fs::write(&root, b"not a directory").unwrap();
         let waypoint = DirWaypoint::new(&root);
-        let addr = public_v0(&Handle::from_name("alice"), 0);
+        let addr = DropAddr::from_bytes([0xa1; 20]);
 
         assert_eq!(
             waypoint.put_if_absent(&addr, b"x").unwrap_err().code(),
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn exactly_one_of_many_racing_writers_stores() {
         let root = fresh_root("race");
-        let addr = public_v0(&Handle::from_name("alice"), 0);
+        let addr = DropAddr::from_bytes([0xa1; 20]);
 
         let stored = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..8_u8)

@@ -1,3 +1,11 @@
 /target
+/dist
 **/*.rs.bk
 /.kusanagi-scratch
+/.kusanagi
+/.kusanagi-host
+
+# The isolation zone: session handoffs, superseded proposals, and anything else
+# that records how the work was done rather than what the work is. Nothing in
+# here is an authority and nothing in here is ever pushed.
+/.process/

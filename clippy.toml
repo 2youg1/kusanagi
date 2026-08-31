@@ -1,7 +1,8 @@
-# The clock is sampled at exactly one point: `kusanagi::assembly`.
+# The clock is sampled at exactly one point: `kusanagi::world::sample`, which
+# `kusanagi::assembly` calls once per command and then passes down as a value.
 # Anything else that reads the clock makes a run irreproducible, so the call is denied
 # and the time must arrive as a parameter.
 disallowed-methods = [
-    { path = "std::time::SystemTime::now", reason = "take the time as a parameter; the single sampling point is kusanagi::assembly" },
-    { path = "std::time::Instant::now", reason = "take the time as a parameter; the single sampling point is kusanagi::assembly" },
+    { path = "std::time::SystemTime::now", reason = "take the time as a parameter; the single sampling point is kusanagi::world::sample" },
+    { path = "std::time::Instant::now", reason = "take the time as a parameter; the single sampling point is kusanagi::world::sample" },
 ]

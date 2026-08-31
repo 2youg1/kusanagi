@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-// Copyright (c) 2youg1 and the kusanagi contributors.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
 
 //! The only thing that travels, and the bytes that define it.
 //!
@@ -15,22 +15,35 @@
 //! tag          1 byte   0 = Genesis, 1 = Follows
 //! index        8 bytes  big endian; always 0 when tag = 0
 //! previous    32 bytes  present only when tag = 1
-//! author      32 bytes
+//! author      32 bytes  the author's handle
 //! payload_len  4 bytes  big endian
 //! payload      payload_len bytes
+//! signature   64 bytes  by the author, over everything above
 //! ```
+//!
+//! Everything above the signature is the *body*. A [`Segment`] value can only be
+//! built by signing a body or by decoding one whose signature checks out, so
+//! holding a segment is already proof that its author wrote it. There is no
+//! "unverified segment" state for a later caller to forget about.
 
 use core::num::NonZeroU64;
 
-use crate::digest::identifier;
-use crate::handle::Handle;
+use crate::identifier;
+use crate::identity::{Handle, NotAuthentic, Signature, Signer};
+use crate::wire::{Incomplete, Reader};
 
 /// Domain separation for segment identity.
 ///
 /// The version is part of the prefix so that a future layout change produces
 /// different identifiers for the same bytes. Two encodings sharing one address
 /// space is the failure this prevents.
-const SEGMENT_DOMAIN: &[u8] = b"kusanagi.segment.v1";
+const SEGMENT_DOMAIN: &[u8] = b"kusanagi.segment.v2";
+
+/// Domain separation for what the author signs.
+///
+/// Distinct from [`SEGMENT_DOMAIN`] so that a segment identifier can never be
+/// mistaken for something an author agreed to, in either direction.
+const SIGNING_DOMAIN: &[u8] = b"kusanagi.segment.v2.sign";
 
 const TAG_GENESIS: u8 = 0;
 const TAG_FOLLOWS: u8 = 1;
@@ -130,6 +143,7 @@ pub struct Segment {
     link: Link,
     author: Handle,
     payload: Payload,
+    signature: Signature,
 }
 
 impl Segment {
@@ -138,12 +152,8 @@ impl Segment {
     /// # Errors
     ///
     /// [`SegmentError::PayloadTooLarge`] when the payload exceeds [`MAX_PAYLOAD`].
-    pub fn genesis(author: Handle, payload: Vec<u8>) -> Result<Self, SegmentError> {
-        Ok(Self {
-            link: Link::Genesis,
-            author,
-            payload: Payload::new(payload)?,
-        })
+    pub fn genesis(signer: &Signer, payload: Vec<u8>) -> Result<Self, SegmentError> {
+        Self::sign(signer, Link::Genesis, payload)
     }
 
     /// Extends a chain by one.
@@ -156,7 +166,11 @@ impl Segment {
     /// [`SegmentError::PayloadTooLarge`] when the payload exceeds [`MAX_PAYLOAD`];
     /// [`SegmentError::ChainExhausted`] when the predecessor already sits at the
     /// last representable height.
-    pub fn extend(author: Handle, payload: Vec<u8>, head: ChainHead) -> Result<Self, SegmentError> {
+    pub fn extend(
+        signer: &Signer,
+        payload: Vec<u8>,
+        head: ChainHead,
+    ) -> Result<Self, SegmentError> {
         let height = head
             .index
             .checked_add(1)
@@ -164,13 +178,25 @@ impl Segment {
         // `height` is `head.index + 1`, hence at least one; the zero branch is
         // modelled rather than asserted away.
         let index = NonZeroU64::new(height).ok_or(SegmentError::ChainExhausted)?;
-        Ok(Self {
-            link: Link::Follows {
+        Self::sign(
+            signer,
+            Link::Follows {
                 index,
                 previous: head.id,
             },
+            payload,
+        )
+    }
+
+    fn sign(signer: &Signer, link: Link, payload: Vec<u8>) -> Result<Self, SegmentError> {
+        let author = signer.handle();
+        let payload = Payload::new(payload)?;
+        let signature = signer.sign(&signed_bytes(&body(link, &author, &payload)));
+        Ok(Self {
+            link,
             author,
-            payload: Payload::new(payload)?,
+            payload,
+            signature,
         })
     }
 
@@ -210,7 +236,7 @@ impl Segment {
         }
     }
 
-    /// Who wrote it.
+    /// Who wrote it, proven by the signature this value carries.
     #[must_use]
     pub const fn author(&self) -> Handle {
         self.author
@@ -225,25 +251,17 @@ impl Segment {
     /// Encodes this segment into its one canonical byte string.
     #[must_use]
     pub fn to_canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        match self.link {
-            Link::Genesis => {
-                out.push(TAG_GENESIS);
-                out.extend_from_slice(&0_u64.to_be_bytes());
-            }
-            Link::Follows { index, previous } => {
-                out.push(TAG_FOLLOWS);
-                out.extend_from_slice(&index.get().to_be_bytes());
-                out.extend_from_slice(previous.as_bytes());
-            }
-        }
-        out.extend_from_slice(self.author.as_bytes());
-        out.extend_from_slice(&self.payload.len.to_be_bytes());
-        out.extend_from_slice(&self.payload.bytes);
+        let mut out = body(self.link, &self.author, &self.payload);
+        out.extend_from_slice(self.signature.as_bytes());
         out
     }
 
-    /// Decodes a segment from its canonical byte string.
+    /// Decodes a segment from its canonical byte string, checking the signature.
+    ///
+    /// Re-encoding the body before checking the signature makes canonicity part
+    /// of authenticity: bytes that decode to this segment but are not the bytes
+    /// this segment encodes to produce a different signed message, and are
+    /// therefore refused.
     ///
     /// # Errors
     ///
@@ -252,9 +270,8 @@ impl Segment {
     /// one spelling.
     pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, SegmentError> {
         let mut reader = Reader::new(bytes);
-        let tag = reader.take_array::<1>()?;
-        let tag = tag.first().copied().ok_or(SegmentError::Truncated)?;
-        let height = u64::from_be_bytes(reader.take_array::<8>()?);
+        let tag = reader.take_byte()?;
+        let height = reader.take_u64()?;
 
         let link = match tag {
             TAG_GENESIS => {
@@ -272,10 +289,11 @@ impl Segment {
         };
 
         let author = Handle::from_bytes(reader.take_array::<32>()?);
-        let declared = u32::from_be_bytes(reader.take_array::<4>()?);
+        let declared = reader.take_u32()?;
         let wanted = usize::try_from(declared)
             .map_err(|_| SegmentError::PayloadUnrepresentable { len: declared })?;
-        let payload = reader.take(wanted)?.to_vec();
+        let payload = Payload::new(reader.take(wanted)?.to_vec())?;
+        let signature = Signature::from_bytes(reader.take_array::<64>()?);
 
         if reader.remaining() != 0 {
             return Err(SegmentError::TrailingBytes {
@@ -283,43 +301,42 @@ impl Segment {
             });
         }
 
+        author.verify(&signed_bytes(&body(link, &author, &payload)), &signature)?;
         Ok(Self {
             link,
             author,
-            payload: Payload::new(payload)?,
+            payload,
+            signature,
         })
     }
 }
 
-/// A cursor that cannot walk off the end of its input.
-struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
+/// Everything a segment is, except the signature over it.
+fn body(link: Link, author: &Handle, payload: &Payload) -> Vec<u8> {
+    let mut out = Vec::new();
+    match link {
+        Link::Genesis => {
+            out.push(TAG_GENESIS);
+            out.extend_from_slice(&0_u64.to_be_bytes());
+        }
+        Link::Follows { index, previous } => {
+            out.push(TAG_FOLLOWS);
+            out.extend_from_slice(&index.get().to_be_bytes());
+            out.extend_from_slice(previous.as_bytes());
+        }
+    }
+    out.extend_from_slice(author.as_bytes());
+    out.extend_from_slice(&payload.len.to_be_bytes());
+    out.extend_from_slice(&payload.bytes);
+    out
 }
 
-impl<'a> Reader<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, at: 0 }
-    }
-
-    fn take(&mut self, count: usize) -> Result<&'a [u8], SegmentError> {
-        let end = self.at.checked_add(count).ok_or(SegmentError::Truncated)?;
-        let slice = self
-            .bytes
-            .get(self.at..end)
-            .ok_or(SegmentError::Truncated)?;
-        self.at = end;
-        Ok(slice)
-    }
-
-    fn take_array<const N: usize>(&mut self) -> Result<[u8; N], SegmentError> {
-        let slice = self.take(N)?;
-        <[u8; N]>::try_from(slice).map_err(|_| SegmentError::Truncated)
-    }
-
-    fn remaining(&self) -> usize {
-        self.bytes.len().saturating_sub(self.at)
-    }
+/// The exact message an author signs.
+fn signed_bytes(body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(SIGNING_DOMAIN.len().saturating_add(body.len()));
+    out.extend_from_slice(SIGNING_DOMAIN);
+    out.extend_from_slice(body);
+    out
 }
 
 /// Why a segment could not be built or read.
@@ -327,8 +344,8 @@ impl<'a> Reader<'a> {
 #[non_exhaustive]
 pub enum SegmentError {
     /// The input ended in the middle of a field.
-    #[error("segment bytes end inside a field")]
-    Truncated,
+    #[error("segment bytes end inside a field: {0}")]
+    Truncated(#[from] Incomplete),
     /// Bytes remain after a complete segment.
     #[error("{count} byte(s) follow a complete segment; a segment has one spelling")]
     TrailingBytes {
@@ -364,6 +381,9 @@ pub enum SegmentError {
         /// The declared length.
         len: u32,
     },
+    /// The signature does not cover these bytes under this author.
+    #[error("this segment is not signed by the handle it names")]
+    NotAuthentic(#[from] NotAuthentic),
     /// The predecessor already sits at the last representable height.
     #[error("this chain cannot be extended any further")]
     ChainExhausted,
@@ -374,13 +394,14 @@ impl SegmentError {
     #[must_use]
     pub const fn code(&self) -> &'static str {
         match self {
-            Self::Truncated => "segment.truncated",
+            Self::Truncated(_) => "segment.truncated",
             Self::TrailingBytes { .. } => "segment.trailing",
             Self::UnknownTag { .. } => "segment.tag",
             Self::GenesisIndexNotZero { .. } => "segment.genesis_index",
             Self::FollowsIndexZero => "segment.follows_index",
             Self::PayloadTooLarge { .. } => "segment.payload_too_large",
             Self::PayloadUnrepresentable { .. } => "segment.payload_unrepresentable",
+            Self::NotAuthentic(_) => "segment.not_authentic",
             Self::ChainExhausted => "segment.exhausted",
         }
     }
@@ -397,14 +418,14 @@ impl SegmentError {
 )]
 mod tests {
     use super::{MAX_PAYLOAD, Segment, SegmentError};
-    use crate::handle::Handle;
+    use crate::identity::Signer;
 
-    fn alice() -> Handle {
-        Handle::from_name("alice")
+    fn alice() -> Signer {
+        Signer::from_seed(&[1_u8; 32])
     }
 
     fn genesis() -> Segment {
-        Segment::genesis(alice(), b"first".to_vec()).unwrap()
+        Segment::genesis(&alice(), b"first".to_vec()).unwrap()
     }
 
     #[test]
@@ -419,12 +440,13 @@ mod tests {
         let decoded = Segment::from_canonical_bytes(&segment.to_canonical_bytes()).unwrap();
         assert_eq!(decoded, segment);
         assert_eq!(decoded.id(), segment.id());
+        assert_eq!(decoded.author(), alice().handle());
     }
 
     #[test]
     fn extend_round_trips_and_links() {
         let first = genesis();
-        let second = Segment::extend(alice(), b"second".to_vec(), first.head()).unwrap();
+        let second = Segment::extend(&alice(), b"second".to_vec(), first.head()).unwrap();
         assert_eq!(second.index(), 1);
         assert_eq!(second.previous(), Some(first.id()));
 
@@ -435,9 +457,10 @@ mod tests {
     #[test]
     fn identity_follows_every_field() {
         let base = genesis();
-        let other_author = Segment::genesis(Handle::from_name("bob"), b"first".to_vec()).unwrap();
-        let other_payload = Segment::genesis(alice(), b"second".to_vec()).unwrap();
-        let higher = Segment::extend(alice(), b"first".to_vec(), base.head()).unwrap();
+        let other_author =
+            Segment::genesis(&Signer::from_seed(&[2; 32]), b"first".to_vec()).unwrap();
+        let other_payload = Segment::genesis(&alice(), b"second".to_vec()).unwrap();
+        let higher = Segment::extend(&alice(), b"first".to_vec(), base.head()).unwrap();
 
         assert_ne!(base.id(), other_author.id());
         assert_ne!(base.id(), other_payload.id());
@@ -446,18 +469,18 @@ mod tests {
 
     #[test]
     fn empty_input_is_truncated() {
-        assert_eq!(
+        assert!(matches!(
             Segment::from_canonical_bytes(&[]),
-            Err(SegmentError::Truncated)
-        );
+            Err(SegmentError::Truncated(_))
+        ));
     }
 
     #[test]
     fn tag_only_is_truncated() {
-        assert_eq!(
+        assert!(matches!(
             Segment::from_canonical_bytes(&[0]),
-            Err(SegmentError::Truncated)
-        );
+            Err(SegmentError::Truncated(_))
+        ));
     }
 
     #[test]
@@ -493,20 +516,52 @@ mod tests {
     #[test]
     fn a_lying_length_is_truncated_not_panicking() {
         let mut bytes = genesis().to_canonical_bytes();
-        let length_at = bytes.len() - 5 - 4;
+        let length_at = bytes.len() - 64 - 5 - 4;
         bytes[length_at..length_at + 4].copy_from_slice(&1000_u32.to_be_bytes());
-        assert_eq!(
+        assert!(matches!(
             Segment::from_canonical_bytes(&bytes),
-            Err(SegmentError::Truncated)
-        );
+            Err(SegmentError::Truncated(_))
+        ));
     }
 
     #[test]
     fn an_oversized_payload_is_refused() {
         let payload = vec![0_u8; usize::try_from(MAX_PAYLOAD).unwrap() + 1];
         assert!(matches!(
-            Segment::genesis(alice(), payload),
+            Segment::genesis(&alice(), payload),
             Err(SegmentError::PayloadTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn every_flipped_payload_byte_breaks_the_signature() {
+        let segment = genesis();
+        let canonical = segment.to_canonical_bytes();
+        for at in 0..canonical.len() {
+            let mut tampered = canonical.clone();
+            tampered[at] ^= 0x01;
+            if tampered == canonical {
+                continue;
+            }
+            assert!(
+                Segment::from_canonical_bytes(&tampered).is_err(),
+                "flipping byte {at} produced a segment that still decoded"
+            );
+        }
+    }
+
+    #[test]
+    fn a_segment_cannot_be_re_authored() {
+        // Take alice's segment and relabel the author as bob: the signature no
+        // longer covers the body, so the bytes stop being a segment at all.
+        let segment = genesis();
+        let mut bytes = segment.to_canonical_bytes();
+        let author_at = 9;
+        bytes[author_at..author_at + 32]
+            .copy_from_slice(Signer::from_seed(&[2; 32]).handle().as_bytes());
+        assert!(matches!(
+            Segment::from_canonical_bytes(&bytes),
+            Err(SegmentError::NotAuthentic(_))
         ));
     }
 }

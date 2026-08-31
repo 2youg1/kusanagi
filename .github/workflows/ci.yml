@@ -1,0 +1,56 @@
+# The closing condition for every change, run by a machine that does not remember
+# yesterday either. This is `just check` plus the supply-chain gate.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: format
+        run: cargo fmt --all -- --check
+      - name: lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: test
+        run: cargo test --all-features
+      # The line budget is an architectural rule, so it fails the build like any
+      # other. Bash is present on all three runners.
+      - name: budget
+        shell: bash
+        run: |
+          total=0
+          for dir in crates/*/; do
+            src=$(find "$dir/src" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
+            all=$(find "$dir" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
+            total=$((total + all))
+            printf '%-12s src=%-6s all=%s\n' "$(basename "$dir")" "$src" "$all"
+            [ "$src" -le 2500 ] || { echo "::error::$(basename "$dir") exceeds 2500 source lines"; exit 1; }
+          done
+          echo "workspace total: $total"
+          [ "$total" -le 25000 ] || { echo "::error::workspace exceeds 25000 lines"; exit 1; }
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check

@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-// Copyright (c) 2youg1 and the kusanagi contributors.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
 
 //! The contract every waypoint must satisfy.
 //!
@@ -16,7 +16,8 @@
 
 use core::fmt;
 
-use kusanagi_kernel::{DropAddr, Handle, PutOutcome, Waypoint, WaypointError, public_v0};
+use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
+use kusanagi_seal::{Stream, derive};
 
 /// A clause the waypoint under test did not satisfy.
 #[derive(Debug, thiserror::Error)]
@@ -89,14 +90,15 @@ impl Clause<'_> {
 
 /// Runs every clause against `waypoint`.
 ///
-/// Addresses are derived from `namespace`, so a caller may point this at a live
-/// host without colliding with real traffic — pass a handle nobody else uses.
+/// Addresses are derived from `namespace` exactly as real traffic is, so a
+/// caller may point this at a live host without colliding with anything — pass a
+/// stream derived from a secret nobody else holds.
 ///
 /// # Errors
 ///
 /// The first [`Failure`], naming the clause that broke.
-pub fn run(waypoint: &impl Waypoint, namespace: &Handle) -> Result<(), Failure> {
-    let addr = |step: u64| public_v0(namespace, step);
+pub fn run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure> {
+    let addr = |step: u64| derive(namespace, step).0;
     let clause = |name| Clause { name, waypoint };
 
     let empty = clause("empty-address-reads-nothing");
@@ -161,12 +163,16 @@ pub fn run(waypoint: &impl Waypoint, namespace: &Handle) -> Result<(), Failure> 
 mod tests {
     use super::run;
     use crate::{DirWaypoint, MemoryWaypoint};
-    use kusanagi_kernel::Handle;
+    use kusanagi_kernel::Signer;
+    use kusanagi_seal::{Secret, Stream};
+
+    fn namespace() -> Stream {
+        Secret::from_bytes([0x5a; 32]).stream(&Signer::from_seed(&[0x5a; 32]).handle())
+    }
 
     #[test]
     fn the_memory_adapter_satisfies_the_contract() {
-        run(&MemoryWaypoint::new(), &Handle::from_name("conformance"))
-            .expect("memory waypoint broke the contract");
+        run(&MemoryWaypoint::new(), &namespace()).expect("memory waypoint broke the contract");
     }
 
     #[test]
@@ -178,8 +184,7 @@ mod tests {
             std::process::id(),
             line!()
         ));
-        run(&DirWaypoint::new(&root), &Handle::from_name("conformance"))
-            .expect("directory waypoint broke the contract");
+        run(&DirWaypoint::new(&root), &namespace()).expect("directory waypoint broke the contract");
         std::fs::remove_dir_all(&root).expect("could not clean up the test root");
     }
 }

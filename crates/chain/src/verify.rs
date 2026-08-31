@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-// Copyright (c) 2youg1 and the kusanagi contributors.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
 
 //! Deciding whether a sequence of segments is a chain, in constant memory.
 
@@ -189,17 +189,17 @@ impl ChainError {
 )]
 mod tests {
     use super::{ChainError, Verifier, verify};
-    use kusanagi_kernel::{Handle, Segment};
+    use kusanagi_kernel::{Segment, Signer};
 
-    fn alice() -> Handle {
-        Handle::from_name("alice")
+    fn alice() -> Signer {
+        Signer::from_seed(&[1_u8; 32])
     }
 
     fn chain_of(length: usize) -> Vec<Segment> {
-        let mut segments = vec![Segment::genesis(alice(), b"0".to_vec()).unwrap()];
+        let mut segments = vec![Segment::genesis(&alice(), b"0".to_vec()).unwrap()];
         for step in 1..length {
             let head = segments.last().unwrap().head();
-            segments.push(Segment::extend(alice(), step.to_string().into_bytes(), head).unwrap());
+            segments.push(Segment::extend(&alice(), step.to_string().into_bytes(), head).unwrap());
         }
         segments
     }
@@ -216,7 +216,7 @@ mod tests {
         let segments = chain_of(10);
         let verifier = verify(&segments).unwrap();
         assert_eq!(verifier.head(), Some(segments[9].head()));
-        assert_eq!(verifier.author(), Some(alice()));
+        assert_eq!(verifier.author(), Some(alice().handle()));
     }
 
     #[test]
@@ -230,8 +230,8 @@ mod tests {
 
     #[test]
     fn a_second_genesis_is_refused() {
-        let first = Segment::genesis(alice(), b"a".to_vec()).unwrap();
-        let second = Segment::genesis(alice(), b"b".to_vec()).unwrap();
+        let first = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
+        let second = Segment::genesis(&alice(), b"b".to_vec()).unwrap();
         assert_eq!(
             verify(&[first, second]).unwrap_err(),
             ChainError::UnexpectedGenesis
@@ -257,9 +257,9 @@ mod tests {
 
     #[test]
     fn a_wrong_predecessor_is_named() {
-        let genesis = Segment::genesis(alice(), b"a".to_vec()).unwrap();
-        let other = Segment::genesis(alice(), b"b".to_vec()).unwrap();
-        let forged = Segment::extend(alice(), b"c".to_vec(), other.head()).unwrap();
+        let genesis = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
+        let other = Segment::genesis(&alice(), b"b".to_vec()).unwrap();
+        let forged = Segment::extend(&alice(), b"c".to_vec(), other.head()).unwrap();
         assert!(matches!(
             verify(&[genesis, forged]).unwrap_err(),
             ChainError::PreviousMismatch { index: 1, .. }
@@ -268,14 +268,14 @@ mod tests {
 
     #[test]
     fn a_changed_author_is_named() {
-        let genesis = Segment::genesis(alice(), b"a".to_vec()).unwrap();
-        let bob = Handle::from_name("bob");
-        let intruder = Segment::extend(bob, b"b".to_vec(), genesis.head()).unwrap();
+        let genesis = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
+        let bob = Signer::from_seed(&[2_u8; 32]);
+        let intruder = Segment::extend(&bob, b"b".to_vec(), genesis.head()).unwrap();
         assert_eq!(
             verify(&[genesis, intruder]).unwrap_err(),
             ChainError::AuthorChanged {
-                expected: alice(),
-                found: bob
+                expected: alice().handle(),
+                found: bob.handle()
             }
         );
     }
@@ -287,7 +287,7 @@ mod tests {
         verifier.accept(&segments[0]).unwrap();
         let head_before = verifier.head();
 
-        let stranger = Segment::genesis(alice(), b"stranger".to_vec()).unwrap();
+        let stranger = Segment::genesis(&alice(), b"stranger".to_vec()).unwrap();
         assert!(verifier.accept(&stranger).is_err());
         assert_eq!(verifier.head(), head_before);
 

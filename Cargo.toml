@@ -1,9 +1,16 @@
 [workspace]
 resolver = "3"
-members = ["crates/kernel", "crates/chain", "crates/waypoint", "crates/kusanagi"]
+members = [
+    "crates/kernel",
+    "crates/chain",
+    "crates/seal",
+    "crates/grant",
+    "crates/waypoint",
+    "crates/kusanagi",
+]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.0.1"
 edition = "2024"
 rust-version = "1.97"
 license = "MPL-2.0"
@@ -11,24 +18,52 @@ repository = "https://github.com/2youg1/kusanagi"
 authors = ["2youg1 and the kusanagi contributors"]
 
 [workspace.dependencies]
-kusanagi-kernel = { path = "crates/kernel" }
-kusanagi-chain = { path = "crates/chain" }
-kusanagi-waypoint = { path = "crates/waypoint" }
+kusanagi-kernel = { path = "crates/kernel", version = "0.0.1" }
+kusanagi-chain = { path = "crates/chain", version = "0.0.1" }
+kusanagi-waypoint = { path = "crates/waypoint", version = "0.0.1" }
+kusanagi-seal = { path = "crates/seal", version = "0.0.1" }
+kusanagi-grant = { path = "crates/grant", version = "0.0.1" }
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ed25519-dalek = { version = "2.1", default-features = false, features = [
+    "std",
+    "fast",
+    "zeroize",
+] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = [
+    "alloc",
+] }
+getrandom = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+proptest = "1"
 
 # The production allowlist for lint suppression (rust-hardening §"allow/expect policy").
 # A `#[expect]` in non-test code is permitted ONLY for a lint named here:
-#   (empty)
+#
+#   clippy::disallowed_methods — at exactly one function, `kusanagi::world::sample`.
+#     AGENTS.md already rules that "the single sampling point is
+#     `kusanagi::world::sample`", which `kusanagi::assembly` calls once per command
+#     and then passes down as a value; clippy.toml denies the clock everywhere so
+#     that the ruling is machine-held.
+#     The program still has to read the clock once, and the suppression marks the site
+#     the ruling designates. It is not an exception to the policy; it is the policy's
+#     one address. Any second site is a review failure.
+#
 # Adding a row to this list requires an explicit ruling recorded as a `Verdict:` trailer.
 [workspace.lints.rust]
 warnings = "deny"
 unsafe_code = "forbid"
 unsafe_op_in_unsafe_fn = "deny"
 missing_docs = "warn"
+# `kani` is a real configuration this workspace compiles under; the proof harness
+# in `kusanagi-grant` lives behind it. Declaring it here is what keeps the cfg
+# check on for every name that is *not* declared.
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(kani)'] }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
@@ -54,8 +89,8 @@ lossy_float_literal = "deny"
 # wrong for a test module: the set of lints a `mod tests` trips changes every time a
 # test is added, so `#[expect]` there is not self-cleaning but self-churning.
 # The gate that actually enforces the policy is the next line — no suppression
-# compiles without a written reason — plus the (currently empty) production
-# allowlist above.
+# compiles without a written reason — plus the one-entry production allowlist
+# above.
 allow_attributes = "allow"
 allow_attributes_without_reason = "deny"
 pedantic = { level = "warn", priority = -1 }

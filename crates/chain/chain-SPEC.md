@@ -25,7 +25,7 @@
 |---|---|---|
 | 一条链是否只属于一个作者 | 是。作者中途变更即错误 | 阶段 2 起作者由签名证明，此规则不变但由密钥执行 |
 | 段是否必须按序抵达 | `Verifier` 要求按序。乱序重排是调用方的事 | 阶段 3 的 `post` 引入乱序缓冲；`chain` 仍只接受有序输入 |
-| 分叉如何被发现 | 阶段 0 由调用方拿两个段来问 | 阶段 5 由 `cohort` 在 gossip 中自动比对链头 |
+| 分叉如何被发现 | 由调用方拿两个段来问 | `cohort` 落地后由名册持有者自动比对链头 |
 
 ## 4 现状分析
 
@@ -130,3 +130,13 @@ pub fn fork(left: &Segment, right: &Segment) -> Option<Fork>;
 1. 本文。
 2. `ARCHITECTURE.md` §4.2 的行数表。
 3. `kusanagi-SPEC.md` 的 `verify` 子命令一节。
+
+---
+
+## 附：v0.0.1 的两处变化
+
+**一、作者身份现在是可证的。** `kernel::Handle` 由「名字的哈希」变成 Ed25519 公钥，段带签名，`Segment::from_canonical_bytes` 解码即验签。对本 crate 的影响只有一处，而且是收紧：`Verifier::accept` 判定的 `AuthorChanged`，此前意为「有人在这条链上声称了另一个名字」，现在意为「有人在这条链上出示了另一把钥匙签的段」——**声称变成了证明**。测试改为用 `Signer::from_seed` 构造作者，逻辑一行未动。
+
+**二、`walk` 没有放进本 crate。** 从 waypoint 上取回一条流并逐段验证，需要同时用到 `waypoint`（取）、`seal`(解封) 与 `chain`(验序)，它是三者的组合而不是任何一个的内部逻辑，因此留在 `kusanagi::walk`。把它搬进来会迫使本 crate 依赖 `seal` 与 `waypoint`，并复制一份几乎与 `Complaint` 相同的错误枚举——为省下一百行而多写五十行，且给「读一条流出了什么错」制造第二个权威。
+
+验收未变：12 个单元测试全过，`Verifier` 的驻留状态仍是一个 `Option`。
