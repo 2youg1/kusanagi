@@ -48,6 +48,7 @@ fn two_endpoints_exchange_messages_through_a_host_neither_of_them_runs() {
     let heard = json(
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
+            after: None,
         })
         .expect("bob could not read alice"),
     );
@@ -59,6 +60,7 @@ fn two_endpoints_exchange_messages_through_a_host_neither_of_them_runs() {
         &alice
             .run(&Request::Read {
                 name: "bob".to_owned(),
+                after: None,
             })
             .expect("alice could not read bob"),
     );
@@ -86,7 +88,8 @@ fn one_flipped_byte_on_the_host_is_caught() {
     // Bob can read it before the host interferes.
     assert!(
         bob.run(&Request::Read {
-            name: "alice".to_owned()
+            name: "alice".to_owned(),
+            after: None,
         })
         .is_ok()
     );
@@ -98,6 +101,7 @@ fn one_flipped_byte_on_the_host_is_caught() {
     let complaint = bob
         .run(&Request::Read {
             name: "alice".to_owned(),
+            after: None,
         })
         .expect_err("a tampered drop was accepted");
     assert_eq!(complaint.code(), "seal.rejected");
@@ -125,6 +129,7 @@ fn revoking_a_peer_stops_their_messages_from_that_moment() {
         &alice
             .run(&Request::Read {
                 name: "bob".to_owned(),
+                after: None,
             })
             .unwrap(),
     );
@@ -147,6 +152,7 @@ fn revoking_a_peer_stops_their_messages_from_that_moment() {
     let refused = alice
         .run(&Request::Read {
             name: "bob".to_owned(),
+            after: None,
         })
         .expect_err("a revoked peer was still readable");
     assert_eq!(refused.code(), "grant.revoked");
@@ -157,7 +163,8 @@ fn revoking_a_peer_stops_their_messages_from_that_moment() {
     assert_eq!(
         alice
             .run(&Request::Read {
-                name: "bob".to_owned()
+                name: "bob".to_owned(),
+                after: None,
             })
             .unwrap_err()
             .code(),
@@ -225,7 +232,7 @@ fn an_endpoint_with_only_read_cannot_send() {
     let refused = bob
         .run(&Request::Send {
             name: "alice".to_owned(),
-            text: "may I?".to_owned(),
+            payload: b"may I?".to_vec(),
         })
         .expect_err("an endpoint without `send` sent something");
     assert_eq!(refused.code(), "grant.forbidden");
@@ -234,7 +241,8 @@ fn an_endpoint_with_only_read_cannot_send() {
     alice.send("bob", "you may listen");
     assert!(
         bob.run(&Request::Read {
-            name: "alice".to_owned()
+            name: "alice".to_owned(),
+            after: None,
         })
         .is_ok()
     );
@@ -299,6 +307,7 @@ fn a_command_keeps_no_state_that_a_kill_could_lose() {
     let heard = json(
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
+            after: None,
         })
         .unwrap(),
     );
@@ -330,6 +339,7 @@ fn a_channel_lists_itself_before_and_after_somebody_joins() {
     alice
         .run(&Request::Read {
             name: "bob".to_owned(),
+            after: None,
         })
         .unwrap();
 

@@ -54,8 +54,8 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
             abilities,
         } => invite(site, name, waypoint, *lifetime, *abilities, now),
         Request::Join { invite, name } => join(site, invite, name, now),
-        Request::Send { name, text } => send(site, name, text, now),
-        Request::Read { name } => read(site, name, now),
+        Request::Send { name, payload } => send(site, name, payload, now),
+        Request::Read { name, after } => read(site, name, *after, now),
         Request::Revoke { name } => revoke(site, name),
         Request::Doctor { waypoint } => doctor(waypoint, now),
         Request::Host { bind, directory } => host(bind, directory),
@@ -164,6 +164,14 @@ fn join(site: &Site, text: &str, name: &str, now: Instant) -> Result<Outcome, Co
     }
     let invitation = Invite::parse(text)?;
     let me = signer(site)?;
+    // An invitation is for somebody else. A stream is derived from the channel
+    // secret and the author's handle, so an endpoint that accepted its own would
+    // hold two local names for one stream, discover itself as the peer, and read
+    // its own segments back as though a peer had written them. Refusing here is
+    // what keeps "one channel, two parties" true.
+    if invitation.inviter == me.handle() {
+        return Err(Complaint::OwnInvitation);
+    }
     let revoked = site.revocations()?;
 
     // What the invitation conveys is checked before it is used, so an expired or
@@ -209,7 +217,7 @@ fn join(site: &Site, text: &str, name: &str, now: Instant) -> Result<Outcome, Co
     })
 }
 
-fn send(site: &Site, name: &str, text: &str, now: Instant) -> Result<Outcome, Complaint> {
+fn send(site: &Site, name: &str, payload: &[u8], now: Instant) -> Result<Outcome, Complaint> {
     let me = signer(site)?;
     let channel = site.channel(name)?;
     channel.standing.permits(
@@ -227,8 +235,8 @@ fn send(site: &Site, name: &str, text: &str, now: Instant) -> Result<Outcome, Co
     // The height comes from the waypoint, not from a file on this disk. Killing
     // this process between any two commands therefore changes nothing.
     let segment = match mine.head() {
-        None => Segment::genesis(&me, text.as_bytes().to_vec()),
-        Some(head) => Segment::extend(&me, text.as_bytes().to_vec(), head),
+        None => Segment::genesis(&me, payload.to_vec()),
+        Some(head) => Segment::extend(&me, payload.to_vec(), head),
     }?;
 
     let (address, key) = derive(&stream, segment.index());
@@ -248,7 +256,7 @@ fn send(site: &Site, name: &str, text: &str, now: Instant) -> Result<Outcome, Co
     })
 }
 
-fn read(site: &Site, name: &str, now: Instant) -> Result<Outcome, Complaint> {
+fn read(site: &Site, name: &str, after: Option<u64>, now: Instant) -> Result<Outcome, Complaint> {
     let me = signer(site)?;
     let channel = site.channel(name)?;
     let revoked = site.revocations()?;
@@ -272,7 +280,12 @@ fn read(site: &Site, name: &str, now: Instant) -> Result<Outcome, Complaint> {
 
     let stream = channel.secret.stream(&peer.handle);
     let theirs = walk(&place, &stream, &peer.handle, name)?;
-    Ok(Outcome::read(name, &peer.handle.to_string(), &theirs))
+    Ok(Outcome::read(
+        name,
+        &peer.handle.to_string(),
+        &theirs,
+        after,
+    ))
 }
 
 /// Learns who accepted an invitation, from the introduction stream.

@@ -64,7 +64,7 @@ impl Endpoint {
         let outcome = self
             .run(&Request::Send {
                 name: channel.to_owned(),
-                text: text.to_owned(),
+                payload: text.as_bytes().to_vec(),
             })
             .unwrap_or_else(|error| panic!("send failed: {}", error.render(false)));
         json(&outcome)["address"].as_str().unwrap().to_owned()

@@ -89,6 +89,13 @@ pub enum Complaint {
     /// The invitation has already been accepted by somebody.
     #[error("this invitation has already been used")]
     InviteSpent,
+    /// The invitation was minted by this endpoint.
+    ///
+    /// Accepting it would give one endpoint two local names for one stream: the
+    /// peer it discovered would be itself, and every read would hand back what
+    /// it had just written as though somebody else had said it.
+    #[error("this invitation is your own")]
+    OwnInvitation,
     /// The peer of this channel is its root authority, which cannot be revoked.
     #[error(
         "the peer of `{name}` is the authority that invited you; there is nothing above it to revoke"
@@ -102,6 +109,21 @@ pub enum Complaint {
     NotThePeer {
         /// Which channel.
         name: String,
+    },
+    /// An argument was not something this verb can act on.
+    ///
+    /// This is the one variant that carries its own recovery. Every other
+    /// failure's way out follows from what kind of failure it is; the way out of
+    /// a bad argument is knowing what to pass instead, and only the code that
+    /// named the flag knows that.
+    #[error("{what} {reason}")]
+    Argument {
+        /// The argument, spelled the way a caller types it.
+        what: &'static str,
+        /// What was wrong with it.
+        reason: String,
+        /// What to pass instead.
+        instead: &'static str,
     },
 }
 
@@ -150,7 +172,9 @@ impl Complaint {
             Self::DropTaken { .. } => "kusanagi.drop_taken",
             Self::NotThePeer { .. } => "kusanagi.not_the_peer",
             Self::InviteSpent => "kusanagi.invite_spent",
+            Self::OwnInvitation => "kusanagi.own_invitation",
             Self::CannotRevokeRoot { .. } => "kusanagi.cannot_revoke_root",
+            Self::Argument { .. } => "kusanagi.argument",
         }
     }
 
@@ -183,6 +207,9 @@ impl Complaint {
             Self::InviteSpent => {
                 "ask for a fresh invitation; each one admits exactly one endpoint".to_owned()
             }
+            Self::OwnInvitation => "hand this line to the endpoint you mean to admit; \
+                 the channel it opens is already here under the name you gave it"
+                .to_owned(),
             Self::CannotRevokeRoot { .. } => {
                 "leave the channel instead: delete it from `channels` and stop reading it"
                     .to_owned()
@@ -200,6 +227,7 @@ impl Complaint {
                     "run `kusanagi read --from {name}` to pick up the new head, then send again"
                 )
             }
+            Self::Argument { instead, .. } => (*instead).to_owned(),
         }
     }
 

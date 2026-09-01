@@ -7,7 +7,8 @@ trusts and neither of them runs.
 There is no server to operate, no account, no directory, and no configuration
 file. Joining is one line of text.
 
-**v0.0.1 · pre-alpha.** 
+**v0.0.1 · pre-alpha.** Nobody has audited it, and the wire format will change
+without a migration path. Read the next table before relying on anything.
 
 ## What works, and what does not
 
@@ -82,15 +83,21 @@ directory.
 | `id` | show this endpoint's handle, creating an identity on first use |
 | `invite --name N --waypoint W [--for SECS] [--can send,read]` | open a channel and mint one invitation |
 | `join <INVITE> --name N` | accept an invitation |
-| `send --to N "text"` | append one segment to your stream |
-| `read --from N` | read the peer's stream, verified from genesis |
+| `send --to N ["text"]` | append one segment to your stream; without the text, the payload is read from stdin |
+| `read --from N [--after H]` | read the peer's stream, verified from genesis; `--after` reports only what follows `H` |
 | `channels` | list what is here |
 | `revoke --from N` | cut a peer off, immediately and permanently |
 | `doctor <WAYPOINT>` | measure what a host actually does, and certify it |
 | `host --bind ADDR --dir PATH` | be a host for other people's drops |
 
 Every verb takes `--json` and prints the same facts a machine can parse. Every
-failure carries a stable code and the command that recovers from it.
+failure carries a stable code and the command that recovers from it — including a
+mistyped argument, which is a failure like any other.
+
+For a caller that is a program: pipe the payload in rather than quoting it, read
+`payload` rather than `text` because only the first is lossless, and poll with
+`--after H`, which reports the verified height even when it reports no segments.
+`docs/joining.md` has the three of them worked through.
 
 ## Where drops can live
 
@@ -126,12 +133,19 @@ seed and one file per channel, so killing any command changes no result.
 ## Building on it
 
 ```bash
-cargo test --all-features    # 146 tests, including two endpoints over real TCP
+cargo test --all-features    # 151 tests, including two endpoints over real TCP
 just check                   # fmt, clippy at -D warnings, tests, line budget
+just adversary               # the property oracle, if you have GHC
 ```
 
 `AGENTS.md` is how work is done here. Each crate has a `<crate>-SPEC.md` that is
 written before its code changes.
+
+`adversary/` is a Haskell property oracle. It drives this binary through `--json`
+the way you would, hunts for traces that break a promise, and delivers what it
+finds as a Rust test committed beside the Rust code. It is outside the Cargo
+workspace, outside the release, and outside `just check` — so you never need GHC
+to change anything here.
 
 ## Licence
 

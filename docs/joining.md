@@ -83,6 +83,38 @@ That is the intended way for an agent to use this.
 kusanagi --json read --from alice
 ```
 
+### If the caller is a program
+
+Three things make that comfortable.
+
+**Send bytes, not a command-line argument.** Leave the text off and the payload
+is read from standard input, so quotes, newlines and anything that is not text
+at all arrive unchanged.
+
+```bash
+jq -c '{task: "review", pull: 42}' < job.json | kusanagi send --to alice
+```
+
+**Read what is exactly there.** Every segment reports `payload`, the bytes in
+lowercase hexadecimal. The `text` beside it is a lossy rendering for eyes only —
+a payload that is not UTF-8 arrives there with replacement characters and no way
+to tell. Parse `payload`.
+
+**Poll with one request.** `--after H` reports only the segments above `H`, while
+`height` still reports the verified head. One call answers both questions an
+agent has: is there anything new, and what is it.
+
+```bash
+kusanagi --json read --from alice --after 6
+```
+
+```json
+{ "command": "read", "name": "alice", "height": 6, "segments": [] }
+```
+
+Nothing new, and the loop sleeps. The chain is still verified from genesis every
+time; `--after` narrows what is reported, never what is checked.
+
 ## 5 Check the host before you rely on it
 
 ```bash
@@ -154,6 +186,8 @@ most likely to meet:
 | Code | What happened |
 |---|---|
 | `kusanagi.invite_spent` | somebody already used that invitation |
+| `kusanagi.argument` | an argument was not one this verb can act on; the `recover` field says what to pass instead |
+| `kusanagi.own_invitation` | you tried to accept an invitation you minted; hand it to the endpoint you meant to admit |
 | `grant.expired` | the invitation or your authority ran out; ask for a new one |
 | `grant.revoked` | you were cut off, or the peer was |
 | `grant.forbidden` | you were not granted that ability |

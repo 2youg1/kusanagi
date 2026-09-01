@@ -10,6 +10,7 @@
 //! door is usually an agent, and a program whose human output and machine output
 //! drift apart is a program that lies to one of its two readers.
 
+use kusanagi_kernel::Hex;
 use kusanagi_waypoint::{Certificate, Verdict};
 use serde::Serialize;
 
@@ -23,8 +24,16 @@ pub struct Entry {
     index: u64,
     id: String,
     address: String,
-    /// Payloads are opaque bytes; this rendering is lossy on purpose and is for
-    /// eyes only. Nothing downstream should parse it back.
+    /// The exact bytes, in lowercase hexadecimal.
+    ///
+    /// This is the field a program reads. It exists because the one beside it
+    /// cannot be parsed back, and a caller that cannot recover what was sent is
+    /// not on a channel.
+    payload: String,
+    /// The same bytes as text, lossily.
+    ///
+    /// For eyes only: a payload that is not UTF-8 arrives here with replacement
+    /// characters, and nothing downstream can tell that from the real thing.
     text: String,
 }
 
@@ -146,9 +155,13 @@ impl Outcome {
         }
     }
 
-    /// Reports a verified stream.
+    /// Reports a verified stream, from `after` upwards.
+    ///
+    /// The height reported is always the verified head, whatever `after` hides:
+    /// one call then answers both of a caller's questions — how far the stream
+    /// goes, and what of it is new.
     #[must_use]
-    pub fn read(name: &str, peer: &str, walked: &Walked) -> Self {
+    pub fn read(name: &str, peer: &str, walked: &Walked, after: Option<u64>) -> Self {
         Self::Read {
             name: name.to_owned(),
             peer: peer.to_owned(),
@@ -156,10 +169,12 @@ impl Outcome {
             segments: walked
                 .held()
                 .iter()
+                .filter(|held| after.is_none_or(|floor| held.segment.index() > floor))
                 .map(|held| Entry {
                     index: held.segment.index(),
                     id: held.segment.id().to_string(),
                     address: held.address.to_string(),
+                    payload: Hex(held.segment.payload()).to_string(),
                     text: String::from_utf8_lossy(held.segment.payload()).into_owned(),
                 })
                 .collect(),

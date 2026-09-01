@@ -115,10 +115,21 @@ that a newcomer — human or model — can read all of it, and tests are read.
 | chain | 438 | `just budget` |
 | grant | 1,347 | |
 | kernel | 1,479 | |
-| kusanagi | 2,308 | |
+| kusanagi | **2,424** | |
 | seal | 392 | |
-| waypoint | 2,448 | |
-| **workspace, tests included** | **9,508 / 25,000** | |
+| waypoint | **2,448** | |
+| **workspace, tests included** | **9,944 / 25,000** | |
+
+**Two crates are close to the line, and that is information rather than a
+problem.** The next substantive change to `kusanagi` or to `waypoint` begins by
+splitting it — the budget exists to make that decision arrive on time, instead of
+arriving as a feature bent into the space left over.
+`crates/kusanagi/kusanagi-SPEC.md` §7 records which seam was examined and why it
+is not free.
+
+**Outside the workspace.** `adversary/` is a Haskell property oracle. It is not a
+crate, not a dependency, not part of the release, and not counted here. §8 records
+why it is allowed to exist and what stops it becoming a second authority.
 
 ## 6 The seams
 
@@ -184,6 +195,17 @@ Reopening one of these requires a reason that did not exist when it was taken.
 - **Bell is a waypoint capability, not a protocol requirement.** A host that can
   long-poll needs no Bell and leaks nothing; the cost of the alternative is paid
   only by whoever chose a dumb object store.
+- **The adversary is out of the workspace and speaks only through the door a user
+  has.** `adversary/` drives the shipped binary with `--json` and asserts
+  *relations between traces* — never an expected output, because restating a rule
+  is what a second authority is. Haskell earns the place because a lying host is a
+  choice over a strategy space and a directed attack is "any prefix, then this,
+  then any suffix": uniform random generation is a fuzzer, not an adversary. Four
+  properties keep it from drifting: it enters through the same door a person
+  enters through, it states relations rather than behaviour, it never gates the
+  Rust build, and **what it delivers is a Rust regression test**. Haskell finds,
+  Rust remembers, so knowledge only ever moves toward the shipped language. Delete
+  the directory and the network is unchanged.
 
 **Deliberately not adopted.** Fuzzy message detection and oblivious message
 retrieval solve delivery *without* a shared secret, and we always have one. MLS
@@ -204,7 +226,6 @@ version of its own.
 | `Depot` — chunked workspaces | a separate problem; 64 KiB carries the whole protocol today |
 | `port` — local socket and MCP front ends | the verb set is one enum, so a second front end is additive |
 | Post-quantum hybrid | a clean addition once the classical suite is right |
-| `adversary/` — Haskell property oracle | out of tree by construction, and must never gate the Rust build |
 
 ---
 

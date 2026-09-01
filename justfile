@@ -76,6 +76,26 @@ demo:
     ls "$ground/host"/*/* | head -4
     echo '(opaque addresses, sealed bytes, no author anywhere)'
 
+# The Haskell property oracle in `adversary/`.
+#
+# Deliberately not part of `check`. It needs GHC, and a contributor who is
+# changing Rust must be able to finish without installing a second toolchain —
+# so this skips itself, successfully, when cabal is not there. The binary it
+# drives is built here and passed in, which is why nothing inside `adversary/`
+# has to know where a target directory lives.
+adversary:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v cabal > /dev/null 2>&1; then
+        echo "skipped: cabal is not installed. See adversary/adversary-SPEC.md §2."
+        exit 0
+    fi
+    built=$(cargo build --message-format json 2>/dev/null \
+        | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's|\\\\|/|g')
+    [ -n "$built" ] || { echo "cargo did not report an executable"; exit 1; }
+    cd adversary
+    KUSANAGI_BIN="$built" cabal test --test-show-details=direct
+
 # What a release ships: a stripped release binary and its checksum.
 dist:
     #!/usr/bin/env bash

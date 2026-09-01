@@ -1,0 +1,63 @@
+cabal-version:   3.0
+name:            kusanagi-adversary
+version:         0.0.1
+synopsis:        A property oracle that attacks kusanagi through the door a user has
+description:
+  Out of the Rust workspace, out of the release, and out of `just check`. It
+  drives the shipped binary with `--json`, asserts relations between traces, and
+  delivers what it finds as a Rust regression test. See adversary-SPEC.md.
+
+license:         MPL-2.0
+author:          2youg1 and the kusanagi contributors
+build-type:      Simple
+extra-doc-files: adversary-SPEC.md
+
+common strict
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns
+    -Wredundant-constraints -Wpartial-fields -Werror
+
+library
+  import:           strict
+  hs-source-dirs:   src
+  default-language: GHC2021
+  exposed-modules:
+    Kusanagi.Answer
+    Kusanagi.Door
+    Kusanagi.Ground
+    Kusanagi.Model
+    Kusanagi.Regression
+
+  build-depends:
+    , aeson               >=2.1  && <2.3
+    , base                >=4.17 && <5
+    , bytestring          >=0.11
+    , containers          >=0.6
+    , directory           >=1.3
+    , filepath            >=1.4
+    , mtl                 >=2.2
+    , process             >=1.6
+    , QuickCheck          >=2.14
+    , quickcheck-dynamic  >=4.0  && <5
+    , temporary           >=1.3
+    , text                >=2.0
+
+test-suite adversary
+  import:           strict
+  type:             exitcode-stdio-1.0
+  main-is:          Main.hs
+  hs-source-dirs:   test
+  default-language: GHC2021
+  build-depends:
+    , base
+    , containers
+    , directory
+    , filepath
+    , kusanagi-adversary
+    , mtl
+    , QuickCheck
+    , quickcheck-dynamic
+    , tasty               >=1.4
+    , tasty-hunit         >=0.10
+    , tasty-quickcheck    >=0.10
+    , text

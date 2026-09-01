@@ -126,6 +126,7 @@ fn a_host_holding_a_hundred_segments_can_link_none_of_them() {
     let heard = json(
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
+            after: None,
         })
         .unwrap(),
     );
@@ -134,6 +135,7 @@ fn a_host_holding_a_hundred_segments_can_link_none_of_them() {
         &alice
             .run(&Request::Read {
                 name: "bob".to_owned(),
+                after: None,
             })
             .unwrap(),
     );

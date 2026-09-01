@@ -10,12 +10,14 @@
 //! library, so the program a test drives and the program a person runs are the
 //! same program.
 
+use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use kusanagi::{Request, Site};
+use kusanagi::{Complaint, Request, Site};
 use kusanagi_grant::{Abilities, Ability};
+use kusanagi_kernel::MAX_PAYLOAD;
 
 /// A decentralised collaboration network for agents.
 #[derive(Parser, Debug)]
@@ -67,14 +69,18 @@ enum Verb {
         /// Which channel.
         #[arg(long = "to", value_name = "NAME")]
         name: String,
-        /// What the segment carries.
-        text: String,
+        /// What the segment carries. Omit it to read the payload from stdin.
+        text: Option<String>,
     },
     /// Read the peer's stream on a channel, verifying it end to end.
     Read {
         /// Which channel.
         #[arg(long = "from", value_name = "NAME")]
         name: String,
+        /// Report only what follows this height. The stream is verified in full
+        /// either way.
+        #[arg(long, value_name = "HEIGHT")]
+        after: Option<u64>,
     },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
@@ -103,7 +109,7 @@ enum Verb {
 /// An unknown word is refused rather than ignored: an invitation that silently
 /// granted less than it was asked for would be discovered by the person it was
 /// given to, days later, as a failure they cannot explain.
-fn abilities(text: &str) -> Result<Abilities, String> {
+fn abilities(text: &str) -> Result<Abilities, Complaint> {
     let mut abilities = Abilities::NONE;
     for word in text
         .split(',')
@@ -113,13 +119,50 @@ fn abilities(text: &str) -> Result<Abilities, String> {
         match word {
             "send" => abilities = abilities.with(Ability::Send),
             "read" => abilities = abilities.with(Ability::Read),
-            other => return Err(format!("`{other}` is not an ability; use send and read")),
+            other => {
+                return Err(Complaint::Argument {
+                    what: "--can",
+                    reason: format!("does not know the ability `{other}`"),
+                    instead: "pass a comma-separated list of send and read",
+                });
+            }
         }
     }
     Ok(abilities)
 }
 
-fn request(verb: Verb) -> Result<Request, String> {
+/// The bytes a segment will carry: what was typed, or what was piped in.
+///
+/// Reading stdin when no text is given is what lets a caller send a payload with
+/// quotes, newlines, or bytes that are not text at all — none of which survive a
+/// command line intact. The read is bounded at one byte past the limit a segment
+/// accepts, so an oversized payload is refused by the rule that owns that limit
+/// instead of being buffered here first.
+fn payload(text: Option<String>) -> Result<Vec<u8>, Complaint> {
+    if let Some(text) = text {
+        return Ok(text.into_bytes());
+    }
+    let input = std::io::stdin();
+    if input.is_terminal() {
+        return Err(Complaint::Argument {
+            what: "the text to send",
+            reason: "was not given, and stdin is a terminal".to_owned(),
+            instead: "pass it as an argument, or pipe it in: \
+                      echo hello | kusanagi send --to NAME",
+        });
+    }
+    let mut bytes = Vec::new();
+    input
+        .take(u64::from(MAX_PAYLOAD).saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|source| Complaint::Local {
+            action: "read the payload from stdin",
+            source,
+        })?;
+    Ok(bytes)
+}
+
+fn request(verb: Verb) -> Result<Request, Complaint> {
     Ok(match verb {
         Verb::Id => Request::Identity,
         Verb::Channels => Request::Channels,
@@ -135,8 +178,11 @@ fn request(verb: Verb) -> Result<Request, String> {
             abilities: abilities(&can)?,
         },
         Verb::Join { invite, name } => Request::Join { invite, name },
-        Verb::Send { name, text } => Request::Send { name, text },
-        Verb::Read { name } => Request::Read { name },
+        Verb::Send { name, text } => Request::Send {
+            name,
+            payload: payload(text)?,
+        },
+        Verb::Read { name, after } => Request::Read { name, after },
         Verb::Revoke { name } => Request::Revoke { name },
         Verb::Doctor { waypoint } => Request::Doctor { waypoint },
         Verb::Host { bind, directory } => Request::Host { bind, directory },
@@ -147,8 +193,11 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let request = match request(cli.command) {
         Ok(request) => request,
-        Err(reason) => {
-            eprintln!("error: {reason}");
+        // An argument this program cannot act on is a failure like any other, so
+        // it leaves by the same door: a stable code and the way forward, in
+        // whichever of the two renderings the caller asked for.
+        Err(complaint) => {
+            eprintln!("{}", complaint.render(cli.json));
             return ExitCode::FAILURE;
         }
     };

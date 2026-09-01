@@ -15,6 +15,7 @@
 | U5 读流 | `walk` / `peek` | 密封→解封→解码→查作者→验链，任一步失败即停 |
 | U6 装配 | `assembly::run` | 九个动词；时钟每条命令采样一次 |
 | U7 输出 | `Outcome` / `Complaint` | 同一个值渲染成散文与 JSON，两者不可能不一致 |
+| U8 代理可用的门 | 载荷进得去也出得来，增量读得到，参数错误也带码 | 任意字节经 stdin 进、经 `payload` 出且逐字节相等；`--after H` 只报 H 之后的段；每一条失败都有稳定码与恢复命令 |
 
 ## 2 验收标准
 
@@ -33,6 +34,10 @@
 11. `doctor` 对运行中的盒子给出四项 held、tier 为 `write-once`。
 12. `doctor` 对普通目录如实报告两项 `not offered`，而不是判它失败。
 13. 通道列表在有人加入前后各自正确。
+14. 一段不是合法 UTF-8 的字节经 `send` 进去，经 `read --json` 的 `payload` 出来，**逐字节相等**（`payload.rs`）。同一条记录里的 `text` 是有损的，两者同时在场才能证明“人看的”与“程序读的”是两个字段。
+15. 三段之后 `read --after 0` 只报两段，而 `height` 仍是已验证的链头——增量报告不得影响验证。
+16. 经**真正的二进制**管道写入一段，再用 `--json` 读回（`door.rs`）——前端那几十行胶水只能这么测，而那正是代理真实走的那扇门。
+17. 自己发出的邀请被拒，得 `kusanagi.own_invitation`（`from_adversary.rs`）。**这条验收不是人想出来的**：`adversary/` 在首次完整运行时把它最小化成四步轨迹，那个文件就是它的渲染结果。
 
 ## 3 假设与歧义
 
@@ -77,6 +82,17 @@ main.rs       clap ↔ Request
 ```
 
 依赖全部五个内部 crate，加 `clap`、`getrandom`、`serde`、`serde_json`、`thiserror`。
+
+### 行数预算：下一次改动先拆 crate
+
+本 crate 的 `src/` 现为 **2,405 / 2,500**。剩下的余量不够再进一个特性，所以**下一次实质改动的第一步是拆分，而不是把特性塑形得刚好塞得进去**。本次已把两条缝看完，结论写在这里，下一个人不必重新推一遍：
+
+| 候选缝 | 会得到什么 | 为什么本次没做 |
+|---|---|---|
+| 把 `site.rs` + `channel.rs` + `invite.rs`（937 行）拆成存储 crate | 主 crate 降到 ~1,470，且剩掉的正好是读动词时不需要在场的磁盘格式细节 | **错误分类不沿这条缝切开**。`Complaint::Local { action, source }` 与 `Malformed` 不是 site 特有的形状：main.rs 读 stdin、assembly 绑端口都用它。拆分必须先回答“这个形状归谁”，而那个回答本身就是一次改动 |
+| 把 `main.rs`（215 行）拆成前端 crate | 买到 215 行，并为 `ARCHITECTURE.md` §9 的 `port` 先摆好位置 | 买到的是**最不占脑子的那 215 行**。预算存在是为了“一个想法能装进脑子”，搬走 clap 胶水不改善这件事，只改善数字——那叫挪门柱 |
+
+因此建议的顺序是：**先定下 `Local` / `Malformed` 这个“本机 IO 失败”形状归哪一层，再拆存储 crate**。在那之前向本 crate 加代码的人，会在 `just budget` 上撑住——那正是预算该做的事。
 
 ## 8 接口先行
 
@@ -126,6 +142,12 @@ revoke：取 peer grant 的最末一节 id → 写进 revoked
 
 **步骤 7：通道名当作路径分量来校验，不做转义。** 只放行 `a-z0-9-`、长度 1..=32。转义容易写错的方式全都始于「允许一点有趣的东西」。
 
+**步骤 8：载荷是字节，不是字符串。** `Request::Send` 收 `Vec<u8>`；命令行给了文本就用它的字节，没给就从 stdin 读到 EOF。理由不是便利：代理要发的东西里有引号、换行与非 UTF-8 字节，而 argv 既有长度上限又要经过一层 shell 引用规则。**入口有界**：最多读 `MAX_PAYLOAD + 1` 字节，多出的那一个字节让 kernel 给出 `segment.payload_too_large`，而不是让本进程去吃一个无界的管道。
+
+**步骤 9：`--after` 只剪报告，不剪验证。** 链仍从创世段逐段验证（`ARCHITECTURE.md` 的读取契约），`--after` 只决定哪几段进入 `segments`。它省的是输出与调用方的比对，**不省请求钱**——把它写成省钱会诱使人以为验证变短了。
+
+**步骤 10：参数错误也走 `Complaint`。** 以前 clap 到 `Request` 的翻译失败只向 stderr 打一句散文，于是门上有一类失败没有稳定码。现在它们是 `Complaint::Argument`，与其他十四种失败同形。这是**删掉一个特例**，不是加一个。
+
 ## 11 边界枚举
 
 | 情形 | 期望 |
@@ -136,13 +158,21 @@ revoke：取 peer grant 的最末一节 id → 写进 revoked
 | 名字含 `../`、`/`、大写、空格 | `kusanagi.malformed` |
 | peer 尚未加入就 `read` 或 `revoke` | `kusanagi.no_peer_yet` |
 | peer 就是根权威而试图 `revoke` | `kusanagi.cannot_revoke_root` |
+| **接受自己发出的邀请** | `kusanagi.own_invitation`。流由 `(secret, author)` 派生，所以自接会让一个端点拿到**同一条流的两个本地名字**，认出的 peer 是自己，于是 `read` 把刚写的东西当作对方说的递回来。**这一条是 `adversary/` 找出来的**，见 §2 第 17 条 |
 | 对方流上出现别人签名的段 | `kusanagi.not_the_peer` |
 | 下一个地址已被占 | `kusanagi.drop_taken`，并给出重读后重发的命令 |
 | 通道文件版本不认识 | 拒绝而不是猜 |
+| `send` 未给文本且 stdin 是终端 | `kusanagi.argument`，告诉他两种给法。**不得阻塞等一个人打字** |
+| stdin 给了超过 64 KiB | `segment.payload_too_large`，由 kernel 判定，本层不重复那条规则 |
+| stdin 给了零字节 | 照发。空载荷是合法的段，拒绝它需要一条没人写过的规则 |
+| `--after H` 中 H ≥ 链头 | `segments` 为空而 `height` 照报——这正是轮询者要的那一条回答 |
+| `--can` 里出现不认识的词 | `kusanagi.argument`，而不是静默地少授予一项 |
 
 ## 12 错误处理
 
-`Complaint` 十四个变体，每个带稳定码与**恢复命令**。三条与众不同：
+`Complaint` 十六个变体，每个带稳定码与**恢复命令**。四条与众不同：
+
+- `kusanagi.argument` 是唯一把恢复文字**随变体带进来**的（`instead` 字段）。其他变体的恢复由失败种类推出，而一个参数错在哪釬只有写下那个旗标的地方知道——这与 `complaint.rs` 开头的理由是同一条，只是又往上一层。
 
 - `seal.rejected` / `chain.*` / `segment.*` / `not_the_peer` 的恢复建议是「留着这些字节并报告」——它们不是瞬时故障，而是损坏或干预。
 - `grant.*` 的建议是「去要一份新的邀请」，因为本端无法自行修复权限。
@@ -166,6 +196,9 @@ revoke：取 peer grant 的最末一节 id → 写进 revoked
 | 介绍流的高度 `0` | 引荐的约定位置 | 属线路格式 |
 | `kusanagi1:` 前缀、版本 1、套件 0 | 邀请串的识别与拒绝未来格式 | 换套件即换版本字节 |
 | **不设身份文件的 Unix 模式位** | Windows 上无对应语义，行为跨平台一致优先 | 已知短板：多用户机器上应把 site 放在仅本人可读的目录里，这一点写在 `docs/joining.md` |
+| `--after H` 是**严格大于** | 调用方手里持有 H，要的是 H 之后的 | 改成含 H 会让每次轮询重复一段 |
+| stdin 最多读 `MAX_PAYLOAD + 1` 字节 | 越限由 kernel 判，本层只负责不无界 | 跟随 `kernel::MAX_PAYLOAD`，不另写常量 |
+| `payload` 用小写十六进制 | 全仓只有一套十六进制编解码（`kernel::wire`），不为一个字段引入 base64 | 体积翻倍；64 KiB 载荷 → 128 KiB 文本，在可接受范围 |
 
 ## 15 影响面
 

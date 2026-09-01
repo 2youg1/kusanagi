@@ -1,0 +1,42 @@
+# The Haskell property oracle, on its own clock.
+#
+# This workflow is never a required check and never runs on a pull request. If
+# it were, every Rust contributor would need GHC to merge anything, and the
+# oracle would have become the second authority it exists to avoid being.
+#
+# When it goes red, the deliverable is not a fix here: it is a minimised trace
+# rendered as a Rust test, committed beside the Rust code. Haskell finds, Rust
+# remembers.
+name: adversary
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.10"
+          cabal-version: "latest"
+
+      # The oracle drives the binary a user would install, not a test harness.
+      - name: build what the oracle drives
+        run: cargo build --release
+
+      - name: run the oracle
+        working-directory: adversary
+        env:
+          KUSANAGI_BIN: ${{ github.workspace }}/target/release/kusanagi
+        run: |
+          cabal update
+          cabal test --test-show-details=direct

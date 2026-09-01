@@ -63,6 +63,7 @@ fn two_endpoints_meet_over_tcp_through_a_host_neither_of_them_trusts() {
     let heard = json(
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
+            after: None,
         })
         .expect("bob could not read alice over tcp"),
     );
@@ -73,6 +74,7 @@ fn two_endpoints_meet_over_tcp_through_a_host_neither_of_them_trusts() {
         &alice
             .run(&Request::Read {
                 name: "bob".to_owned(),
+                after: None,
             })
             .expect("alice could not read bob over tcp"),
     );

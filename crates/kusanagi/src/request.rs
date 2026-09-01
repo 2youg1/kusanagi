@@ -45,13 +45,24 @@ pub enum Request {
     Send {
         /// Which channel.
         name: String,
-        /// What the segment carries.
-        text: String,
+        /// What the segment carries, as bytes.
+        ///
+        /// Bytes rather than text because a caller sends what it has: quotes,
+        /// newlines, and sequences that are not UTF-8 at all. What reaches the
+        /// peer is what was handed over here.
+        payload: Vec<u8>,
     },
     /// Read the peer's stream on a channel, verifying it end to end.
     Read {
         /// Which channel.
         name: String,
+        /// Report only the segments above this height.
+        ///
+        /// `None` reports the whole stream. This narrows the *report* and
+        /// nothing else: the chain is still verified from genesis, because a
+        /// reader that trusted a prefix it did not check would be trusting the
+        /// host.
+        after: Option<u64>,
     },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {

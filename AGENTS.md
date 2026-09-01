@@ -24,11 +24,12 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 | `just demo` | two identities, one host, one verifiable exchange, in a throwaway directory |
 | `just budget` | line counts against the budget in `ARCHITECTURE.md` §5 |
 | `just dist` | a stripped release binary and its SHA-256 |
+| `just adversary` | the Haskell property oracle in `adversary/`. **Not part of `just check`**, needs GHC, and skips itself when GHC is absent |
 
 ## Read before you write
 
 1. [`ARCHITECTURE.md`](ARCHITECTURE.md) — what this is, why the dead drop is the substrate, the words, the crate graph, the seams, the line budget, and the decisions already taken.
-2. The SPEC of the crate you are touching, `crates/<crate>/<crate>-SPEC.md`. **It is written before the code and changed before the code changes.**
+2. The SPEC of the crate you are touching, `crates/<crate>/<crate>-SPEC.md` — or `adversary/adversary-SPEC.md` outside the workspace. **It is written before the code and changed before the code changes.**
 3. The tests next to the code you are about to change.
 
 ## One change, five steps

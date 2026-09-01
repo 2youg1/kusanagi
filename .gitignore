@@ -1,5 +1,6 @@
 /target
 /dist
+/adversary/dist-newstyle
 **/*.rs.bk
 /.kusanagi-scratch
 /.kusanagi
