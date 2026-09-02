@@ -13,8 +13,11 @@
 
 mod assembly;
 mod complaint;
+mod membership;
+mod prose;
 mod report;
 mod request;
+mod traffic;
 mod walk;
 mod world;
 

@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 kusanagi-kernel.workspace = true
+kusanagi-box.workspace = true
 kusanagi-chain.workspace = true
 kusanagi-grant.workspace = true
 kusanagi-seal.workspace = true

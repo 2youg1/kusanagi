@@ -5,6 +5,10 @@
 
 //! Measuring a host instead of believing its documentation.
 //!
+//! What a measurement is *said in* — capability, verdict, tier, certificate — is
+//! next door in `certificate.rs`. This file is only the writing and reading that
+//! finds out.
+//!
 //! The reason this module exists is one specific way of being wrong. S3 and R2
 //! refuse a second write to an occupied key when asked with `If-None-Match: *`.
 //! Some compatible implementations do not: they ignore the condition and let the
@@ -21,159 +25,12 @@
 //! degradation, which is a different thing from a host that claims a capability
 //! and then does not hold it.
 
-use core::fmt;
-
 use kusanagi_kernel::{Waypoint, WaypointError};
 use kusanagi_seal::{Stream, derive};
 
+use crate::certificate::{Capability, Certificate, Finding, Verdict};
 use crate::conditional::{Conditional, Fetched, TtlOutcome};
 use crate::conformance;
-
-/// Something a host either does or does not do.
-///
-/// These names are published identifiers: they appear in `doctor` output and in
-/// scripts that read it, so renaming one is a change to a public interface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Capability {
-    /// A second write to an occupied address is refused.
-    WriteOnce,
-    /// A reader that already has the bytes can be told so without receiving them.
-    ConditionalRead,
-    /// The host's name for a version does not change while the bytes do not.
-    StableValidator,
-    /// The host can be asked to forget an object after a while.
-    Expiry,
-}
-
-impl Capability {
-    /// Every capability, in the order `doctor` reports them.
-    pub const ALL: [Self; 4] = [
-        Self::WriteOnce,
-        Self::ConditionalRead,
-        Self::StableValidator,
-        Self::Expiry,
-    ];
-
-    /// The published name.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::WriteOnce => "write-once",
-            Self::ConditionalRead => "conditional-read",
-            Self::StableValidator => "stable-validator",
-            Self::Expiry => "expiry",
-        }
-    }
-}
-
-impl fmt::Display for Capability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
-/// What a host was measured to do about one capability.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Verdict {
-    /// Measured, and the host does it.
-    Held,
-    /// The host does not offer this, and says so consistently.
-    NotOffered {
-        /// Why it is absent, in words a person can act on.
-        because: String,
-    },
-    /// The host claims this and does not hold it.
-    Broken {
-        /// What was expected and what happened instead.
-        detail: String,
-    },
-}
-
-impl Verdict {
-    /// The one-word form used in output and in exit-code decisions.
-    #[must_use]
-    pub const fn word(&self) -> &'static str {
-        match self {
-            Self::Held => "held",
-            Self::NotOffered { .. } => "not offered",
-            Self::Broken { .. } => "BROKEN",
-        }
-    }
-}
-
-/// One measured capability.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Finding {
-    /// What was measured.
-    pub capability: Capability,
-    /// What was found.
-    pub verdict: Verdict,
-}
-
-/// How far a host can be trusted to hold this network's central invariant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tier {
-    /// A drop is claimed once and cannot be overwritten. Full semantics.
-    WriteOnce,
-    /// The host will let a drop be rewritten, so both sides must acknowledge
-    /// what they first saw at an address and refuse anything that arrives later.
-    AckFirstSeen,
-}
-
-impl Tier {
-    /// The published name.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::WriteOnce => "write-once",
-            Self::AckFirstSeen => "ack-first-seen",
-        }
-    }
-}
-
-/// What a host was measured to be.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Certificate {
-    findings: Vec<Finding>,
-}
-
-impl Certificate {
-    /// Every measurement, in [`Capability::ALL`] order.
-    #[must_use]
-    pub fn findings(&self) -> &[Finding] {
-        &self.findings
-    }
-
-    /// What was found for one capability.
-    #[must_use]
-    pub fn verdict(&self, capability: Capability) -> Option<&Verdict> {
-        self.findings
-            .iter()
-            .find(|finding| finding.capability == capability)
-            .map(|finding| &finding.verdict)
-    }
-
-    /// The tier this host qualifies for.
-    ///
-    /// Only one capability decides it. Conditional reads and expiry change what a
-    /// host *costs*; write-once changes what the protocol *is*.
-    #[must_use]
-    pub fn tier(&self) -> Tier {
-        match self.verdict(Capability::WriteOnce) {
-            Some(&Verdict::Held) => Tier::WriteOnce,
-            _ => Tier::AckFirstSeen,
-        }
-    }
-
-    /// Whether any capability was claimed and not held.
-    #[must_use]
-    pub fn any_broken(&self) -> bool {
-        self.findings
-            .iter()
-            .any(|finding| matches!(finding.verdict, Verdict::Broken { .. }))
-    }
-}
 
 /// Measures `place` and reports what it does.
 ///
@@ -205,7 +62,7 @@ where
         verdict: expiry(place, namespace),
     });
 
-    Certificate { findings }
+    Certificate::of(findings)
 }
 
 /// The clause that decides the tier: run the whole contract every adapter signs.
@@ -316,7 +173,8 @@ fn unreachable_host(error: &WaypointError) -> Verdict {
     reason = "test code"
 )]
 mod tests {
-    use super::{Capability, Tier, Verdict, examine};
+    use super::examine;
+    use crate::certificate::{Capability, Tier, Verdict};
     use crate::{Locator, Place};
     use kusanagi_kernel::{Signer, Waypoint as _};
     use kusanagi_seal::Secret;

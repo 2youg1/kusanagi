@@ -29,6 +29,9 @@ deny:
 # The first gate is the strictest and the most local. A file is the unit somebody
 # opens — a reviewer, an editor, a model reading one — so a file that no longer
 # fits in one reading is split or deleted, and the limit is not raised.
+#
+# One limit per kind, because the kinds fail differently. See ARCHITECTURE.md §5
+# for why each number is the number it is.
 budget:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -38,11 +41,17 @@ budget:
     # verbatim. `awk END{NR}` rather than `wc -l` so that a file whose last line
     # has no newline is counted, not rounded down.
     over=$(git ls-files | grep -Ev '^(Cargo\.lock|LICENSE)$' | while IFS= read -r file; do
+        case "$file" in
+            *.rs) limit=400;;
+            *.hs) limit=400;;
+            *.md) limit=500;;
+            *)    limit=300;;
+        esac
         lines=$(awk 'END { print NR }' "$file")
-        if [ "$lines" -gt 500 ]; then printf '  %5s  %s\n' "$lines" "$file"; fi
+        if [ "$lines" -gt "$limit" ]; then printf '  %5s / %-4s %s\n' "$lines" "$limit" "$file"; fi
     done)
     if [ -n "$over" ]; then
-        printf 'over 500 lines. Split it or delete it; the limit does not move.\n%s\n' "$over"
+        printf 'over the per-file limit. Split it or delete it; the limit does not move.\n%s\n' "$over"
         exit 1
     fi
 

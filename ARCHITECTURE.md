@@ -87,6 +87,7 @@ One name per concept. A word with no implementation does not enter the code.
 | **Channel** | one conversation: a secret, a locator, a standing, a peer | the unit an endpoint joins, lists, and revokes |
 | **Standing** | why somebody is allowed on a channel — root, or granted | "the authority holds no grant" is a fact, not a missing value |
 | **Site** | what one endpoint keeps on its own disk: a seed, a file per channel, a revocation list | the only state there is; anything else would be state a kill could lose |
+| **Box** | a host somebody runs: it holds sealed bytes at opaque addresses and refuses to overwrite one | the untrusted half is a program, not a promise |
 
 Reserved for work not yet done, and therefore **not** in the code: `Bell`,
 `Cohort`, `Depot`, `Veil`.
@@ -98,7 +99,8 @@ kernel      identifiers, identity, signed segments, canonical bytes, seams
   chain     the rules a sequence of segments must satisfy
   seal      address derivation and content sealing
   grant     issue, attenuate, verify, revoke
-  waypoint  directory / memory / HTTP box / S3, the box server, conformance, probe
+  waypoint  directory / memory / HTTP / S3, conformance, probe — how to reach a host
+    box     the box server — how to be one
   site      one endpoint's own disk: identity, channel records, invitations
 kusanagi    the verbs and the one assembly point
 ```
@@ -127,25 +129,33 @@ That exclusion list is closed; a third entry is a decision, not an oversight.
 
 | crate | src | measured by |
 |---|---|---|
-| chain | 438 | `just budget` |
+| box | 481 | `just budget` |
+| chain | 438 | |
 | grant | 1,055 | |
-| kernel | 1,320 | |
-| kusanagi | **2,424** | |
-| seal | 392 | |
-| waypoint | **2,448** | |
-| **workspace, tests included** | **9,960 / 25,000** | |
-| **largest single file** | **472** (`waypoint/src/s3.rs`) | |
+| kernel | 1,344 | |
+| kusanagi | 1,868 | |
+| seal | 393 | |
+| site | 967 | |
+| waypoint | 2,092 | |
+| **workspace, tests included** | **10,927 / 25,000** | |
+| **largest single file** | **363** (`kusanagi/tests/endpoint.rs`) | |
 
-**`waypoint` is close to the line, and that is information rather than a
-problem.** The next substantive change to it begins by splitting it — the budget
-exists to make that decision arrive on time, instead of arriving as a feature bent
-into the space left over.
+**Both crates that were close to the line have been split, and the budget is what
+made each decision arrive on time.**
 
-`kusanagi` was in the same position and has been split: `site` carries the disk
-formats away, and the boundary that made the split possible is the one recorded in
-`crates/site/site-SPEC.md` §3 — **a `SiteError` says what failed on the disk, and
-the door says what it is called and how to recover from it.** Merging the two
-would put the words `kusanagi channels` inside a crate that has no verbs.
+`kusanagi` gave up the disk formats to `site`. The boundary that made it possible
+is recorded in `crates/site/site-SPEC.md` §3 — **a `SiteError` says what failed on
+the disk, and the door says what it is called and how to recover from it.** Merging
+the two would put the words `kusanagi channels` inside a crate that has no verbs.
+
+`waypoint` gave up the server to `box`, which **overturned a decision recorded in
+`waypoint-SPEC.md` §7** — that the two halves of the box protocol should share a
+crate. The reason that did not exist when it was taken is the 2,500-line limit
+itself, and the choice it forced: separating implementations of one seam would
+have been worse than separating two different jobs, *reaching* a host and *being*
+one. What the old decision feared, the halves drifting apart, is held by a test
+rather than by a directory — the box's own tests drive the shipped client against
+the shipped server over a real socket and run `conformance::run` against it.
 
 **Outside the workspace.** `adversary/` is a Haskell counterexample hunter. It is not a
 crate, not a dependency, not part of the release, and not counted here. §8 records

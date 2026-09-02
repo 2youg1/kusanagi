@@ -1,0 +1,20 @@
+[package]
+name = "kusanagi-box"
+description = "The untrusted half of the network: a host that holds sealed bytes at opaque addresses and refuses to overwrite one."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+kusanagi-kernel.workspace = true
+kusanagi-waypoint.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+kusanagi-seal.workspace = true
+
+[lints]
+workspace = true

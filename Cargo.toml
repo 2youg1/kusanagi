@@ -6,6 +6,7 @@ members = [
     "crates/seal",
     "crates/grant",
     "crates/waypoint",
+    "crates/box",
     "crates/site",
     "crates/kusanagi",
 ]
@@ -22,6 +23,7 @@ authors = ["2youg1 and the kusanagi contributors"]
 kusanagi-kernel = { path = "crates/kernel", version = "0.0.1" }
 kusanagi-chain = { path = "crates/chain", version = "0.0.1" }
 kusanagi-waypoint = { path = "crates/waypoint", version = "0.0.1" }
+kusanagi-box = { path = "crates/box", version = "0.0.1" }
 kusanagi-seal = { path = "crates/seal", version = "0.0.1" }
 kusanagi-grant = { path = "crates/grant", version = "0.0.1" }
 kusanagi-site = { path = "crates/site", version = "0.0.1" }

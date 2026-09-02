@@ -30,6 +30,7 @@ use core::num::NonZeroU64;
 
 use crate::identifier;
 use crate::identity::{Handle, NotAuthentic, Signature, Signer};
+use crate::link::{ChainHead, Link};
 use crate::wire::{Incomplete, Reader};
 
 /// Domain separation for segment identity.
@@ -58,51 +59,6 @@ pub const MAX_PAYLOAD: u32 = 65_536;
 identifier! {
     /// The content address of a segment.
     SegmentId, 32
-}
-
-/// A witness that a particular segment exists, and where it sits.
-///
-/// There is no public constructor: the only way to hold one is to have held the
-/// segment it describes. That is what lets [`Segment::extend`] build a link whose
-/// height and predecessor cannot disagree, while carrying forty bytes instead of
-/// a whole segment — extending a chain of a million segments costs the same as
-/// extending a chain of one.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct ChainHead {
-    id: SegmentId,
-    index: u64,
-}
-
-impl ChainHead {
-    /// The segment this head witnesses.
-    #[must_use]
-    pub const fn id(&self) -> SegmentId {
-        self.id
-    }
-
-    /// How high that segment sits.
-    #[must_use]
-    pub const fn index(&self) -> u64 {
-        self.index
-    }
-}
-
-/// Where a segment sits in its chain.
-///
-/// Two illegal states are unspellable here rather than validated: a genesis
-/// segment cannot carry a predecessor, and a following segment cannot sit at
-/// index zero.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Link {
-    /// The first segment of a chain.
-    Genesis,
-    /// Every later segment.
-    Follows {
-        /// This segment's height, which is always at least one.
-        index: NonZeroU64,
-        /// The identity of the segment directly beneath it.
-        previous: SegmentId,
-    },
 }
 
 /// A validated payload.
@@ -172,7 +128,7 @@ impl Segment {
         head: ChainHead,
     ) -> Result<Self, SegmentError> {
         let height = head
-            .index
+            .index()
             .checked_add(1)
             .ok_or(SegmentError::ChainExhausted)?;
         // `height` is `head.index + 1`, hence at least one; the zero branch is
@@ -182,7 +138,7 @@ impl Segment {
             signer,
             Link::Follows {
                 index,
-                previous: head.id,
+                previous: head.id(),
             },
             payload,
         )
@@ -212,10 +168,7 @@ impl Segment {
     /// A witness of this segment, for whoever extends the chain next.
     #[must_use]
     pub fn head(&self) -> ChainHead {
-        ChainHead {
-            id: self.id(),
-            index: self.index(),
-        }
+        ChainHead::new(self.id(), self.index())
     }
 
     /// This segment's height in its chain; zero for a genesis segment.

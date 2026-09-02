@@ -17,6 +17,8 @@ use serde::Serialize;
 
 use kusanagi_site::{Channel, Standing};
 
+use crate::prose;
+
 use crate::walk::Walked;
 
 /// A handle rendered short enough to read, for listings.
@@ -30,20 +32,20 @@ fn abbreviate(handle: &Handle) -> String {
 /// One segment as it is reported.
 #[derive(Serialize, Debug)]
 pub struct Entry {
-    index: u64,
-    id: String,
-    address: String,
+    pub(crate) index: u64,
+    pub(crate) id: String,
+    pub(crate) address: String,
     /// The exact bytes, in lowercase hexadecimal.
     ///
     /// This is the field a program reads. It exists because the one beside it
     /// cannot be parsed back, and a caller that cannot recover what was sent is
     /// not on a channel.
-    payload: String,
+    pub(crate) payload: String,
     /// The same bytes as text, lossily.
     ///
     /// For eyes only: a payload that is not UTF-8 arrives here with replacement
     /// characters, and nothing downstream can tell that from the real thing.
-    text: String,
+    pub(crate) text: String,
 }
 
 /// What this endpoint may do on a channel at one moment.
@@ -66,21 +68,21 @@ enum Authority {
 /// One channel as it is listed.
 #[derive(Serialize, Debug)]
 pub struct Summary {
-    name: String,
-    waypoint: String,
-    standing: &'static str,
-    peer: Option<String>,
+    pub(crate) name: String,
+    pub(crate) waypoint: String,
+    pub(crate) standing: &'static str,
+    pub(crate) peer: Option<String>,
     /// What this endpoint may do here right now, verified rather than claimed.
     ///
     /// Empty exactly when `refused` is present: a caller reads one field or the
     /// other, never both.
-    can: Vec<&'static str>,
+    pub(crate) can: Vec<&'static str>,
     /// When the authority lapses, in seconds since the Unix epoch.
     ///
     /// Absent for a root authority, which nobody issued and nothing expires.
-    expires_at: Option<u64>,
+    pub(crate) expires_at: Option<u64>,
     /// The stable code that says why `can` is empty, absent when it is not.
-    refused: Option<&'static str>,
+    pub(crate) refused: Option<&'static str>,
     /// The code a read of the peer's stream would fail with, absent when it
     /// would not.
     ///
@@ -88,15 +90,15 @@ pub struct Summary {
     /// Cutting somebody off is one-sided by construction — there is no channel
     /// on which to tell them — so their own listing goes on reporting a live
     /// grant, and the refusal lives on this side.
-    peer_refused: Option<&'static str>,
+    pub(crate) peer_refused: Option<&'static str>,
 }
 
 /// One measured capability as it is reported.
 #[derive(Serialize, Debug)]
 pub struct Measured {
-    capability: &'static str,
-    verdict: &'static str,
-    detail: Option<String>,
+    pub(crate) capability: &'static str,
+    pub(crate) verdict: &'static str,
+    pub(crate) detail: Option<String>,
 }
 
 /// What a command produced.
@@ -326,127 +328,6 @@ impl Outcome {
             return serde_json::to_string_pretty(self)
                 .unwrap_or_else(|error| format!(r#"{{"error":"{error}"}}"#));
         }
-        self.prose()
+        prose::render(self)
     }
-
-    fn prose(&self) -> String {
-        match self {
-            Self::Identity { handle, site } => {
-                format!("this endpoint is {handle}\n  site  {site}")
-            }
-            Self::Channels { channels } if channels.is_empty() => {
-                "no channels yet; `kusanagi invite` starts one".to_owned()
-            }
-            Self::Channels { channels } => listing(channels),
-            Self::Invited {
-                name,
-                invite,
-                expires_at,
-            } => format!(
-                "channel `{name}` is open, and expires at {expires_at}\n\n{invite}\n\n\
-                 hand that line over once. Anybody who holds it can join, so treat it \
-                 the way you would treat a key."
-            ),
-            Self::Joined {
-                name,
-                handle,
-                peer,
-                waypoint,
-            } => format!(
-                "joined `{name}`\n  you       {handle}\n  peer      {peer}\n  waypoint  {waypoint}"
-            ),
-            Self::Sent {
-                name,
-                index,
-                id,
-                address,
-            } => format!("sent on `{name}` #{index}\n  id      {id}\n  address {address}"),
-            Self::Read {
-                name,
-                author,
-                height,
-                segments,
-            } => stream(name, author, *height, segments),
-            Self::Revoked { name, step } => format!(
-                "the peer of `{name}` is cut off\n  step  {step}\n\
-                 nothing they write from now on will be accepted here."
-            ),
-            Self::Forgotten { name, waypoint } => format!(
-                "`{name}` is gone from this endpoint\n  waypoint  {waypoint}\n\
-                 the drops stay where they are, and the secret that opened them does not. \
-                 This channel cannot be re-entered, by this invitation or any copy of it."
-            ),
-            Self::Examined {
-                waypoint,
-                kind,
-                tier,
-                capabilities,
-            } => certificate(waypoint, kind, tier, capabilities),
-            Self::Hosted { address, directory } => {
-                format!("stopped hosting {directory} on {address}")
-            }
-        }
-    }
-}
-
-/// The channel table, one row each.
-///
-/// The authority column is what a person opens this listing to see: whether the
-/// channel still works, and until when.
-fn listing(channels: &[Summary]) -> String {
-    let mut lines = vec![format!("{} channel(s)", channels.len())];
-    lines.extend(channels.iter().map(|channel| {
-        let authority = match (channel.refused, channel.expires_at) {
-            (Some(code), _) => format!("nothing: {code}"),
-            (None, None) => channel.can.join(","),
-            (None, Some(until)) => format!("{} until {until}", channel.can.join(",")),
-        };
-        let peer = match (&channel.peer, channel.peer_refused) {
-            (None, _) => "(nobody has joined yet)".to_owned(),
-            (Some(peer), None) => peer.clone(),
-            (Some(peer), Some(code)) => format!("{peer} — cut off ({code})"),
-        };
-        // The waypoint goes last because it is the one column with no bound on
-        // its width: a long locator then runs off the end instead of pushing
-        // everything after it out of line.
-        format!(
-            "  {:<16} {:<8} {:<30} {:<40} {}",
-            channel.name, channel.standing, authority, peer, channel.waypoint,
-        )
-    }));
-    lines.join("\n")
-}
-
-/// One verified stream, header then payloads as text.
-fn stream(name: &str, author: &str, height: Option<u64>, segments: &[Entry]) -> String {
-    let header = match height {
-        None => format!("`{name}`: {author} has written nothing yet"),
-        Some(height) => format!(
-            "`{name}`: {author} verifies to height {height} ({} segment(s))",
-            segments.len()
-        ),
-    };
-    let mut lines = vec![header];
-    lines.extend(
-        segments
-            .iter()
-            .map(|entry| format!("  #{:<3} {}", entry.index, entry.text)),
-    );
-    lines.join("\n")
-}
-
-/// What a host was measured to do, capability by capability.
-fn certificate(waypoint: &str, kind: &str, tier: &str, capabilities: &[Measured]) -> String {
-    let mut lines = vec![
-        format!("{waypoint}\n  kind  {kind}\n  tier  {tier}"),
-        String::new(),
-    ];
-    lines.extend(capabilities.iter().map(|measured| {
-        let detail = measured
-            .detail
-            .as_ref()
-            .map_or_else(String::new, |detail| format!(" — {detail}"));
-        format!("  {:<18} {}{detail}", measured.capability, measured.verdict)
-    }));
-    lines.join("\n")
 }

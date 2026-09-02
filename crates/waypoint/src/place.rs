@@ -30,7 +30,8 @@ use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 use crate::dir::DirWaypoint;
 use crate::http::HttpWaypoint;
-use crate::s3::{Credentials, S3Waypoint};
+use crate::s3::S3Waypoint;
+use crate::sigv4::Credentials;
 
 /// Where an endpoint keeps its drops, before anything has been opened.
 #[derive(Debug, Clone, PartialEq, Eq)]

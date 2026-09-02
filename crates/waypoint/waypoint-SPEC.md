@@ -11,7 +11,7 @@
 | U1 契约 | `conformance::run` | 五条子句；两个本地适配器与一个 TCP 上的宿主都必须通过 |
 | U2 本地适配器 | `DirWaypoint` / `MemoryWaypoint` | 通过契约；八线程并发写同一地址恰有一个 `Stored` |
 | U3 条件能力 seam | `Conditional`（`Validator` / `Fetched` / `TtlOutcome`） | 由 HTTP 与 S3 实现；目录如实回答「不提供」 |
-| U4 HTTP 盒子 | `HttpWaypoint` + `Server` | **两个进程经 TCP** 收发；CI 内可跑，不需外网 |
+| U4 HTTP 盒子的客户端 | `HttpWaypoint`（服务端在 `kusanagi-box`） | **两个进程经 TCP** 收发；CI 内可跑，不需外网 |
 | U5 对象存储 | `S3Waypoint`（SigV4） | 签名复现 AWS 公开向量；有凭据时对真实桶跑通，无凭据时跳过而非假通过 |
 | U6 路由 | `Locator` / `Place` | 一个字符串决定用哪个适配器；四种写法各得正确的 `kind()` |
 | U7 体检 | `probe::examine` → `Certificate` | 四项能力各得 held / not offered / BROKEN；只有 write-once 决定 tier |
@@ -52,7 +52,7 @@
 
 ## 6 命名统一
 
-`Waypoint` 取自 `ARCHITECTURE.md` §4。`Place` 是已打开的具体地点，`Locator` 是尚未打开的字符串形式；`Server` 是盒子的服务端一半。`Capability` 的四个名字（`write-once`、`conditional-read`、`stable-validator`、`expiry`）是**公开标识符**，会出现在 `doctor` 输出与读它的脚本里，改名即改公开接口。
+`Waypoint` 取自 `ARCHITECTURE.md` §4。`Place` 是已打开的具体地点，`Locator` 是尚未打开的字符串形式；`Server`（盒子的服务端一半）已移到 `kusanagi-box`。`Capability` 的四个名字（`write-once`、`conditional-read`、`stable-validator`、`expiry`）是**公开标识符**，会出现在 `doctor` 输出与读它的脚本里，改名即改公开接口。
 
 ## 7 模块边界
 
@@ -63,15 +63,32 @@ conditional.rs  Conditional seam：Validator / Fetched / TtlOutcome
 dir.rs          目录适配器
 memory.rs       内存适配器
 http.rs         盒子的客户端一半
-serve.rs        盒子的服务端一半
-s3.rs           对象存储适配器与 SigV4
+s3.rs           对象存储适配器
+sigv4.rs        Signature Version 4：凭据、日期、签名
 place.rs        Locator / Place —— 唯一知道存在多个适配器的地方
-probe.rs        examine / Certificate / Tier —— 唯一判断宿主健康的地方
+probe.rs        examine —— 唯一实测宿主的地方
+certificate.rs  Capability / Verdict / Tier / Certificate —— 实测结果的公开词汇
 ```
 
 依赖：`kernel`、`seal`（契约与体检用真实派生地址）、`blake3`（ETag）、`hmac` + `sha2`（SigV4）、`ureq`（HTTP）、`thiserror`。
 
-**客户端与服务端同居一个 crate**，因为它们是同一份协议的两半；分在两个 crate 就是一份协议两个权威。
+### 被推翻的决定：服务端搬出去了
+
+本节原文写的是「**客户端与服务端同居一个 crate**，因为它们是同一份协议的两半；
+分在两个 crate 就是一份协议两个权威」。服务端现已移到 `crates/box`，理由如下。
+
+**新出现的事实**：本 crate 的 `src/` 碰到了 `ARCHITECTURE.md` §5 的 2,500 行上限（实测 2,555）。
+那条预算写明「下一次对 waypoint 的实质改动以拆分开头」，所以问题不是拆不拆，而是沿哪条缝拆。
+可选的缝只有两条：把几个适配器分开，或把服务端分出去。
+**把同一个 seam 的多个实现分开更坏**——`Waypoint` 的四个实现必须能一起跑同一份 `conformance::run`；
+而客户端与服务端是**两件不同的工作**：一个是「怎么去到一台宿主」，一个是「怎么当一台宿主」。
+
+**原来怕的东西由别的东西拦住。** 当时怕的是两半协议各自漂移；拦住它的不是目录，而是测试：
+`crates/box/src/serve.rs` 的测试用**出货的客户端**（`HttpWaypoint`）经真实 socket 驱动**出货的服务端**，
+并对它跑一遍 `kusanagi_waypoint::conformance::run`。那条检查现在跨 crate 边界，强度不变。
+协议的权威从来不是“两个文件挺近”，而是 `docs/box-protocol.md`，它没有动。
+
+**额外买到的**：从不当宿主的端点现在不再编译一个服务器。见 `crates/box/box-SPEC.md`。
 
 ## 8 接口先行
 
@@ -101,7 +118,7 @@ pub enum Tier { WriteOnce, AckFirstSeen }
 ```
 locator 字符串 → Locator::from_str → Place::open(credentials, now) → Waypoint / Conditional
 doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier → CLI 渲染
-盒子：TcpListener → Server::serve（每连接一线程）→ answer → route → read/write
+盒子的服务端已移出本 crate，流程见 `crates/box/box-SPEC.md` §9
 ```
 
 ## 10 实现逻辑
@@ -162,7 +179,7 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 
 ## 15 影响面
 
-`kusanagi::assembly` 通过 `Place` 使用全部适配器；`probe::Capability` 的名字出现在 `doctor` 的 JSON 输出里；盒子协议同时约束 `http.rs`、`serve.rs` 与 `docs/box-protocol.md`，三者必须同一次改动。
+`kusanagi::assembly` 通过 `Place` 使用全部适配器；`certificate::Capability` 的名字出现在 `doctor` 的 JSON 输出里；盒子协议同时约束本 crate 的 `http.rs`、`kusanagi-box` 的 `serve.rs` 与 `docs/box-protocol.md`，三者必须同一次改动。
 
 ## 16 测试与约束
 

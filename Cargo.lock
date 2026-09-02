@@ -480,6 +480,7 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "getrandom 0.3.4",
+ "kusanagi-box",
  "kusanagi-chain",
  "kusanagi-grant",
  "kusanagi-kernel",
@@ -489,6 +490,16 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "kusanagi-box"
+version = "0.0.1"
+dependencies = [
+ "blake3",
+ "kusanagi-kernel",
+ "kusanagi-seal",
+ "kusanagi-waypoint",
 ]
 
 [[package]]

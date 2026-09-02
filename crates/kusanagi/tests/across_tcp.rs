@@ -24,7 +24,7 @@ mod common;
 
 use common::{Endpoint, invite_line, json, scratch};
 use kusanagi::{Request, SystemClock, Whose};
-use kusanagi_waypoint::Server;
+use kusanagi_box::Server;
 use std::net::TcpListener;
 
 /// Starts a host on a port the operating system picks, and returns its URL.
