@@ -26,6 +26,7 @@ module Kusanagi.Answer
   , Code (..)
   , Handle (..)
   , Invitation (..)
+  , unCode
   , decodeOutcome
   , decodeComplaint
   , heard
@@ -62,17 +63,26 @@ newtype Code = Code Text
   deriving stock (Eq, Ord, Show)
   deriving newtype (FromJSON)
 
+unCode :: Code -> Text
+unCode (Code code) = code
+
 -- | One segment, as a reader sees it.
+--
+-- Both renderings of the payload are taken, because the door promises two
+-- different things about them: `entryPayload` is the exact bytes in hexadecimal
+-- and is what a program reads, `entryText` is lossy and is for eyes. Parsing
+-- only one of them would leave the other free to disappear unnoticed.
 data Entry = Entry
   { entryIndex :: Word64
   , entryAddress :: Address
+  , entryPayload :: Text
   , entryText :: Text
   }
   deriving stock (Eq, Show)
 
 instance FromJSON Entry where
   parseJSON = withObject "Entry" $ \o ->
-    Entry <$> o .: "index" <*> o .: "address" <*> o .: "text"
+    Entry <$> o .: "index" <*> o .: "address" <*> o .: "payload" <*> o .: "text"
 
 -- | One channel, as it is listed.
 data Summary = Summary
@@ -93,7 +103,9 @@ data Outcome
   | Invited ChannelName Invitation Word64
   | Joined ChannelName Handle Handle
   | Sent ChannelName Word64 Address
-  | Read ChannelName (Maybe Word64) [Entry]
+  | -- | The channel, the handle that signed every segment reported, the
+    -- verified head, and the segments themselves.
+    Read ChannelName Handle (Maybe Word64) [Entry]
   | Revoked ChannelName Text
   | Examined Text Text
   | Hosted
@@ -108,7 +120,7 @@ instance FromJSON Outcome where
       "invited" -> Invited <$> o .: "name" <*> o .: "invite" <*> o .: "expires_at"
       "joined" -> Joined <$> o .: "name" <*> o .: "handle" <*> o .: "peer"
       "sent" -> Sent <$> o .: "name" <*> o .: "index" <*> o .: "address"
-      "read" -> Read <$> o .: "name" <*> o .: "height" <*> o .: "segments"
+      "read" -> Read <$> o .: "name" <*> o .: "author" <*> o .: "height" <*> o .: "segments"
       "revoked" -> Revoked <$> o .: "name" <*> o .: "step"
       "examined" -> Examined <$> o .: "waypoint" <*> o .: "tier"
       "hosted" -> pure Hosted
@@ -143,5 +155,5 @@ decodeComplaint = eitherDecodeStrict'
 
 -- | The texts of a read, in order. Anything else is not a read.
 heard :: Outcome -> Maybe [Text]
-heard (Read _ _ entries) = Just (map entryText entries)
+heard (Read _ _ _ entries) = Just (map entryText entries)
 heard _ = Nothing

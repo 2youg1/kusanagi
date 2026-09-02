@@ -27,10 +27,12 @@ pub fn render(outcome: &Outcome) -> String {
             name,
             invite,
             expires_at,
+            expires_in,
         } => format!(
-            "channel `{name}` is open, and expires at {expires_at}\n\n{invite}\n\n\
+            "channel `{name}` is open. This invitation lasts {}, until {expires_at}\n\n{invite}\n\n\
              hand that line over once. Anybody who holds it can join, so treat it \
-             the way you would treat a key."
+             the way you would treat a key.",
+            lasting(*expires_in)
         ),
         Outcome::Joined {
             name,
@@ -73,6 +75,20 @@ pub fn render(outcome: &Outcome) -> String {
     }
 }
 
+/// A span of seconds, in the largest unit that still says something.
+///
+/// A person reading a listing wants to know whether to act today; the exact
+/// instant is in `expires_at` for whatever needs to compute with it.
+fn lasting(seconds: u64) -> String {
+    match seconds {
+        0 => "no longer".to_owned(),
+        1..=90 => format!("{seconds}s"),
+        91..=5_400 => format!("{}m", seconds / 60),
+        5_401..=172_800 => format!("{}h", seconds / 3_600),
+        _ => format!("{}d", seconds / 86_400),
+    }
+}
+
 /// The channel table, one row each.
 ///
 /// The authority column is what a person opens this listing to see: whether the
@@ -80,13 +96,13 @@ pub fn render(outcome: &Outcome) -> String {
 fn listing(channels: &[Summary]) -> String {
     let mut lines = vec![format!("{} channel(s)", channels.len())];
     lines.extend(channels.iter().map(|channel| {
-        let authority = match (channel.refused, channel.expires_at) {
+        let authority = match (channel.refused, channel.expires_in) {
             (Some(code), _) => format!("nothing: {code}"),
             (None, None) => channel.can.join(","),
-            (None, Some(until)) => format!("{} until {until}", channel.can.join(",")),
+            (None, Some(left)) => format!("{} for {}", channel.can.join(","), lasting(left)),
         };
         let peer = match (&channel.peer, channel.peer_refused) {
-            (None, _) => "(nobody has joined yet)".to_owned(),
+            (None, _) => "(nobody met yet)".to_owned(),
             (Some(peer), None) => peer.clone(),
             (Some(peer), Some(code)) => format!("{peer} — cut off ({code})"),
         };
@@ -103,10 +119,13 @@ fn listing(channels: &[Summary]) -> String {
 
 /// One verified stream, header then payloads as text.
 fn stream(name: &str, author: &str, height: Option<u64>, segments: &[Entry]) -> String {
+    // The listing abbreviates a handle and so does this: the full one is in the
+    // `author` field for whatever needs to match on it.
+    let who: String = author.chars().take(12).collect();
     let header = match height {
-        None => format!("`{name}`: {author} has written nothing yet"),
+        None => format!("`{name}`: {who} has written nothing yet"),
         Some(height) => format!(
-            "`{name}`: {author} verifies to height {height} ({} segment(s))",
+            "`{name}`: {who} verifies to height {height} ({} segment(s))",
             segments.len()
         ),
     };

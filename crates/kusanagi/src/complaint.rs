@@ -53,9 +53,23 @@ pub enum Complaint {
         #[source]
         source: std::io::Error,
     },
-    /// A stored or supplied structure is not well formed.
+    /// A name the caller typed is not one a channel can have.
+    #[error("`{name}` is not a channel name: {reason}")]
+    BadName {
+        /// What was typed.
+        name: String,
+        /// Why it cannot be used.
+        reason: String,
+    },
+    /// A line offered as an invitation is not one.
+    #[error("that is not an invitation: {reason}")]
+    BadInvitation {
+        /// What was wrong with it.
+        reason: String,
+    },
+    /// Bytes already on this disk are not the structure they claim to be.
     #[error("{what} is malformed: {reason}")]
-    Malformed {
+    BadRecord {
         /// Which structure.
         what: &'static str,
         /// What was wrong with it.
@@ -139,7 +153,9 @@ impl From<SiteError> for Complaint {
     fn from(error: SiteError) -> Self {
         match error {
             SiteError::Local { action, source } => Self::Local { action, source },
-            SiteError::Malformed { what, reason } => Self::Malformed { what, reason },
+            SiteError::BadName { name, reason } => Self::BadName { name, reason },
+            SiteError::BadInvitation { reason } => Self::BadInvitation { reason },
+            SiteError::BadRecord { what, reason } => Self::BadRecord { what, reason },
             SiteError::UnknownChannel { name } => Self::UnknownChannel { name },
             SiteError::Grant(error) => Self::Grant(error),
         }
@@ -166,7 +182,12 @@ impl Complaint {
             Self::Grant(error) => error.code(),
             Self::Locator(error) => error.code(),
             Self::Local { .. } => "kusanagi.local",
-            Self::Malformed { .. } => "kusanagi.malformed",
+            // One published code for three shapes: what a caller does about a
+            // malformed thing depends on which thing, and that is the recovery's
+            // job. Splitting the code would break every script that matches it.
+            Self::BadName { .. } | Self::BadInvitation { .. } | Self::BadRecord { .. } => {
+                "kusanagi.malformed"
+            }
             Self::UnknownChannel { .. } => "kusanagi.unknown_channel",
             Self::ChannelExists { .. } => "kusanagi.channel_exists",
             Self::NoPeerYet { .. } => "kusanagi.no_peer_yet",
@@ -202,9 +223,15 @@ impl Complaint {
                 "check that --root names a writable directory, then run the command again"
                     .to_owned()
             }
-            Self::Malformed { .. } => {
+            Self::BadName { .. } => "pick a name of 1 to 32 characters from a-z, 0-9 and -, \
+                 and run the command again"
+                .to_owned(),
+            Self::BadInvitation { .. } => {
                 "copy the whole invitation, including the `kusanagi1:` prefix".to_owned()
             }
+            Self::BadRecord { .. } => "this file is not one this build can read; keep it and \
+                 report it, because a record written here should not fail to parse"
+                .to_owned(),
             Self::InviteSpent => {
                 "ask for a fresh invitation; each one admits exactly one endpoint".to_owned()
             }
@@ -279,9 +306,22 @@ mod tests {
                 "kusanagi.local",
             ),
             (
-                SiteError::Malformed {
-                    what: "a channel name",
+                SiteError::BadName {
+                    name: "with/slash".to_owned(),
                     reason: "has a slash in it".to_owned(),
+                },
+                "kusanagi.malformed",
+            ),
+            (
+                SiteError::BadInvitation {
+                    reason: "has no prefix".to_owned(),
+                },
+                "kusanagi.malformed",
+            ),
+            (
+                SiteError::BadRecord {
+                    what: "a channel",
+                    reason: "is from another version".to_owned(),
                 },
                 "kusanagi.malformed",
             ),
@@ -305,5 +345,19 @@ mod tests {
             name: "nobody".to_owned(),
         });
         assert!(complaint.render(false).contains("kusanagi channels"));
+    }
+
+    /// Advice about an invitation is for somebody who has one. Anything else
+    /// sends a confused caller to look for a thing they never had — which is
+    /// what the three kinds of malformed exist to prevent.
+    #[test]
+    fn a_mistyped_name_is_not_told_to_copy_an_invitation() {
+        let complaint = Complaint::from(SiteError::BadName {
+            name: "Upper".to_owned(),
+            reason: "has a capital in it".to_owned(),
+        });
+        let rendered = complaint.render(false);
+        assert!(!rendered.contains("kusanagi1:"), "{rendered}");
+        assert!(rendered.contains("a-z"), "{rendered}");
     }
 }

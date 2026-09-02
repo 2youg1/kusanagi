@@ -56,6 +56,20 @@ pub enum Locator {
     },
 }
 
+/// The scheme a string announces, if it announces one.
+///
+/// A scheme is letters, digits, `+`, `-` or `.` before `://`, which no path on
+/// any system this runs on begins with.
+fn announced(text: &str) -> Option<&str> {
+    let (scheme, _) = text.split_once("://")?;
+    let plausible = !scheme.is_empty()
+        && scheme.starts_with(|letter: char| letter.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '+' | '-' | '.'));
+    plausible.then_some(scheme)
+}
+
 impl FromStr for Locator {
     type Err = LocatorError;
 
@@ -73,6 +87,15 @@ impl FromStr for Locator {
         }
         if text.is_empty() {
             return Err(LocatorError::Empty);
+        }
+        // Anything else is a path — except a string that plainly announces a
+        // scheme. Treating `ftp://host` as a relative directory produced four
+        // measured failures about a filename, which is a true answer to a
+        // question nobody asked.
+        if let Some(scheme) = announced(text) {
+            return Err(LocatorError::UnknownScheme {
+                scheme: scheme.to_owned(),
+            });
         }
         Ok(Self::Directory(PathBuf::from(text)))
     }
@@ -103,7 +126,7 @@ fn parse_bucket(rest: &str) -> Result<Locator, LocatorError> {
 }
 
 /// Why a locator does not name a place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LocatorError {
     /// The locator is the empty string.
@@ -115,6 +138,12 @@ pub enum LocatorError {
     /// The locator names a bucket but no credentials were supplied.
     #[error("this bucket needs credentials; set KUSANAGI_S3_ACCESS_KEY and KUSANAGI_S3_SECRET_KEY")]
     CredentialsMissing,
+    /// The locator names a scheme this build does not speak.
+    #[error("`{scheme}://` is not a kind of waypoint this build knows")]
+    UnknownScheme {
+        /// The scheme as it was written.
+        scheme: String,
+    },
 }
 
 impl LocatorError {
@@ -125,6 +154,7 @@ impl LocatorError {
             Self::Empty => "locator.empty",
             Self::BucketIncomplete => "locator.bucket_incomplete",
             Self::CredentialsMissing => "locator.credentials_missing",
+            Self::UnknownScheme { .. } => "locator.unknown_scheme",
         }
     }
 }
@@ -254,6 +284,22 @@ impl Conditional for Place {
     reason = "test code"
 )]
 mod tests {
+    /// A scheme this build does not speak is refused rather than filed as a
+    /// relative directory. Measuring `ftp://host` as a directory answered four
+    /// questions about a filename that nobody had asked.
+    #[test]
+    fn a_scheme_this_build_does_not_know_is_refused() {
+        for text in ["ftp://host/bucket", "s4://host", "gopher://host/x"] {
+            let refused = text.parse::<Locator>().unwrap_err();
+            assert_eq!(refused.code(), "locator.unknown_scheme", "{text}");
+        }
+        // A path that merely contains a colon is still a path.
+        assert!(matches!(
+            "C:/drops".parse::<Locator>(),
+            Ok(Locator::Directory(_))
+        ));
+    }
+
     use super::{Locator, LocatorError, Place};
     use std::path::PathBuf;
     use std::str::FromStr as _;

@@ -111,7 +111,7 @@ impl Standing {
         match tag {
             STANDING_ROOT => Ok(Self::Root),
             STANDING_GRANTED => Ok(Self::Granted(Grant::from_canonical_bytes(&block)?)),
-            other => Err(SiteError::Malformed {
+            other => Err(SiteError::BadRecord {
                 what: "a standing",
                 reason: format!("a standing is root or granted, not {other}"),
             }),
@@ -174,13 +174,13 @@ impl Channel {
     ///
     /// # Errors
     ///
-    /// [`SiteError::Malformed`] for any shape this decoder does not recognise,
+    /// [`SiteError::BadRecord`] for any shape this decoder does not recognise,
     /// including a version it was not written for.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SiteError> {
         let mut reader = Reader::new(bytes);
         let version = reader.take_byte().map_err(malformed)?;
         if version != VERSION {
-            return Err(SiteError::Malformed {
+            return Err(SiteError::BadRecord {
                 what: "a channel",
                 reason: format!("this file is version {version}, and this build reads {VERSION}"),
             });
@@ -202,7 +202,7 @@ impl Channel {
                 standing: peer_standing,
             }),
             other => {
-                return Err(SiteError::Malformed {
+                return Err(SiteError::BadRecord {
                     what: "a channel",
                     reason: format!("a peer is present or absent, not {other}"),
                 });
@@ -210,7 +210,7 @@ impl Channel {
         };
 
         if reader.remaining() != 0 {
-            return Err(SiteError::Malformed {
+            return Err(SiteError::BadRecord {
                 what: "a channel",
                 reason: format!("{} byte(s) follow a complete record", reader.remaining()),
             });
@@ -246,14 +246,14 @@ pub(crate) fn take_block(reader: &mut Reader<'_>) -> Result<Vec<u8>, SiteError> 
 }
 
 pub(crate) fn take_text(reader: &mut Reader<'_>) -> Result<String, SiteError> {
-    String::from_utf8(take_block(reader)?).map_err(|error| SiteError::Malformed {
+    String::from_utf8(take_block(reader)?).map_err(|error| SiteError::BadRecord {
         what: "a locator",
         reason: error.to_string(),
     })
 }
 
 pub(crate) fn malformed(error: kusanagi_kernel::Incomplete) -> SiteError {
-    SiteError::Malformed {
+    SiteError::BadRecord {
         what: "a stored record",
         reason: error.to_string(),
     }

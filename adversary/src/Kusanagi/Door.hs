@@ -18,6 +18,7 @@ module Kusanagi.Door
   , Verb (..)
   , Abilities (..)
   , Lifetime (..)
+  , Typed (..)
   , both
   , sendOnly
   , readOnly
@@ -25,6 +26,8 @@ module Kusanagi.Door
   , seconds
   , discover
   , ask
+  , typed
+  , spoken
   ) where
 
 import Data.ByteString qualified as ByteString
@@ -35,7 +38,7 @@ import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
-import System.IO (hSetBinaryMode)
+import System.IO (hClose, hSetBinaryMode)
 import System.Process
   ( CreateProcess (..)
   , StdStream (..)
@@ -124,7 +127,7 @@ discover =
 -- against a program it can no longer read.
 ask :: Door -> FilePath -> Verb -> IO Answer
 ask (Door binary) site verb = do
-  (status, out, err) <- capture binary (argv site verb)
+  (status, out, err) <- capture binary (argv site verb) Nothing
   case status of
     ExitSuccess -> either (unreadable out) (pure . Accepted) (decodeOutcome out)
     ExitFailure _ -> either (unreadable err) (pure . Refused) (decodeComplaint err)
@@ -137,6 +140,28 @@ ask (Door binary) site verb = do
           <> show verb
           <> "\n  said:  "
           <> show (ByteString.take 400 raw)
+
+-- | What a command line did, before anything decides whether that was allowed.
+--
+-- `ask` turns this into an `Answer` and throws when it cannot. Typing badly on
+-- purpose needs the layer underneath: an exit code the door is not supposed to
+-- produce is exactly what a keyboard test is looking for, and it must be able to
+-- see one rather than crash on it.
+data Typed = Typed
+  { typedStatus :: ExitCode
+  , typedOut :: ByteString.ByteString
+  , typedErr :: ByteString.ByteString
+  }
+  deriving stock (Eq, Show)
+
+-- | Runs the binary with exactly these arguments, and these bytes on stdin.
+--
+-- No `--root`, no `--json`, nothing added: what is passed here is what a person
+-- typed or an agent spawned, character for character.
+typed :: Door -> [String] -> Maybe ByteString.ByteString -> IO Typed
+typed (Door binary) arguments input = do
+  (status, out, err) <- capture binary arguments input
+  pure (Typed status out err)
 
 argv :: FilePath -> Verb -> [String]
 argv site verb = ["--root", site, "--json"] <> spoken verb
@@ -174,15 +199,29 @@ listed abilities =
 -- Bytes rather than text: the recovery lines carry punctuation outside ASCII,
 -- and a locale-decoded stream would corrupt them on the way in and then fail to
 -- parse for a reason that has nothing to do with the product.
-capture :: FilePath -> [String] -> IO (ExitCode, ByteString.ByteString, ByteString.ByteString)
-capture binary arguments =
+capture ::
+  FilePath ->
+  [String] ->
+  Maybe ByteString.ByteString ->
+  IO (ExitCode, ByteString.ByteString, ByteString.ByteString)
+capture binary arguments input =
   withCreateProcess
-    (proc binary arguments) {std_in = NoStream, std_out = CreatePipe, std_err = CreatePipe}
-    $ \_ out err handle ->
+    (proc binary arguments)
+      { std_in = maybe NoStream (const CreatePipe) input
+      , std_out = CreatePipe
+      , std_err = CreatePipe
+      }
+    $ \stdin out err handle ->
       case (out, err) of
         (Just outHandle, Just errHandle) -> do
           hSetBinaryMode outHandle True
           hSetBinaryMode errHandle True
+          case (stdin, input) of
+            (Just inHandle, Just payload) -> do
+              hSetBinaryMode inHandle True
+              ByteString.hPut inHandle payload
+              hClose inHandle
+            _ -> pure ()
           reported <- ByteString.hGetContents outHandle
           complained <- ByteString.hGetContents errHandle
           status <- waitForProcess handle

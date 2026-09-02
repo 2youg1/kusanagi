@@ -25,6 +25,7 @@ library
     Kusanagi.Answer
     Kusanagi.Door
     Kusanagi.Ground
+    Kusanagi.Keyboard
     Kusanagi.Model
     Kusanagi.Regression
 
@@ -50,6 +51,7 @@ test-suite adversary
   default-language: GHC2021
   build-depends:
     , base
+    , bytestring
     , containers
     , directory
     , filepath

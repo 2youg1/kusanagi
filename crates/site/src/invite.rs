@@ -36,10 +36,21 @@ use kusanagi_grant::Grant;
 use kusanagi_kernel::{Handle, Hex, Reader, Signer, unhex};
 use kusanagi_seal::Secret;
 
-use crate::channel::{malformed, put_block, take_block, take_text};
+use crate::channel::{put_block, take_block, take_text};
 use crate::error::SiteError;
 
 const VERSION: u8 = 1;
+
+/// An invitation that ends in the middle of a field.
+///
+/// Its own function rather than the one `channel.rs` uses, because the same
+/// truncation means two different things: half a record on disk is damage, and
+/// half an invitation is a paste that was cut short.
+fn mangled(error: kusanagi_kernel::Incomplete) -> SiteError {
+    SiteError::BadInvitation {
+        reason: error.to_string(),
+    }
+}
 
 /// The one cipher suite every endpoint must implement.
 ///
@@ -77,24 +88,22 @@ impl Invite {
     ///
     /// # Errors
     ///
-    /// [`SiteError::Malformed`] when the text is not an invitation this build
+    /// [`SiteError::BadInvitation`] when the text is not an invitation this build
     /// understands, including one for a different cipher suite.
     pub fn parse(text: &str) -> Result<Self, SiteError> {
         let body = text
             .trim()
             .strip_prefix(PREFIX)
-            .ok_or(SiteError::Malformed {
-                what: "an invitation",
+            .ok_or(SiteError::BadInvitation {
                 reason: format!("an invitation starts with `{PREFIX}`"),
             })?;
         let bytes = unhex(body)?;
 
         let mut reader = Reader::new(&bytes);
-        let version = reader.take_byte().map_err(malformed)?;
-        let suite = reader.take_byte().map_err(malformed)?;
+        let version = reader.take_byte().map_err(mangled)?;
+        let suite = reader.take_byte().map_err(mangled)?;
         if version != VERSION || suite != BASELINE_SUITE {
-            return Err(SiteError::Malformed {
-                what: "an invitation",
+            return Err(SiteError::BadInvitation {
                 reason: format!(
                     "this invitation is version {version} suite {suite}; \
                      this build speaks version {VERSION} suite {BASELINE_SUITE}"
@@ -102,15 +111,14 @@ impl Invite {
             });
         }
 
-        let inviter = Handle::from_bytes(reader.take_array::<32>().map_err(malformed)?);
-        let secret = Secret::from_bytes(reader.take_array::<32>().map_err(malformed)?);
-        let bearer_seed = reader.take_array::<32>().map_err(malformed)?;
+        let inviter = Handle::from_bytes(reader.take_array::<32>().map_err(mangled)?);
+        let secret = Secret::from_bytes(reader.take_array::<32>().map_err(mangled)?);
+        let bearer_seed = reader.take_array::<32>().map_err(mangled)?;
         let locator = take_text(&mut reader)?;
         let grant = Grant::from_canonical_bytes(&take_block(&mut reader)?)?;
 
         if reader.remaining() != 0 {
-            return Err(SiteError::Malformed {
-                what: "an invitation",
+            return Err(SiteError::BadInvitation {
                 reason: format!(
                     "{} byte(s) follow a complete invitation",
                     reader.remaining()

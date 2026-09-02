@@ -81,6 +81,12 @@ pub struct Summary {
     ///
     /// Absent for a root authority, which nobody issued and nothing expires.
     pub(crate) expires_at: Option<u64>,
+    /// How long that is from the instant this command sampled.
+    ///
+    /// The same fact as `expires_at` in the frame a reader is in. Both are
+    /// reported because they answer different questions: one survives being
+    /// written down, the other can be acted on without a clock.
+    pub(crate) expires_in: Option<u64>,
     /// The stable code that says why `can` is empty, absent when it is not.
     pub(crate) refused: Option<&'static str>,
     /// The code a read of the peer's stream would fail with, absent when it
@@ -126,6 +132,8 @@ pub enum Outcome {
         invite: String,
         /// When it stops being accepted, in seconds since the Unix epoch.
         expires_at: u64,
+        /// How many seconds that is from now.
+        expires_in: u64,
     },
     /// An invitation was accepted.
     Joined {
@@ -257,6 +265,7 @@ impl Outcome {
                 .err()
                 .map(|error| error.code())
         });
+        let expires_in = expires_at.map(|at| at.saturating_sub(now.as_unix_seconds()));
         Summary {
             name: name.to_owned(),
             waypoint: channel.locator.clone(),
@@ -267,6 +276,7 @@ impl Outcome {
             peer: channel.peer.as_ref().map(|peer| abbreviate(&peer.handle)),
             can,
             expires_at,
+            expires_in,
             refused,
             peer_refused,
         }

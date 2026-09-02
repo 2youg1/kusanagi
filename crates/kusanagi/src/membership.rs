@@ -72,6 +72,7 @@ pub(crate) fn invite(
         name: name.to_owned(),
         invite: invitation.to_string(),
         expires_at: expires_at.as_unix_seconds(),
+        expires_in: lifetime,
     })
 }
 

@@ -56,7 +56,7 @@ impl Site {
     /// # Errors
     ///
     /// [`SiteError::Local`] when the file exists and cannot be read, and
-    /// [`SiteError::Malformed`] when it is not a seed.
+    /// [`SiteError::BadRecord`] when it is not a seed.
     pub fn identity(&self) -> Result<Option<Signer>, SiteError> {
         let path = self.root.join("identity");
         match fs::read(&path) {
@@ -67,7 +67,7 @@ impl Site {
             }),
             Ok(bytes) => {
                 let seed =
-                    <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| SiteError::Malformed {
+                    <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| SiteError::BadRecord {
                         what: "an identity file",
                         reason: format!("an identity is 32 bytes; this one is {}", bytes.len()),
                     })?;
@@ -118,7 +118,7 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`SiteError::Malformed`] when the name is not usable as one.
+    /// [`SiteError::BadName`] when the name is not usable as one.
     pub fn holds(&self, name: &str) -> Result<bool, SiteError> {
         Ok(self.channel_path(name)?.exists())
     }
@@ -210,7 +210,7 @@ impl Site {
     /// # Errors
     ///
     /// [`SiteError::Local`] when the list cannot be read, and
-    /// [`SiteError::Malformed`] when a line is not a step identifier.
+    /// [`SiteError::BadRecord`] when a line is not a step identifier.
     pub fn revocations(&self) -> Result<Revocations, SiteError> {
         let path = self.root.join("revoked");
         let text = match fs::read_to_string(&path) {
@@ -276,11 +276,9 @@ fn check_name(name: &str) -> Result<(), SiteError> {
     if usable {
         return Ok(());
     }
-    Err(SiteError::Malformed {
-        what: "a channel name",
-        reason: format!(
-            "a name is 1 to {MAX_NAME} characters of a-z, 0-9 and -, and `{name}` is not"
-        ),
+    Err(SiteError::BadName {
+        name: name.to_owned(),
+        reason: format!("a name is 1 to {MAX_NAME} characters of a-z, 0-9 and -"),
     })
 }
 

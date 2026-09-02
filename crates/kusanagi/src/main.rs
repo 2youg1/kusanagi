@@ -14,14 +14,18 @@ use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::error::ErrorKind;
+use clap::{CommandFactory as _, Parser, Subcommand};
 use kusanagi::{Complaint, Request, Site, Whose};
 use kusanagi_grant::{Abilities, Ability};
 use kusanagi_kernel::MAX_PAYLOAD;
 
 /// A decentralised collaboration network for agents.
 #[derive(Parser, Debug)]
-#[command(name = "kusanagi", version, about, long_about = None)]
+// `bin_name` is spelled rather than taken from argv[0], so that the usage lines
+// a person copies say `kusanagi` on every platform instead of `kusanagi.exe` on
+// one of them.
+#[command(name = "kusanagi", bin_name = "kusanagi", version, about, long_about = None)]
 struct Cli {
     /// Where this endpoint keeps its identity and channels.
     #[arg(long, global = true, default_value = ".kusanagi")]
@@ -32,7 +36,7 @@ struct Cli {
     json: bool,
 
     #[command(subcommand)]
-    command: Verb,
+    command: Option<Verb>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -208,9 +212,80 @@ fn request(verb: Verb) -> Result<Request, Complaint> {
     })
 }
 
+/// Whether `--json` was asked for, read from the raw arguments.
+///
+/// Used only when parsing failed, which is exactly when the parsed value is not
+/// available and the caller's choice of rendering still has to be honoured. An
+/// agent that mistypes a flag must not be answered in prose.
+fn asked_for_json() -> bool {
+    std::env::args().any(|argument| argument == "--json")
+}
+
+/// Turns a parse failure into the one shape every other failure has.
+///
+/// Help and version are not failures: clap reports them as errors because they
+/// stop the program, so they are printed as asked and the program leaves
+/// successfully. Everything else becomes a [`Complaint`] with a stable code and
+/// a way out, because a caller that cannot read the answer has not been
+/// answered — and the caller here is usually a program.
+fn misread(error: &clap::Error) -> Result<String, Complaint> {
+    if matches!(
+        error.kind(),
+        ErrorKind::DisplayHelp
+            | ErrorKind::DisplayVersion
+            | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+    ) {
+        return Ok(error.render().to_string());
+    }
+    let rendered = error.render().to_string();
+    // Clap's own text carries the useful part — which argument, and what it
+    // resembles — followed by a usage block this door replaces with a command.
+    let said = rendered
+        .split("\nUsage:")
+        .next()
+        .unwrap_or(&rendered)
+        .trim()
+        .trim_start_matches("error: ");
+    // Clap separates its tip with a blank line, which would leave a hole in the
+    // middle of a three-line complaint. The tip itself is kept: knowing that
+    // `read` exists is most of the way out of having typed `rea`.
+    let reason: Vec<&str> = said
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    Err(Complaint::Argument {
+        what: "the command line",
+        reason: format!(
+            "is not one this program can act on: {}",
+            reason.join("\n  ")
+        ),
+        instead: "run `kusanagi --help` for the verbs, or `kusanagi <VERB> --help` for one verb's flags",
+    })
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let request = match request(cli.command) {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => match misread(&error) {
+            // Help and version go to stdout, where a result goes.
+            Ok(text) => {
+                print!("{text}");
+                return ExitCode::SUCCESS;
+            }
+            Err(complaint) => {
+                eprintln!("{}", complaint.render(asked_for_json()));
+                return ExitCode::FAILURE;
+            }
+        },
+    };
+    // A command line with no verb is a question, not a failure: it is what a
+    // person types to find out what this program does.
+    let Some(command) = cli.command else {
+        print!("{}", Cli::command().render_help());
+        return ExitCode::SUCCESS;
+    };
+    let request = match request(command) {
         Ok(request) => request,
         // An argument this program cannot act on is a failure like any other, so
         // it leaves by the same door: a stable code and the way forward, in

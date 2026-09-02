@@ -32,9 +32,27 @@ pub enum SiteError {
         #[source]
         source: std::io::Error,
     },
-    /// Stored or supplied bytes are not the structure they claim to be.
+    /// A name this endpoint was asked to use is not one it can use.
+    ///
+    /// Apart from the two below because the way out is different: a name is
+    /// something the caller typed and can retype, and telling them anything
+    /// about invitations would send them looking for a thing they never had.
+    #[error("a channel name is malformed: {reason}")]
+    BadName {
+        /// What was typed.
+        name: String,
+        /// Why it cannot be used.
+        reason: String,
+    },
+    /// A line offered as an invitation is not one.
+    #[error("an invitation is malformed: {reason}")]
+    BadInvitation {
+        /// What was wrong with it.
+        reason: String,
+    },
+    /// Bytes already on this disk are not the structure they claim to be.
     #[error("{what} is malformed: {reason}")]
-    Malformed {
+    BadRecord {
         /// Which structure.
         what: &'static str,
         /// What was wrong with it.
@@ -53,8 +71,7 @@ pub enum SiteError {
 
 impl From<HexError> for SiteError {
     fn from(error: HexError) -> Self {
-        Self::Malformed {
-            what: "an invitation",
+        Self::BadInvitation {
             reason: error.to_string(),
         }
     }
@@ -62,8 +79,8 @@ impl From<HexError> for SiteError {
 
 impl From<DigestParseError> for SiteError {
     fn from(error: DigestParseError) -> Self {
-        Self::Malformed {
-            what: "an identifier",
+        Self::BadRecord {
+            what: "the revocation list",
             reason: error.to_string(),
         }
     }

@@ -199,6 +199,10 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 | stdin 给了零字节 | 照发。空载荷是合法的段，拒绝它需要一条没人写过的规则 |
 | `--after H` 中 H ≥ 链头 | `segments` 为空而 `height` 照报——这正是轮询者要的那一条回答 |
 | `--can` 里出现不认识的词 | `kusanagi.argument`，而不是静默地少授予一项 |
+| **命令行 clap 都解析不了**（`-root`、`rea`、缺子命令） | `kusanagi.argument`，退出码 1，`--json` 时仍是 JSON。**这条是 `adversary/` 的键盘性质找出来的**：原先它走 clap 自己的出口，退出码 2 且只有散文 |
+| `--help` / `--version` | 不是失败：照打到 stdout，退出码 0 |
+| 不带任何动词 | 打印帮助，退出码 0。人是在提问，不是在犯错 |
+| waypoint 写成 `ftp://…` 这类不认识的 scheme | `locator.unknown_scheme`，而不是当成一个相对目录去实测 |
 | `forget` 一个不存在的通道 | `kusanagi.unknown_channel` |
 | `forget` 之后再用同名 `join` | 允许。名字是本地的，忘掉即空出 |
 | `read --mine` 而自己一段都没写 | `height` 为 `null`，`segments` 为空，不是错误 |
@@ -207,7 +211,11 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 ## 12 错误处理
 
-`Complaint` 十六个变体，每个带稳定码与**恢复命令**。四条与众不同：
+`Complaint` 十八个变体，每个带稳定码与**恢复命令**。「格式不对」是三个变体而不是一个——
+`BadName`（你打的名字）、`BadInvitation`（你贴的那行）、`BadRecord`（你盘上的文件）——
+三者**共用已公开的稳定码 `kusanagi.malformed`**，因为码是脚本匹配的东西，
+而恢复命令必须各说各的：把名字打错的人被告知去拷贝邀请码，是把他送进另一个错误。
+（同样由键盘性质找出。）四条与众不同：
 
 - `kusanagi.argument` 是唯一把恢复文字**随变体带进来**的（`instead` 字段）。其他变体的恢复由失败种类推出，而一个参数错在哪釬只有写下那个旗标的地方知道——这与 `complaint.rs` 开头的理由是同一条，只是又往上一层。
 

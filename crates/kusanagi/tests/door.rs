@@ -47,6 +47,18 @@ fn door(root: &Path, arguments: &[&str], fed: &[u8]) -> Output {
     child.wait_with_output().expect("the child did not finish")
 }
 
+/// Runs the binary with exactly these arguments and nothing added.
+///
+/// `door` speaks for a caller who got the command line right. This one is for a
+/// caller who did not, which is the case that has to leave by the same door.
+fn raw(arguments: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_kusanagi"))
+        .args(arguments)
+        .stdin(Stdio::null())
+        .output()
+        .expect("the binary would not start")
+}
+
 fn reported(output: &Output) -> serde_json::Value {
     assert!(
         output.status.success(),
@@ -114,6 +126,32 @@ fn an_argument_this_program_cannot_act_on_is_refused_with_a_code() {
             .is_some_and(|recover| recover.contains("send")),
         "the recovery does not say what to pass instead"
     );
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+/// A command line this program cannot act on leaves by the door every other
+/// failure leaves by.
+///
+/// Found by `adversary/`: one missed key on `--root` used to reach clap's own
+/// error path, which exits with a code this door does not define and prints
+/// prose even when the caller asked for JSON. An agent cannot act on that.
+#[test]
+fn a_mistyped_flag_is_a_complaint_like_any_other() {
+    let ground = scratch("mistyped");
+    let refused = raw(&["--json", "-root", &ground.display().to_string(), "id"]);
+    assert_eq!(refused.status.code(), Some(1), "exit code");
+
+    let complaint: serde_json::Value = serde_json::from_slice(&refused.stderr)
+        .expect("a refusal that a program cannot parse is not an answer");
+    assert_eq!(complaint["code"], "kusanagi.argument");
+    assert!(!complaint["recover"].as_str().unwrap_or_default().is_empty());
+    assert!(refused.stdout.is_empty(), "stdout carried something");
+
+    // Help is not a failure: it is what a person asks for, and it succeeds.
+    let asked = raw(&["--help"]);
+    assert_eq!(asked.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&asked.stdout).contains("forget"));
 
     std::fs::remove_dir_all(&ground).ok();
 }

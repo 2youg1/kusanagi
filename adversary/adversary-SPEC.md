@@ -15,6 +15,7 @@
 | U3 模型 | `StateModel` / `RunModel`：动作集合与后置条件 | 随机轨迹全通过；把 revoke 变成 no-op 则立即判红 |
 | U4 定向对抗 | dynamic logic：任意前缀 ＋ 一次撤销 ＋ 任意后缀 | 该性质在随机轨迹上成立，且撤销后的每一次读都被拒 |
 | U5 回归 | 反例最小化后渲染成 Rust `#[test]` | 渲染结果与仓内那个 Rust 文件逐字节相同，而该文件由 `cargo test` 编译运行 |
+| U6 键盘与引导 | `Keyboard`：按键级的错字、粘贴损伤、管道载荷 | 四条关系性质，见 §2 第 6–9 条 |
 
 **不负责**：任何规则的再实现（地址派生、签名、格上的交）；任何 Rust 侧的构建闸门；任何随产品交付的东西。三者中任何一条被违反，本目录应当被删除而不是被修补。
 
@@ -25,6 +26,24 @@
 3. 模型不预测任何地址、摘要、签名或密文。凡断言只谈**两条轨迹之间的关系**。
 4. U5 渲染出的 Rust 源码与 `crates/kusanagi/tests/from_adversary.rs` 逐字节相同。
 5. **咬得动的证据**：`Model.hs` 的 `revocationIsFinal` 在把 `Cut` 从模型里摘掉后必须失败。一个永远为真的性质与没有性质等价。
+
+### U6 的四条（数字接 §2 上文）
+
+人不是通过 `Verb` 调用这个程序的，人是通过键盘。以下四条**全部是关系**，
+没有一条预测输出：
+
+6. **两扇门说同一件事。** 任意命令行（包括打错的），若被拒，则加上 `--json` 后
+   stderr **必须能解成** `{error, code, recover}`。一个只对人说话的失败，对代理而言等于没有发生。
+7. **引导是可执行的。** `recover` 里出现的每一条 `kusanagi …` 命令，拿去真的跑，
+   **不得以 `kusanagi.argument` 失败**。叫不出来的命令不是引导，是安慰。
+8. **引导不谈你没给的东西。** 若 `recover` 提到 `kusanagi1:` 那行邀请，则本次输入里
+   **必须真的有一个邀请参数**。把名字写错的人被告知去拷邀请码，是把他送进另一个错误。
+9. **代理的字节原样进出。** 任意字节串经 stdin 进、经 `payload` 十六进制出，
+   逐字节相等；包括换行、引号、反斜杠、非 UTF-8 与零字节。
+
+另外，每一条回答都只允许两种形状：**退出码 0 且 stdout 是一个 `Outcome`**，或
+**退出码 1 且 stderr 是一个带稳定码与恢复命令的 `Complaint`**。其余退出码（包括 clap 自己的 2）
+都是门上的一个缺口。**形状可以断言，内容不可以**：这里不枚举错误码表，枚举一份就是在仓外养第二份契约。
 
 ## 3 假设与歧义
 
@@ -54,6 +73,20 @@ var1 <- Invite Alice "one" Forever {send,read}
 
 **处置**：在 Rust 侧 `join` 拒绝 `inviter == 自己`，新错误码 `kusanagi.own_invitation`；模型学会这一条拒绝；最小化后的轨迹渲染成 `crates/kusanagi/tests/from_adversary.rs`。知识已经迁到 Rust，Haskell 这边只留下那条性质。
 
+### U6 首次运行的两处发现
+
+1. **一次漏按就绕过了整扇门。** `-root`（少一个横杠）走的是 clap 自己的出口：退出码 2、
+   只有散文、`--json` 无效。对代理而言，那等于这次失败没有发生过。
+   处置：`main.rs` 改用 `try_parse`，把解析失败译成 `Complaint::Argument`；
+   `--help`/`--version`/无动词照旧走 stdout 且退出码 0。回归测试落在
+   `crates/kusanagi/tests/door.rs::a_mistyped_flag_is_a_complaint_like_any_other`。
+2. **引导指向了用户没有的东西。** 把通道名打错（`--name BAD`）会被告知
+   「copy the whole invitation, including the `kusanagi1:` prefix」——他手里从来没有邀请码。
+   处置：`SiteError` 把「格式不对」拆成 `BadName` / `BadInvitation` / `BadRecord`，
+   稳定码不变，恢复命令各说各的。
+
+两处都符合 §4 的规矩：**Haskell 找，Rust 记**。
+
 ## 5 权威信源
 
 | 事实 | 来源 |
@@ -81,10 +114,13 @@ adversary.cabal            工程定义；不被任何 Rust 构建读到
 src/Kusanagi/Answer.hs     门的 schema 的代数镜像。只解析，不判断
 src/Kusanagi/Door.hs       唯一知道二进制存在的地方
 src/Kusanagi/Ground.hs     一次性场地，以及宿主的敌意
+src/Kusanagi/Keyboard.hs   人怎么敲，代理怎么管道；以及引导能不能被照做
 src/Kusanagi/Model.hs      状态模型、后置条件、定向对抗场景
 src/Kusanagi/Regression.hs 反例 → Rust #[test]
 test/Main.hs               tasty 入口
 ```
+
+`Keyboard` 与 `Model` 互不相识：一个敲字符，一个走动词。两者只共用 `Door` 与 `Ground`。
 
 依赖单向：`Model` → `Door` → `Answer`，`Model` → `Ground`，`Regression` 只依赖动作类型。`Answer` 不 import 任何本工程模块。
 
@@ -103,6 +139,12 @@ data Outcome  = Identity Handle | Listing [Summary] | Invited ChannelName Invita
 newtype Door = Door FilePath
 discover :: IO (Maybe Door)                       -- KUSANAGI_BIN，或 target/{debug,release}
 ask      :: Door -> FilePath -> Verb -> IO Answer -- site 根目录 → 动词 → 回答
+type  :: Door -> [String] -> Maybe ByteString -> IO Typed  -- 原始 argv 与 stdin
+
+-- Keyboard.hs —— 人怎么敲
+data Slip = Slip { slipName :: String, slipHit :: String -> String }
+fumbled  :: [String] -> Gen [String]              -- 把一条命令行敲坏
+advice   :: Text -> [[String]]                    -- 从 recover 里抽出可执行命令
 
 -- Ground.hs —— 在哪里问，以及宿主怎么撒谎
 withGround :: (Ground -> IO a) -> IO a
@@ -199,7 +241,9 @@ render    :: Text -> Actions World -> Text           -- 轨迹 → 一个 Rust #
 
 ## 16 测试与约束
 
-四组，按「坏得越早越省时间」排序：渲染对拍（U5，毫秒级）、随机轨迹加宿主视角的不可关联断言（U3）、定向撤销（U4）、以及宿主最简单的那句谎话——改掉一个字节，读必须被拒。约束是 §2 第 5 条——**咬得动**必须被演示过，而不是被相信。
+五组，按「坏得越早越省时间」排序：渲染对拍（U5，毫秒级）、**键盘与引导（U6，秒级）**、
+随机轨迹加宿主视角的不可关联断言（U3）、定向撤销（U4）、以及宿主最简单的那句谎话——改掉一个字节，读必须被拒。
+约束是 §2 第 5 条——**咬得动**必须被演示过，而不是被相信。U6 首次运行就咬到了两处，记在 §4。
 
 ## 17 文档同步
 

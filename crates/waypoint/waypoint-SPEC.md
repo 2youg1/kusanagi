@@ -145,6 +145,7 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 | 写一个已占用地址 | `PutOutcome::AlreadyPresent`（不是错误） |
 | 八线程抢同一地址 | 恰有一个 `Stored` |
 | 根目录其实是一个文件 | `waypoint.io` |
+| locator 写成不认识的 scheme（`ftp://…`） | `LocatorError::UnknownScheme`，码 `locator.unknown_scheme`。**不得当成相对目录**：那会让 `doctor` 去实测一个文件名，给出四条与问题无关的 BROKEN |
 | 盒子返回 428 | `WaypointError::OverwriteNotRefused` |
 | 盒子返回未知状态码 | `UnusableAddress`，把状态码写进 reason |
 | 请求头超过 8 KiB / body 超过 1 MiB | `400` |

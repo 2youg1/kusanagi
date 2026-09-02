@@ -237,6 +237,7 @@ most likely to meet:
 | `grant.forbidden` | you were not granted that ability |
 | `seal.rejected` | the bytes on the host are not what this channel wrote. **Keep them.** This is damage or interference, not a transient error |
 | `waypoint.io` | the host could not be reached; try `kusanagi doctor <waypoint>` |
+| `locator.unknown_scheme` | a waypoint is a path, an `http://` url, or `s3://…`; nothing else is a kind of host this build knows |
 | `kusanagi.unknown_channel` | no channel of that name here; `kusanagi channels` lists what is |
 | `kusanagi.cannot_revoke_root` | your peer invited you, so there is nothing above them to revoke; `kusanagi forget --channel N` leaves instead |
 

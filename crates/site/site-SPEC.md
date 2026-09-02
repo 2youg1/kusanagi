@@ -88,7 +88,8 @@ impl Site {
     pub fn revoke(&self, step: StepId) -> Result<(), SiteError>;
 }
 
-pub enum SiteError { Local{..}, Malformed{..}, UnknownChannel{..}, Grant(GrantError) }
+pub enum SiteError { Local{..}, BadName{..}, BadInvitation{..}, BadRecord{..},
+                     UnknownChannel{..}, Grant(GrantError) }
 ```
 
 **`SiteError` 特意不是 `#[non_exhaustive]`。** 门逐个变体地给码与恢复命令；
@@ -122,17 +123,21 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 |---|---|
 | 尚无身份就读 | `Ok(None)`，不是错误 |
 | 重复 `adopt` | 保留原身份 |
-| 名字含 `../`、`/`、大写、空格 | `SiteError::Malformed` |
-| 通道文件版本不认识 | `SiteError::Malformed`，拒绝而不是猜 |
+| 名字含 `../`、`/`、大写、空格 | `SiteError::BadName` |
+| 通道文件版本不认识 | `SiteError::BadRecord`，拒绝而不是猜 |
 | 通道记录尾随字节 | 同上 |
-| 撤销表某行不是 StepId | `SiteError::Malformed`（经 `DigestParseError`） |
-| 邀请缺 `kusanagi1:` 前缀 | `SiteError::Malformed` |
-| 邀请套件字节非 0 | `SiteError::Malformed`，指出本 build 说哪个版本 |
+| 撤销表某行不是 StepId | `SiteError::BadRecord`（经 `DigestParseError`） |
+| 邀请缺 `kusanagi1:` 前缀 | `SiteError::BadInvitation` |
+| 邀请套件字节非 0 | `SiteError::BadInvitation`，指出本 build 说哪个版本 |
 
 ## 12 错误处理
 
-三个变体加一个透传：`Local`（操作系统拒绝）、`Malformed`（字节不是它声称的结构）、
+五个变体加一个透传：`Local`（操作系统拒绝）、`BadName`（你打的名字不能用）、
+`BadInvitation`（你贴的那行不是邀请）、`BadRecord`（盘上的字节不是它声称的结构）、
 `UnknownChannel`（要的东西不在这里）、`Grant`（记录里的 grant 不解码）。
+
+**「格式不对」拆成三个而不是一个，是因为出路有三条**：名字重打一次，邀请重拷一次，
+盘上的记录既不能重打也不能重拷——它要被留证。三者在门那侧共用稳定码 `kusanagi.malformed`。
 恢复命令一概不在这里；见 §3。
 
 ## 13 依赖选型

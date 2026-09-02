@@ -82,7 +82,7 @@ fn a_name_that_could_escape_the_directory_is_refused() {
     let site = scratch("names");
     for bad in ["../escape", "with/slash", "Upper", "", "with space"] {
         assert!(
-            matches!(site.channel(bad), Err(SiteError::Malformed { .. })),
+            matches!(site.channel(bad), Err(SiteError::BadName { .. })),
             "`{bad}` was accepted as a channel name"
         );
     }

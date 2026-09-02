@@ -23,7 +23,9 @@ import Data.Text.IO qualified as Text
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>))
-import Test.QuickCheck (Property, ioProperty, withNumTests)
+import Data.ByteString qualified as ByteString
+import Data.Word (Word8)
+import Test.QuickCheck (Property, counterexample, ioProperty, property, withNumTests)
 import Test.QuickCheck.DynamicLogic (forAllDL)
 import Test.QuickCheck.Monadic (PropertyM, monadic, run)
 import Test.QuickCheck.StateModel (Actions, Any (..), mkVar, runActions)
@@ -36,6 +38,17 @@ import Kusanagi.Answer qualified as Answer
 import Kusanagi.Door (Door)
 import Kusanagi.Door qualified as Door
 import Kusanagi.Ground
+import Kusanagi.Keyboard
+  ( Bench (..)
+  , Choice
+  , Typing (..)
+  , adviceIsAboutWhatWasGiven
+  , adviceIsExecutable
+  , bytesSurviveTheTrip
+  , prepare
+  , shapeIsAnswerable
+  , typingOf
+  )
 import Kusanagi.Model
 import Kusanagi.Regression (coherent, render, sequenced)
 
@@ -52,10 +65,56 @@ properties door =
   testGroup
     "adversary"
     [ testCase "the committed Rust test is what this adversary renders" deliverable
+    , testProperty "a mistyped line is answerable, and its advice can be taken" (keyboard door)
+    , testProperty "what an agent pipes in comes back byte for byte" (piping door)
     , testProperty "what one endpoint says is what the other hears" (traces door)
     , testProperty "a revoked peer is never readable again" (revocation door)
     , testProperty "a corrupted object is refused, not believed" (tampering door)
     ]
+
+-- | Somebody types the line from the README with one finger in the wrong place.
+--
+-- Three things are asserted about whatever comes back, and none of them is an
+-- expected output: it has one of the two shapes this door defines, every command
+-- its advice names can be taken, and the advice is about something that was
+-- actually supplied.
+keyboard :: Door -> Choice -> Property
+keyboard door choice = withNumTests 24 . ioProperty . withGround $ \ground -> do
+  bench <- benchOn door ground
+  let typing = typingOf bench choice
+  answered <- shapeIsAnswerable door (keyed typing)
+  case answered of
+    Left reason -> pure (counterexample (typed typing reason) False)
+    Right (Answer.Accepted _) -> pure (property True)
+    Right (Answer.Refused complaint) -> do
+      executable <- adviceIsExecutable door (benchSite bench) complaint
+      let about = adviceIsAboutWhatWasGiven (keyed typing) complaint
+      pure $ case (executable, about) of
+        (Left reason, _) -> counterexample (typed typing reason) False
+        (_, Left reason) -> counterexample (typed typing reason) False
+        _ -> property True
+  where
+    typed typing reason =
+      reason
+        <> "\n  meant:  kusanagi "
+        <> unwords (intended typing)
+        <> "\n  typed:  kusanagi "
+        <> unwords (keyed typing)
+        <> "\n  slip:   "
+        <> show (slipped typing)
+
+-- | An agent sends bytes it did not choose the shape of.
+piping :: Door -> [Word8] -> Property
+piping door bytes = withNumTests 12 . ioProperty . withGround $ \ground -> do
+  bench <- benchOn door ground
+  outcome <- bytesSurviveTheTrip door (benchSite bench) (benchChannel bench) (ByteString.pack bytes)
+  pure $ case outcome of
+    Left reason -> counterexample reason False
+    Right () -> property True
+
+benchOn :: Door -> Ground -> IO Bench
+benchOn door ground =
+  prepare door (siteOf ground Alice) (siteOf ground Bob) (waypoint ground)
 
 -- | Rule four, made mechanical.
 --
@@ -132,7 +191,7 @@ tampering door = withNumTests 1 . ioProperty . withGround $ \ground -> do
         other -> fail ("nothing was written to corrupt: " <> show other)
   before <- at Alice (Door.Read one)
   case before of
-    Answer.Accepted (Answer.Read _ _ [_]) -> do
+    Answer.Accepted (Answer.Read _ _ _ [_]) -> do
       corrupt ground address
       after <- at Alice (Door.Read one)
       pure (refused after)
