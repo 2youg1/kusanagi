@@ -119,12 +119,15 @@ preamble name actions =
 imports :: Actions World -> [Text]
 imports actions =
   [taken "common" helpers | not (null helpers)]
-    <> ["use kusanagi::Request;"]
+    <> [taken "kusanagi" doors]
     <> [taken "kusanagi_grant" grants | not (null grants)]
   where
     -- Braces around a single name are what rustfmt takes away again.
     taken from [only] = "use " <> from <> "::" <> only <> ";"
     taken from names = "use " <> from <> "::{" <> Text.intercalate ", " names <> "};"
+    -- `Whose` appears only when a read does, for the same reason as every other
+    -- name here: an unused import is a file the Rust gate refuses.
+    doors = ["Request"] <> ["Whose" | reading actions]
     helpers =
       concat
         [ ["Endpoint" | not (null (attending actions))]
@@ -237,9 +240,12 @@ fields = \case
     [ "name: " <> quoted (spelled name) <> ".to_owned(),"
     , "payload: b" <> quoted text <> ".to_vec(),"
     ]
+  -- The trace reads what the other endpoint wrote, which is what `Whose::Peer`
+  -- spells now that an endpoint can also read its own stream back.
   Read _ name ->
     [ "name: " <> quoted (spelled name) <> ".to_owned(),"
     , "after: None,"
+    , "whose: Whose::Peer,"
     ]
   Revoke _ name -> ["name: " <> quoted (spelled name) <> ".to_owned(),"]
 
@@ -286,6 +292,16 @@ inviting (Actions steps) = any anInvite steps
   where
     anInvite (_ := ActionWithPolarity Invite {} _) = True
     anInvite _ = False
+
+-- | Whether the trace reads anything, in either polarity.
+--
+-- A read is the only action that names `Whose`, so this is what decides whether
+-- the emitted file imports it.
+reading :: Actions World -> Bool
+reading (Actions steps) = any aRead steps
+  where
+    aRead (_ := ActionWithPolarity Read {} _) = True
+    aRead _ = False
 
 -- | Whether any invitation grants one ability but not the other.
 partly :: Actions World -> Bool
