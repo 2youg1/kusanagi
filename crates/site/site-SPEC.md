@@ -175,3 +175,23 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 1. 本文。
 2. `ARCHITECTURE.md` §4 词表（`Site`）、§5 crate 图与行数表。
 3. `crates/kusanagi/kusanagi-SPEC.md` §7 模块边界。
+
+
+---
+
+## 附：cairn 落盘，以及读写两侧刻意的不对称
+
+`<root>/cairns/<name>/<author>` 是站点的第四种文件。文件名取自 cairn 内部的 author，因此一条记录不可能被归档到它并不描述的那条流下面。`forget` 连同删除；留着会让同名的新 channel 继承陌生人的高度。
+
+```rust
+pub fn cairn(&self, name: &str, author: &Handle) -> Result<Option<Cairn>, SiteError>;
+pub fn mark(&self, name: &str, cairn: &Cairn) -> Result<(), SiteError>;
+```
+
+**读取侧：任何读不出来都报告为「没有」。** 这是一条规则，不是被吞掉的错误。cairn 是站点上**唯一可重算的东西**——把流从高度零走一遍就能精确重建——所以退化永远正确，而任何别的答案都会让一次撕裂的写入、一个旧版本的记录或一次权限故障，把整条 channel 读不出来。
+
+代价是丢掉一个信号：cairn 正在被人删除的端点每次都从创世走起，并且不抱怨。之所以接受，是因为拒绝换不回来——**能篡改 cairn 的人就能删除 cairn，而删除与「从未读过」不可区分**。
+
+**写入侧：失败要报出来。** 读取的 miss 是代价；拒绝写入的磁盘是关于这个端点的事实，运营者总得从某处知道，否则此后每次读取都付一次完整行走而没有任何东西说明原因。
+
+**新依赖 `kusanagi-chain`。** 与已有的 `grant`、`seal` 同为同层边，图仍然无环。site 存的是 `Cairn` 的字节而不是自己定义一份记录格式——编解码的权威留在 `chain`。

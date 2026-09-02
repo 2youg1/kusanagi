@@ -11,10 +11,16 @@
 //! corrupt a third thing that does not exist.
 //!
 //! ```text
-//! <root>/identity          32 bytes: this endpoint's signing seed
-//! <root>/channels/<name>   one channel record
-//! <root>/revoked           one revoked step identifier per line
+//! <root>/identity                 32 bytes: this endpoint's signing seed
+//! <root>/channels/<name>          one channel record
+//! <root>/cairns/<name>/<author>   how far that author's stream is verified
+//! <root>/revoked                  one revoked step identifier per line
 //! ```
+//!
+//! Three of those four are facts this endpoint cannot recompute. A cairn is the
+//! exception: it can always be rebuilt by reading the stream again from height
+//! zero, which is why every way of failing to read one is treated as not having
+//! one. Losing every cairn costs requests and privacy, never correctness.
 //!
 //! Channel names are checked rather than escaped. A name is a path component
 //! here, and the set of characters that are safe in a path component on every
@@ -23,8 +29,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use kusanagi_chain::Cairn;
 use kusanagi_grant::{Revocations, StepId};
-use kusanagi_kernel::Signer;
+use kusanagi_kernel::{Handle, Signer};
 
 use crate::channel::Channel;
 use crate::error::SiteError;
@@ -142,6 +149,60 @@ impl Site {
         })
     }
 
+    /// How far one author's stream on one channel has been verified.
+    ///
+    /// **Every way of failing to read a cairn is reported as not having one**,
+    /// and that is one rule rather than a swallowed error. A cairn is the only
+    /// thing on this disk that can be recomputed — walking the stream from height
+    /// zero rebuilds it exactly — so falling back is always correct, while any
+    /// other answer would let a torn write, an older build's record, or a
+    /// permission fault stop an endpoint from reading a channel at all.
+    ///
+    /// What that gives up is a signal: an endpoint whose cairns are being deleted
+    /// walks from genesis every time and does not complain. It is given up
+    /// because refusing would not buy it back — whoever can corrupt a cairn can
+    /// delete it, and a deleted cairn is indistinguishable from a channel that
+    /// has never been read.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::BadName`] when `name` is not usable as one. That is a caller
+    /// mistake rather than a state of the disk, so it is not a miss.
+    pub fn cairn(&self, name: &str, author: &Handle) -> Result<Option<Cairn>, SiteError> {
+        let path = self.cairn_path(name, author)?;
+        Ok(fs::read(&path)
+            .ok()
+            .and_then(|bytes| Cairn::from_bytes(&bytes).ok()))
+    }
+
+    /// Writes down how far `cairn`'s author has been verified on this channel.
+    ///
+    /// The file is named after the author inside the cairn, so a record cannot
+    /// end up describing a stream other than the one it is filed under.
+    ///
+    /// Unlike reading, a failure here is reported. A miss on read is a cost; a
+    /// disk that refuses writes is a fact about this endpoint that its operator
+    /// has to learn from something, and staying quiet would mean every later read
+    /// pays a full walk with nothing ever saying why.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::BadName`] when `name` is not usable as one, and
+    /// [`SiteError::Local`] when the record cannot be written.
+    pub fn mark(&self, name: &str, cairn: &Cairn) -> Result<(), SiteError> {
+        let path = self.cairn_path(name, &cairn.author())?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| SiteError::Local {
+                action: "create the cairn directory",
+                source,
+            })?;
+        }
+        fs::write(&path, cairn.to_bytes()).map_err(|source| SiteError::Local {
+            action: "write a cairn",
+            source,
+        })
+    }
+
     /// Deletes one channel record.
     ///
     /// This is the only destructive operation a site has, and what it destroys
@@ -169,7 +230,13 @@ impl Site {
                 action: "forget a channel",
                 source,
             }),
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                // The cairns go with it. They are recomputable and therefore not
+                // worth a failure of their own, but leaving them behind would let
+                // a later channel of the same name inherit a stranger's heights.
+                fs::remove_dir_all(self.root.join("cairns").join(name)).ok();
+                Ok(())
+            }
         }
     }
 
@@ -258,6 +325,14 @@ impl Site {
     fn channel_path(&self, name: &str) -> Result<PathBuf, SiteError> {
         check_name(name)?;
         Ok(self.root.join("channels").join(name))
+    }
+
+    /// A handle renders as 64 hexadecimal characters, which needs no checking
+    /// against [`check_name`]: it cannot be empty, cannot escape a directory, and
+    /// cannot collide with another author.
+    fn cairn_path(&self, name: &str, author: &Handle) -> Result<PathBuf, SiteError> {
+        check_name(name)?;
+        Ok(self.root.join("cairns").join(name).join(author.to_string()))
     }
 }
 

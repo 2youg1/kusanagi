@@ -263,3 +263,29 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 3. `docs/joining.md`——任何动词或错误码的变化。
 4. `ARCHITECTURE.md` §5 行数表、§7 法则。
 5. 根 `Cargo.toml` 的允许清单，若抑制被移除或增加。
+
+
+---
+
+## 附：读取路径的起点是隐私决策
+
+**问题。** `walk` 从高度零走到第一个空地址，`--after` 在走完之后才过滤，`send` 也要走完自己整条流才知道下一个 index。于是一次轮询把整条流的地址按升序连续报给主机——`seal` 存在的目的在读取路径上被抵消。红灯证据：`crates/kusanagi/tests/unwatched.rs`，12 条消息的一次轮询点名 13 个地址。
+
+**`Reach`——编码调用方的需求，而不是机制。**
+
+```rust
+pub enum Reach { Whole, Above(u64), Head }
+pub fn track(site, name, waypoint, stream, author, reach) -> Result<Walked, Complaint>;
+pub fn walk(waypoint, stream, author, name, from: Option<Cairn>) -> Result<Walked, Complaint>;
+impl Walked { pub fn cairn(&self) -> Option<Cairn>; pub fn extended(&self, &Segment) -> Result<Option<Cairn>, Complaint>; }
+```
+
+「往回取多远」由需求与磁盘上的 cairn 共同推出，而这个推导只应存在于一处。**`Above(floor)` 在 cairn 高于水位时必须退回整链行走**：中间那些段是调用方要求看的，续读永远不会取回它们。这是本次改动最容易安静丢消息的地方，由 `a_read_that_shows_segments_shows_every_one_it_was_asked_for` 守住。
+
+**`send` 在写入成功后推进位置。** 主机在一个空地址上接受了写入，所以本端点无需读回即知段已在那里；`Walked::extended` 把验证器再前进一格。否则记录会永远落后一格，每次发送都要多问一个地址去重新发现自己刚写的东西。
+
+**`confirm`——只对整链行走做。** 续读不可能与它续的记录矛盾，因为它就从那里开始；整链行走可以，而那是主机唯一能靠「少给」说谎的形状：交回一条更短但验证完美的链，没有记忆的读者会相信。两种矛盾各自具名：流比记录短，或已读高度上的段换了一个。
+
+**`Complaint::HistoryChanged`，码 `kusanagi.history_changed`。** 恢复命令指向 `kusanagi doctor <waypoint>`：只有 write-once 的主机能承诺这件事不发生，而这一台刚刚做了。
+
+由 `adversary/src/Kusanagi/Lying.hs` 找到，`crates/kusanagi/tests/lying.rs` 记住。

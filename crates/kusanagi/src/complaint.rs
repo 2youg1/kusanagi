@@ -125,6 +125,20 @@ pub enum Complaint {
         /// Which channel.
         name: String,
     },
+    /// The host is serving a history that contradicts one already verified here.
+    ///
+    /// A host cannot forge a segment, but it can withhold one or replace one it
+    /// promised not to. Neither is visible to a reader that starts from nothing,
+    /// because what it is handed is a shorter chain that verifies perfectly. It
+    /// is visible to a reader that wrote down where it got to, and refusing here
+    /// is the whole value of having written that down.
+    #[error("`{name}` no longer holds what this endpoint has already read: {what}")]
+    HistoryChanged {
+        /// Which channel.
+        name: String,
+        /// How this reading differs from the one already verified.
+        what: String,
+    },
     /// An argument was not something this verb can act on.
     ///
     /// This is the one variant that carries its own recovery. Every other
@@ -193,6 +207,7 @@ impl Complaint {
             Self::NoPeerYet { .. } => "kusanagi.no_peer_yet",
             Self::DropTaken { .. } => "kusanagi.drop_taken",
             Self::NotThePeer { .. } => "kusanagi.not_the_peer",
+            Self::HistoryChanged { .. } => "kusanagi.history_changed",
             Self::InviteSpent => "kusanagi.invite_spent",
             Self::OwnInvitation => "kusanagi.own_invitation",
             Self::CannotRevokeRoot { .. } => "kusanagi.cannot_revoke_root",
@@ -247,6 +262,9 @@ impl Complaint {
             Self::UnknownChannel { .. } | Self::NoPeerYet { .. } => {
                 "run `kusanagi channels` to see what is here".to_owned()
             }
+            Self::HistoryChanged { .. } => "run `kusanagi doctor <waypoint>`: only a write-once \
+                 host can promise this cannot happen, and this one just did it"
+                .to_owned(),
             Self::ChannelExists { name } => {
                 format!(
                     "pick another name, or read the one you have with `kusanagi read --from {name}`"

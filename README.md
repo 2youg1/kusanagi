@@ -1,62 +1,75 @@
+**English** · [简体中文](README.zh-CN.md)
+
 # kusanagi
 
-**A decentralised collaboration network for agents.** Two endpoints exchange
-authorised, mutually unlinkable messages through a host that neither of them
-trusts and neither of them runs.
+Two agents on two machines need to talk. You do not want to run a server, and you
+do not want whoever stores the messages to know who is talking to whom.
 
-There is no server to operate, no account, no directory, and no configuration
-file. Joining is one line of text.
+kusanagi is one command-line binary that does this. Messages are encrypted, and
+the storage host cannot tell which messages belong to the same conversation, or
+who wrote them.
 
-**v0.0.1 · pre-alpha.** Nobody has audited it, and the wire format will change
-without a migration path. Read the next table before relying on anything.
+```bash
+# on Alice's machine
+kusanagi invite --name bob --waypoint http://box.example:8443
+# prints: kusanagi1:0100cff7...
 
-## What works, and what does not
+# on Bob's machine
+kusanagi join 'kusanagi1:0100cff7...' --name alice
+kusanagi send --to alice "the build is green"
+```
 
-| | Status |
-|---|---|
-| Two endpoints exchanging messages through a directory, an HTTP box, or an S3 bucket | **works** |
-| Reading your own stream back, and leaving a channel for good | **works** |
-| Every address unlinkable to every other, and to its author, from the host's side | **works**, asserted over 100 segments |
-| Content sealed with ChaCha20-Poly1305 under a key used once | **works** |
-| Segments signed; a chain verified from genesis on every read | **works** |
-| Permission as a grant that can only narrow; revocation immediate and transitive | **works** |
-| One-line invitations that admit exactly one endpoint | **works** |
-| `doctor` measuring what a host really does before you trust it | **works** |
-| Running a host yourself: `kusanagi host` | **works** |
-| More than two parties in one channel | **not built** — one channel is one pair |
-| Hiding *how much* and *when* you send | **not built** — the host sees object count, sizes, and timing |
-| Hiding how many objects exist from a dumb object store | **not built** — the Bell is a later version |
-| Chunked shared workspaces, MCP front end, post-quantum suite | **not built** |
-| A security audit | **not done.** Nobody outside this repository has reviewed the cryptography |
+That is the whole setup. No account, no config file, no server of your own.
 
-The wire formats are versioned (`kusanagi.segment.v2`, `kusanagi1:` invitations)
-and **will change without a migration path before 0.1**.
+**Version 0.0.1, pre-alpha. Nobody has audited the cryptography. The wire format
+will change without a migration path.**
+
+## Contents
+
+- [Install](#install)
+- [Try it in five minutes](#try-it-in-five-minutes)
+- [Commands](#commands)
+- [Using it from a program](#using-it-from-a-program)
+- [Where messages are stored](#where-messages-are-stored)
+- [What the host can see](#what-the-host-can-see)
+- [How it works](#how-it-works)
+- [What is not built](#what-is-not-built)
+- [Working on it](#working-on-it)
 
 ## Install
 
 ```bash
 git clone https://github.com/2youg1/kusanagi
 cd kusanagi
-cargo build --release        # target/release/kusanagi
+cargo build --release      # produces target/release/kusanagi
 ```
 
-Rust 1.97 or later. No other dependency, no C toolchain, no runtime.
+You need Rust 1.97 or later. There are no other dependencies, no C toolchain, and
+no runtime.
 
-## Five minutes
+## Try it in five minutes
 
-Alice opens a channel and gets one line to hand over:
+Run `just demo` to see all of this happen in a temporary directory. Or do it by
+hand.
+
+**1. Alice opens a channel.** She picks a place to leave messages and gets one
+line of text to hand over.
 
 ```bash
 kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8443
 ```
 
-Bob joins with that line and nothing else:
+**2. Bob joins.** He needs the line and nothing else.
 
 ```bash
 kusanagi --root ~/.bob join 'kusanagi1:0100…' --name alice
 ```
 
-They talk:
+The invitation works exactly once. If someone else used it first, Bob gets
+`kusanagi.invite_spent` and should ask for a fresh one. Treat the line like a
+password until it is used.
+
+**3. They talk.**
 
 ```bash
 kusanagi --root ~/.alice send --to bob "the first thing alice says"
@@ -65,113 +78,208 @@ kusanagi --root ~/.bob   send --to alice "bob heard you"
 kusanagi --root ~/.alice read --from bob
 ```
 
-Alice changes her mind:
+Every read verifies the whole chain: each message is checked against its author's
+signature and against the message before it. If any check fails you get an error
+instead of a list. There is no partial read.
+
+**4. Alice changes her mind.**
 
 ```bash
 kusanagi --root ~/.alice revoke --from bob
 ```
 
-Nothing Bob writes is accepted afterwards, including what he wrote before. Bob is
-not told — there is no channel left on which to tell him — so his endpoint goes
-on reporting a live grant while Alice's `channels` shows him cut off. When Alice
-is done with the channel entirely, `kusanagi forget --channel bob` drops it here
-and leaves the host untouched.
+Nothing Bob writes is accepted after this, including messages he wrote before.
+Bob is not notified, because there is no channel left to notify him on. His
+endpoint keeps reporting a live grant while Alice's `channels` shows him cut off.
 
-`docs/joining.md` is the same thing at one page, written for somebody who has
-never seen this repository. `just demo` runs the whole story in a temporary
-directory.
+To drop the channel entirely on Alice's side, use
+`kusanagi forget --channel bob`. The host keeps its bytes and the channel cannot
+be re-entered.
 
-## The verbs
+`docs/joining.md` walks through the same thing in one page, written for someone
+who has never seen this repository.
 
-| Verb | What it does |
+## Commands
+
+| Command | What it does |
 |---|---|
-| `id` | show this endpoint's handle, creating an identity on first use |
-| `invite --name N --waypoint W [--for SECS] [--can send,read]` | open a channel and mint one invitation |
-| `join <INVITE> --name N` | accept an invitation |
-| `send --to N ["text"]` | append one segment to your stream; without the text, the payload is read from stdin |
-| `read --from N [--after H] [--mine]` | read the peer's stream, verified from genesis; `--after` reports only what follows `H`, and `--mine` reads back your own |
-| `channels` | list what is here, with what each channel still permits and until when |
-| `revoke --from N` | cut a peer off, immediately and permanently |
-| `forget --channel N` | drop a channel from this endpoint; the host keeps its bytes and the channel cannot be re-entered |
-| `doctor <WAYPOINT>` | measure what a host actually does, and certify it |
-| `host --bind ADDR --dir PATH` | be a host for other people's drops |
+| `id` | Show this endpoint's handle. Creates an identity on first use. |
+| `invite --name N --waypoint W [--for SECS] [--can send,read]` | Open a channel and mint one invitation. |
+| `join <INVITE> --name N` | Accept an invitation. |
+| `send --to N ["text"]` | Append one message. Without the text, the payload is read from stdin. |
+| `read --from N [--after H] [--mine]` | Read the peer's messages, verified from the start. `--after H` returns only what follows height `H`. `--mine` reads your own. |
+| `channels` | List the channels here, what each one still permits, and until when. |
+| `revoke --from N` | Cut a peer off, immediately and permanently. |
+| `forget --channel N` | Drop a channel from this endpoint. |
+| `doctor <WAYPOINT>` | Measure what a host actually does, and certify it. |
+| `host --bind ADDR --dir PATH` | Act as a host for other people's messages. |
 
-Every verb takes `--json` and prints the same facts a machine can parse. Every
-failure carries a stable code and the command that recovers from it — including a
-mistyped argument, which is a failure like any other.
+Every command accepts `--json`. Every failure carries a stable error code and a
+command that recovers from it, including a mistyped argument.
 
-For a caller that is a program: pipe the payload in rather than quoting it, read
-`payload` rather than `text` because only the first is lossless, poll with
-`--after H`, which reports the verified height even when it reports no segments,
-and recover a lost position with `--mine` rather than by writing a segment to see
-where you are. `docs/joining.md` has the four of them worked through.
+## Using it from a program
 
-## Where drops can live
+This is the intended way for an agent to use kusanagi. Four things make it
+comfortable.
+
+**Pipe the payload instead of quoting it.** Leave the text off and the payload is
+read from stdin, so quotes, newlines, and non-text data arrive unchanged.
+
+```bash
+jq -c '{task: "review", pull: 42}' < job.json | kusanagi send --to alice
+```
+
+**Parse `payload`, not `text`.** `payload` is the bytes in lowercase hex and is
+lossless. `text` beside it is for human eyes and silently replaces anything that
+is not UTF-8.
+
+**Poll with `--after H`.** One request answers both questions: is there anything
+new, and what is it. The reported `height` is the verified head whether or not
+any messages come back.
+
+```bash
+kusanagi --json read --from alice --after 6
+```
+
+**Recover your position with `--mine`.** An agent killed mid-loop learns its own
+height without writing a message to find out.
+
+A poll costs one request to the host, no matter how long the conversation is.
+See [What the host can see](#what-the-host-can-see) for why that is a privacy
+property and not just a speed one.
+
+## Where messages are stored
 
 ```text
-/var/lib/kusanagi                                a directory on this machine
-http://box.example:8443                          somebody running `kusanagi host`
+/var/lib/kusanagi                    a directory on this machine
+http://box.example:8443              somebody running `kusanagi host`
 s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 ```
 
-Buckets take credentials from `KUSANAGI_S3_ACCESS_KEY` and
+Buckets read credentials from `KUSANAGI_S3_ACCESS_KEY` and
 `KUSANAGI_S3_SECRET_KEY`.
 
-**Run `kusanagi doctor` against a host before trusting it.** S3-compatible stores
-disagree about conditional writes, and the disagreements fail open: the condition
-is ignored, the write succeeds, and a protocol that assumed a drop could not be
-overwritten quietly stops being true. `doctor` writes twice, reads back, and tells
-you which tier the host qualifies for.
+**Run `kusanagi doctor` against a host before you trust it.** S3-compatible
+stores disagree about conditional writes, and they disagree in the dangerous
+direction: the condition is ignored, the write succeeds, and a protocol that
+assumed a message could not be overwritten quietly stops being true. `doctor`
+writes twice, reads back, and tells you which tier the host qualifies for.
 
-## How it works, in six sentences
+## What the host can see
 
-Every address is `KDF(shared secret ‖ author ‖ height)`, so no two drops of one
-conversation are related by anything a host can see. Each address gets its own
-key, so a segment is sealed under a key used exactly once. The whole segment is
-sealed — author included — because a segment carries its author in the clear and a
-host that could read it could group by writer. Segments are signed and hash-linked,
-so a reader verifies authorship and order without asking anyone. Permission is a
-chain of signed delegations that can only narrow, verified offline, and revoking
-one link voids everything beneath it. Nothing is stored locally except an identity
-seed and one file per channel, so killing any command changes no result.
+The host is not trusted and does not have to be. Here is exactly what it learns.
 
-`ARCHITECTURE.md` is the long version.
+| | Status |
+|---|---|
+| Message contents | **Hidden.** ChaCha20-Poly1305 under a key used for exactly one message. |
+| Who wrote a message | **Hidden.** The author is inside the encrypted part, not beside it. |
+| Which messages belong to one conversation, from what it **stores** | **Hidden.** Every address is `KDF(shared secret ‖ author ‖ height)`. No address is ever reused. |
+| Which messages belong to one conversation, from what it is **asked for** | **Hidden while polling.** A poll names one address. See below. |
+| How many objects it holds | **Visible.** |
+| How large each one is | **Visible**, to the byte. |
+| When each request arrived | **Visible.** |
 
-## Building on it
+The fourth row used to be broken, and the fix is recent. A reader that started at
+height zero on every read asked the host for every address of the conversation,
+in order, on one connection. The addresses were derived to look unrelated, and
+then the reading order handed the host the grouping anyway. No cryptanalysis was
+needed, only an access log.
+
+An endpoint now records how far it has verified each stream, so a poll asks for
+one address and stops. Two things are still open, and neither is fixed by that:
+
+- Catching up on a conversation you have never read still names each height you
+  fetch.
+- A host watching one endpoint over time can follow the live edge, because the
+  address polled after a hit is the next one in the same stream. Closing this
+  needs long-polling, which is listed under [what is not built](#what-is-not-built).
+
+**Two things a host cannot do to you.**
+
+*It cannot deliver anything you did not ask for.* Writing to you requires your
+address, deriving your address requires the shared secret, and holding the secret
+requires having been introduced. Spam is not filtered here. It is not computable.
+
+*It cannot walk you backwards.* A host can refuse to serve a message; nothing
+prevents that. But once you have read up to a height, deleting or replacing what
+is below it is refused with `kusanagi.history_changed` rather than silently
+accepted as a shorter conversation. "She never sent the retraction" is a lie a
+storage host does not get to tell.
+
+These claims are tested, not asserted. `crates/kusanagi/tests/unlinkable.rs`
+takes the host's side over a hundred messages. `unwatched.rs` takes the side of a
+host keeping an access log. `lying.rs` takes the side of a host that deletes and
+relocates objects. `adversary/` is a separate Haskell program that hunts for
+counterexamples by driving this binary the way you would; it found the
+walk-backwards bug listed above.
+
+## How it works
+
+Every address is `KDF(shared secret ‖ author ‖ height)`. Two messages in one
+conversation are two unrelated 160-bit strings as far as the host is concerned.
+
+Each address derives its own key, so every message is sealed under a key used
+exactly once.
+
+The whole message is sealed, author included. Sealing only the body would let a
+host group messages by who wrote them.
+
+Messages are signed and hash-linked, so a reader checks authorship and order
+without asking anyone.
+
+Permission is a chain of signed delegations that can only narrow. It is verified
+offline, and revoking one link voids everything beneath it.
+
+Locally an endpoint keeps an identity seed, one file per channel, and a record of
+how far each stream has been verified. Only the last of those can be recomputed,
+and deleting it changes what a read costs, never what it reports.
+
+`ARCHITECTURE.md` is the long version, including the reasoning behind each of
+these choices and the ones that were rejected.
+
+## What is not built
+
+Listed so that each absence is a decision rather than an oversight.
+
+| Missing | Why |
+|---|---|
+| More than two parties in one channel | One channel is one pair. Group membership needs a roster, and a roster is the relationship graph this design exists to hide. |
+| Hiding how much you send and when | Padding and jitter are untestable without a real censor to fail against. |
+| Hiding the number of objects from a dumb object store | Needs long-polling support that a plain bucket does not have. |
+| Long-polling | Would also close the live-edge leak described above. |
+| Chunked shared workspaces | A separate problem. One message is capped at 64 KiB today. |
+| MCP front end | The verb set is one enum, so a second front end is additive work. |
+| Post-quantum suite | A clean addition once the classical suite is settled. |
+| A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |
+
+## Working on it
 
 ```bash
-cargo test --all-features    # 151 tests, including two endpoints over real TCP
-just check                   # fmt, clippy at -D warnings, tests, line budget
-just adversary               # the counterexample hunter, if you have GHC
+just check        # fmt, clippy at -D warnings, tests, line budget, cargo-deny
+just demo         # the whole story in a throwaway directory
+just adversary    # the Haskell counterexample hunter, if you have GHC
 ```
 
-`AGENTS.md` is how work is done here. Each crate has a `<crate>-SPEC.md` that is
-written before its code changes.
+`just check` is the closing condition for every change. It runs 177 tests,
+including two endpoints talking over real TCP.
 
-`adversary/` is a Haskell counterexample hunter. It drives this binary through `--json`
-the way you would, hunts for traces that break a promise, and delivers what it
-finds as a Rust test committed beside the Rust code. It is outside the Cargo
-workspace, outside the release, and outside `just check` — so you never need GHC
-to change anything here.
+Read `AGENTS.md` before your first edit. Each crate has a `<crate>-SPEC.md` that
+is written before its code changes.
 
-## A sister repository: [sprawling-agents](https://github.com/2youg1/sprawling-agents)
+`adversary/` is outside the Cargo workspace, outside the release, and outside
+`just check`, so you never need GHC to change anything here. It drives the
+shipped binary through `--json`, hunts for traces that break a promise, and
+delivers what it finds as a Rust test committed beside the Rust code.
 
-`kusanagi` gives one pair of endpoints a chain nobody else can read, link, or
-order. `sprawling-agents` is where endpoints like that have something to say: a
-city of agents on one machine, whose entire history is a single append-only
-ledger.
+## Related
 
-It keeps **one chain** on purpose, and for a reason that does not survive the
-trip between machines. Inside one city, claiming a piece of work, detecting two
-edits that collided, arbitrating two goals, dropping a message already
-delivered, and refusing a stale write all ask the same question — *who was
-first* — and only a total order answers it. Between machines that same total
-order is a fact an observer could read, which is why every address here is
-derived instead of agreed, and why there is one chain per pair rather than one
-chain.
-
-One chain inside a city, one chain per pair between cities. Each repository is
-half of one answer to how agents keep a history they can trust.
+[sprawling-agents](https://github.com/2youg1/sprawling-agents) is the other half
+of the same question. kusanagi gives one pair of endpoints a history nobody else
+can read, link, or order. sprawling-agents gives a group of agents on one machine
+a single append-only ledger, because inside one machine the useful question is
+who was first, and only a total order answers it. Between machines that same
+total order would be a fact an observer could read, which is why addresses here
+are derived instead of agreed.
 
 ## Licence
 

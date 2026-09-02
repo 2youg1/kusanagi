@@ -21,7 +21,16 @@ use crate::complaint::Complaint;
 use crate::membership::greet;
 use crate::report::Outcome;
 use crate::request::Whose;
-use crate::walk::walk;
+use crate::walk::{Reach, track};
+
+/// What a `read` owes its caller: everything, or only what sits above the height
+/// the caller says it already holds.
+const fn reach(after: Option<u64>) -> Reach {
+    match after {
+        None => Reach::Whole,
+        Some(floor) => Reach::Above(floor),
+    }
+}
 
 pub(crate) fn send(
     site: &Site,
@@ -41,10 +50,14 @@ pub(crate) fn send(
 
     let place = open(&channel.locator, now)?;
     let stream = channel.secret.stream(&me.handle());
-    let mine = walk(&place, &stream, &me.handle(), name)?;
+    // Only the head is needed, so this walk owes the caller no segment and may
+    // resume from the cairn: sending the thousandth segment asks the host for one
+    // address rather than announcing the previous nine hundred and ninety-nine.
+    let mine = track(site, name, &place, &stream, &me.handle(), Reach::Head)?;
 
-    // The height comes from the waypoint, not from a file on this disk. Killing
-    // this process between any two commands therefore changes nothing.
+    // The height still comes from the waypoint rather than from a local count:
+    // the cairn moves the walk's starting point and proves the join to it, so a
+    // lost or absent cairn changes what this costs and never what it decides.
     let segment = match mine.head() {
         None => Segment::genesis(&me, payload.to_vec()),
         Some(head) => Segment::extend(&me, payload.to_vec(), head),
@@ -52,11 +65,22 @@ pub(crate) fn send(
 
     let (address, key) = derive(&stream, segment.index());
     let sealed = seal(&key, &segment.to_canonical_bytes())?;
-    if place.put_if_absent(&address, &sealed)? == PutOutcome::AlreadyPresent {
-        return Err(Complaint::DropTaken {
-            address: address.to_string(),
-            name: name.to_owned(),
-        });
+    match place.put_if_absent(&address, &sealed)? {
+        // The host took it at an address that was empty, so this endpoint knows
+        // the segment is there without reading it back. Recording that now is
+        // what keeps the next send at one request: a position left one behind
+        // the stream would make every send rediscover what it had just written.
+        PutOutcome::Stored => {
+            if let Some(cairn) = mine.extended(&segment)? {
+                site.mark(name, &cairn)?;
+            }
+        }
+        PutOutcome::AlreadyPresent => {
+            return Err(Complaint::DropTaken {
+                address: address.to_string(),
+                name: name.to_owned(),
+            });
+        }
     }
 
     Ok(Outcome::Sent {
@@ -78,7 +102,7 @@ pub(crate) fn read(
     let channel = site.channel(name)?;
     let revoked = site.revocations()?;
     if whose == Whose::Mine {
-        return mine(&channel, &me, name, after, now);
+        return mine(site, &channel, &me, name, after, now);
     }
     channel
         .standing
@@ -99,7 +123,7 @@ pub(crate) fn read(
         .permits(&channel.root, &peer.handle, Ability::Send, now, &revoked)?;
 
     let stream = channel.secret.stream(&peer.handle);
-    let theirs = walk(&place, &stream, &peer.handle, name)?;
+    let theirs = track(site, name, &place, &stream, &peer.handle, reach(after))?;
     Ok(Outcome::read(
         name,
         &peer.handle.to_string(),
@@ -120,6 +144,7 @@ pub(crate) fn read(
 /// An agent that was killed mid-loop needs exactly this: its own height, without
 /// writing a segment to find out.
 fn mine(
+    site: &Site,
     channel: &Channel,
     me: &Signer,
     name: &str,
@@ -128,6 +153,6 @@ fn mine(
 ) -> Result<Outcome, Complaint> {
     let place = open(&channel.locator, now)?;
     let stream = channel.secret.stream(&me.handle());
-    let ours = walk(&place, &stream, &me.handle(), name)?;
+    let ours = track(site, name, &place, &stream, &me.handle(), reach(after))?;
     Ok(Outcome::read(name, &me.handle().to_string(), &ours, after))
 }

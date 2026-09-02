@@ -25,7 +25,7 @@ pub use assembly::run;
 pub use complaint::Complaint;
 pub use report::Outcome;
 pub use request::{Request, Whose};
-pub use walk::{Held, Walked, peek, walk};
+pub use walk::{Held, Reach, Walked, peek, track, walk};
 pub use world::{SystemClock, fresh_seed};
 
 // What an endpoint keeps on its own disk is a crate of its own, and a caller of

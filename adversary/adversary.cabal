@@ -23,9 +23,11 @@ library
   default-language: GHC2021
   exposed-modules:
     Kusanagi.Answer
+    Kusanagi.Cairn
     Kusanagi.Door
     Kusanagi.Ground
     Kusanagi.Keyboard
+    Kusanagi.Lying
     Kusanagi.Model
     Kusanagi.Regression
 

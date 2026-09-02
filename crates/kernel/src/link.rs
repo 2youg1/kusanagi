@@ -37,6 +37,31 @@ impl ChainHead {
         Self { id, index }
     }
 
+    /// Rebuilds a head from a note this endpoint wrote about a segment it held.
+    ///
+    /// A head obtained through [`crate::Segment::head`] is a witness: whoever
+    /// holds it held the segment. A head obtained here is one step weaker — it is
+    /// this endpoint's own record of having held it, read back from its own disk.
+    /// The two are the same forty bytes and the same type, so this is the one
+    /// place where that difference is visible, and it is stated rather than
+    /// hidden.
+    ///
+    /// **A false head cannot cause anything to be accepted.** Every use of a head
+    /// is a comparison: a chain that does not link to it is refused, and a segment
+    /// extended from it is signed by this endpoint and refused by every reader
+    /// whose own chain disagrees. So the damage a corrupted record can do is to
+    /// make this endpoint reject a chain it should have accepted — never the
+    /// reverse. That asymmetry is the whole argument for this constructor, and if
+    /// it ever stops holding, this constructor has to go.
+    ///
+    /// The disk it is read back from already holds this endpoint's identity seed
+    /// and every channel secret, so it adds no attacker who was not already able
+    /// to read the traffic outright.
+    #[must_use]
+    pub const fn recorded(id: SegmentId, index: u64) -> Self {
+        Self { id, index }
+    }
+
     /// The segment this head witnesses.
     #[must_use]
     pub const fn id(&self) -> SegmentId {

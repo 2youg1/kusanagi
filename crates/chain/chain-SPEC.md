@@ -140,3 +140,38 @@ pub fn fork(left: &Segment, right: &Segment) -> Option<Fork>;
 **二、`walk` 没有放进本 crate。** 从 waypoint 上取回一条流并逐段验证，需要同时用到 `waypoint`（取）、`seal`(解封) 与 `chain`(验序)，它是三者的组合而不是任何一个的内部逻辑，因此留在 `kusanagi::walk`。把它搬进来会迫使本 crate 依赖 `seal` 与 `waypoint`，并复制一份几乎与 `Complaint` 相同的错误枚举——为省下一百行而多写五十行，且给「读一条流出了什么错」制造第二个权威。
 
 验收未变：12 个单元测试全过，`Verifier` 的驻留状态仍是一个 `Option`。
+
+
+---
+
+## 附：`Cairn`——把折叠的状态写下来
+
+**动机不在本 crate。** 读取方每次从高度零开始走，就会把一条流的全部地址按升序、连续地报给主机；`seal` 精心推导出的互不关联，在访问日志面前当场作废。修法是让下一次读取从上一次停下的地方继续，而「上一次停在哪」正是 `Verifier` 唯一的驻留状态。
+
+**因此不新造类型，而是把已有的私有 `Seen` 升为一等概念。** `Cairn { author, head }` 就是原来的 `Seen`，`Verifier.seen: Option<Cairn>`。内存里的状态与磁盘上的记录是同一个东西，「这条流验证到哪」因此只有一个定义。
+
+```rust
+pub struct Cairn { /* author: Handle, head: ChainHead */ }
+impl Cairn {
+    pub const WIDTH: usize;                    // 73 = 1 + 32 + 32 + 8
+    pub const fn author(&self) -> Handle;
+    pub const fn head(&self) -> ChainHead;
+    pub const fn next_index(&self) -> Option<u64>;
+    pub fn to_bytes(&self) -> Vec<u8>;
+    pub fn from_bytes(&[u8]) -> Result<Self, CairnError>;
+}
+impl Verifier {
+    pub const fn resume(cairn: Cairn) -> Self;
+    pub const fn cairn(&self) -> Option<Cairn>;
+}
+```
+
+**三处决策。**
+
+1. **`Cairn::new` 是 `pub(crate)`。** 从外部得到 cairn 的唯一途径是 `Verifier::cairn`，而它只有在其下的段都验过之后才给得出。这保住了「cairn 是一个关于过去的断言，且那个断言为真」。
+2. **`next_index` 返回 `Option` 而不是 `Result`。** 链高已达 `u64::MAX` 时其上没有段，这是关于链的事实而不是失败；调用方应当被回答而不是被打断。这也省掉一个跨 crate 的错误映射。
+3. **续读不重验其下的段，这不是放宽。** 那正是 `Tier::AckFirstSeen` 承诺的缓解措施：允许覆写的主机无法修改读者已经走过的历史，因为读者不再回头看。
+
+**为何优于替代**：让 `Verifier` 多一个「从记录恢复」的内部状态，会得到一个把 `(index, id)` 拆开保存的分支——那是 `ChainHead` 的第二份实现，也就是一条规则两个权威。
+
+验收：18 个单元测试，含版本、宽度、截断、补零四类畸形记录各自被具名拒绝。测试助手 `cairn_at` 取 `u8` 而非 `u64`，因为它真的会把链走一遍——类型是阻止「要求一个走几小时的高度」的东西，这个错误本文件已经犯过一次。

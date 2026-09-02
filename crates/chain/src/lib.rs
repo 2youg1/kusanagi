@@ -9,9 +9,16 @@
 //! and one head no matter how long the chain is. That is the whole reason this
 //! crate exists as something other than a loop at the call site — the memory
 //! shape is the design.
+//!
+//! That fold has exactly one state, and a [`Cairn`] is that state written down.
+//! A verifier suspends into a cairn and resumes from one, so "how far this
+//! endpoint has verified" has a single definition whether it is sitting in
+//! memory or on a disk.
 
+mod cairn;
 mod fork;
 mod verify;
 
+pub use cairn::{Cairn, CairnError};
 pub use fork::{Fork, fork};
 pub use verify::{ChainError, Verifier, verify};

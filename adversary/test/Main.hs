@@ -18,13 +18,14 @@ module Main (main) where
 
 import Control.Monad.Reader (ReaderT, asks, liftIO, runReaderT)
 import Data.List (sort)
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import Data.ByteString qualified as ByteString
-import Data.Word (Word8)
+import Data.Word (Word64, Word8)
 import Test.QuickCheck (Property, counterexample, ioProperty, property, withNumTests)
 import Test.QuickCheck.DynamicLogic (forAllDL)
 import Test.QuickCheck.Monadic (PropertyM, monadic, run)
@@ -35,6 +36,8 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Kusanagi.Answer (Address (..))
 import Kusanagi.Answer qualified as Answer
+import Kusanagi.Cairn qualified as Cairn
+import Kusanagi.Lying qualified as Lying
 import Kusanagi.Door (Door)
 import Kusanagi.Door qualified as Door
 import Kusanagi.Ground
@@ -67,9 +70,12 @@ properties door =
     [ testCase "the committed Rust test is what this adversary renders" deliverable
     , testProperty "a mistyped line is answerable, and its advice can be taken" (keyboard door)
     , testProperty "what an agent pipes in comes back byte for byte" (piping door)
+    , testProperty "a reader that remembers is still told everything" (remembering door)
     , testProperty "what one endpoint says is what the other hears" (traces door)
     , testProperty "a revoked peer is never readable again" (revocation door)
     , testProperty "a corrupted object is refused, not believed" (tampering door)
+    , testProperty "genuine bytes at the wrong address are not a segment" (transplanting door)
+    , testProperty "a host cannot talk a reader down from a height" (vanishing door)
     ]
 
 -- | Somebody types the line from the README with one finger in the wrong place.
@@ -115,6 +121,33 @@ piping door bytes = withNumTests 12 . ioProperty . withGround $ \ground -> do
 benchOn :: Door -> Ground -> IO Bench
 benchOn door ground =
   prepare door (siteOf ground Alice) (siteOf ground Bob) (waypoint ground)
+
+-- | An endpoint now writes down how far it has verified a stream, so that a poll
+-- names one address to the host instead of every address of the conversation.
+--
+-- The way that fix goes wrong is by reading less than it reports, and no
+-- assertion about a message arriving would notice. So these are relations: a
+-- floor hides exactly the entries at or below it and nothing else, and a second
+-- read is not paid for out of what the first one wrote down.
+remembering :: Door -> Int -> Word64 -> Property
+remembering door count level = withNumTests 8 . ioProperty . withGround $ \ground -> do
+  stocked <-
+    Cairn.stock
+      door
+      (siteOf ground Alice)
+      (siteOf ground Bob)
+      (waypoint ground)
+      (count `mod` 6)
+  let floor' = level `mod` 8
+  findings <-
+    sequence
+      [ Cairn.floorHidesExactlyWhatItNames door stocked floor'
+      , Cairn.readingTwiceSubtractsNothing door stocked (Just floor')
+      , Cairn.readingTwiceSubtractsNothing door stocked Nothing
+      ]
+  pure $ case [reason | Left reason <- findings] of
+    [] -> property True
+    reasons -> counterexample (unlines reasons) False
 
 -- | Rule four, made mechanical.
 --
@@ -164,7 +197,7 @@ traces door actions =
   withNumTests 20 . driving door $ do
     _ <- runActions actions
     held <- run (asks kitGround >>= liftIO . stored)
-    pure (unlinkable (map fst held))
+    pure (unlinkable held)
 
 -- | Any prefix, one revocation, any suffix, and a read that must still fail.
 revocation :: Door -> Property
@@ -204,16 +237,53 @@ driving door act =
 
 -- | Whether the host's view links anything to anything.
 --
--- Two properties in one: an address is never reused, and no two of them look
--- alike. A host that could group drops by a shared prefix would have the
--- relationship graph this design exists to withhold.
-unlinkable :: [Address] -> Bool
-unlinkable addresses = all apart (zip sorted (drop 1 sorted))
+-- Three properties in one, over the addresses and over the bytes. An address is
+-- never reused and no two of them look alike, so the host cannot group drops by
+-- where they sit; and no two objects are byte-identical, so it cannot group them
+-- by what they contain either. The third is the one that catches a suite of
+-- ciphertexts that stopped being distinct — a key reused across two drops, or a
+-- nonce that repeated — which is invisible from the address side.
+unlinkable :: [(Address, ByteString.ByteString)] -> Bool
+unlinkable held = addressesApart && bodiesDistinct
   where
+    addressesApart = all apart (zip sorted (drop 1 sorted))
     -- Sorted, so the pair with the longest shared prefix is always adjacent.
-    sorted = sort addresses
+    sorted = sort (map fst held)
     apart (Address earlier, Address later) =
       earlier /= later && maybe True (\(shared, _, _) -> Text.length shared < 8) (Text.commonPrefixes earlier later)
+    bodies = map snd held
+    bodiesDistinct = length (Set.fromList bodies) == length bodies
+
+-- | The host serves real bytes from the wrong place.
+transplanting :: Door -> Int -> Property
+transplanting door count =
+  withNumTests 4 . lyingWith door count $ \door' ground written ->
+    Lying.transplantIsRefused door' ground written
+
+-- | The host stops serving something a reader has already verified.
+vanishing :: Door -> Int -> Property
+vanishing door count =
+  withNumTests 4 . lyingWith door count $ \door' ground written ->
+    Lying.historyNeverShrinks door' ground written
+
+-- | One throwaway world per lie, because each of them damages the host.
+lyingWith ::
+  Door ->
+  Int ->
+  (Door -> Ground -> Lying.Written -> IO (Either String ())) ->
+  Property
+lyingWith door count act = ioProperty . withGround $ \ground -> do
+  written <-
+    Lying.writeSome
+      door
+      (siteOf ground Alice)
+      (siteOf ground Bob)
+      (waypoint ground)
+      (2 + (count `mod` 4))
+  outcome <- act door ground written
+  pure $ case outcome of
+    Left reason -> counterexample reason False
+    Right () -> property True
 
 refused :: Answer.Answer -> Bool
 refused (Answer.Refused _) = True

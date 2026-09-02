@@ -49,14 +49,32 @@ false.
 | # | Property | Today | By what |
 |---|---|---|---|
 | 1 | Content confidentiality | **held** | ChaCha20-Poly1305 under a key used for exactly one message |
-| 2 | Who talks to whom, as seen by the host | **held** | every address is `KDF(secret ‖ author ‖ height)`; no address is ever reused |
+| 2a | Who talks to whom, in what the host **stores** | **held** | every address is `KDF(secret ‖ author ‖ height)`; no address is ever reused |
+| 2b | Who talks to whom, in what the host is **asked for** | **held for a poll**, leaks on a catch-up | a reader resumes from a cairn, so a poll names one address instead of the stream |
 | 3 | Network size | leaks the number of objects | nothing yet; the Bell in §9 is the answer |
 | 4 | Traffic analysis — when, how large | **leaks** | nothing yet; padding and jitter are §9 |
 
-Property 2 is the one this project exists for, and it is asserted rather than
-described: `crates/kusanagi/tests/unlinkable.rs` puts a hundred segments through a
-host, then takes the host's side and fails if any two records can be linked to
-each other or to a person.
+Property 2 is the one this project exists for, and splitting it in two is the
+correction of a real error rather than a refinement. Addresses derived to be
+unrelated stop being unrelated the moment one connection asks for them in
+ascending order, back to back — and a reader that began at height zero on every
+read did exactly that, once per poll, for the whole history. **The derivation was
+sound and the reading path gave the answer away.** A host needed no cryptanalysis,
+only an access log.
+
+Both halves are asserted rather than described.
+`crates/kusanagi/tests/unlinkable.rs` puts a hundred segments through a host, then
+takes the host's side and fails if any two records can be linked to each other or
+to a person. `crates/kusanagi/tests/unwatched.rs` takes the side of a host that
+keeps an access log, and fails if a poll names more than the one address it is
+waiting on — or if that cost grows with the length of the conversation.
+
+**What is still open, stated so that it cannot be mistaken for closed.** A reader
+catching up on a stream it has never read names every height it fetches, and a
+host watching one endpoint over time can follow the live edge as it advances,
+because the address polled after a hit is the successor of that hit. Closing the
+second needs the Bell in §9: a host asked to wait learns one address rather than a
+sequence.
 
 Two consequences follow from property 2 that were not designed for and are worth
 naming:
@@ -86,7 +104,8 @@ One name per concept. A word with no implementation does not enter the code.
 | **Grant** | offline-verifiable authority that can only narrow | permission exists in this form and no other |
 | **Channel** | one conversation: a secret, a locator, a standing, a peer | the unit an endpoint joins, lists, and revokes |
 | **Standing** | why somebody is allowed on a channel — root, or granted | "the authority holds no grant" is a fact, not a missing value |
-| **Site** | what one endpoint keeps on its own disk: a seed, a file per channel, a revocation list | the only state there is; anything else would be state a kill could lose |
+| **Site** | what one endpoint keeps on its own disk: a seed, a file per channel, a cairn per stream, a revocation list | the only state there is; anything else would be state a kill could lose |
+| **Cairn** | how far one author's stream has been verified: a handle and a head, 73 bytes | a reader resumes instead of re-naming a stream, and cannot be talked back down below it |
 | **Box** | a host somebody runs: it holds sealed bytes at opaque addresses and refuses to overwrite one | the untrusted half is a program, not a promise |
 
 Reserved for work not yet done, and therefore **not** in the code: `Bell`,
@@ -129,16 +148,16 @@ That exclusion list is closed; a third entry is a decision, not an oversight.
 
 | crate | src | measured by |
 |---|---|---|
-| box | 481 | `just budget` |
-| chain | 438 | |
+| box | 482 | `just budget` |
+| chain | 704 | |
 | grant | 1,055 | |
-| kernel | 1,344 | |
-| kusanagi | 1,868 | |
+| kernel | 1,369 | |
+| kusanagi | 2,224 | |
 | seal | 393 | |
-| site | 967 | |
-| waypoint | 2,092 | |
-| **workspace, tests included** | **10,927 / 25,000** | |
-| **largest single file** | **363** (`kusanagi/tests/endpoint.rs`) | |
+| site | 1,069 | |
+| waypoint | 2,138 | |
+| **workspace, tests included** | **12,436 / 25,000** | |
+| **largest single file** | **381** (`kusanagi/src/complaint.rs`) | |
 
 **Both crates that were close to the line have been split, and the budget is what
 made each decision arrive on time.**
@@ -178,10 +197,20 @@ second authority for that rule.
 
 ## 7 The laws
 
-1. **No resident state.** Every verb is a one-shot command that exits. An
-   endpoint's height comes from the waypoint, never from a local file, so killing
-   any process between any two commands changes no result. Asserted by
-   `a_command_keeps_no_state_that_a_kill_could_lose`.
+1. **No resident state, and no local fact a host could not confirm.** Every verb
+   is a one-shot command that exits. An endpoint's height comes from the
+   waypoint, and the cairn beside it moves where a walk *starts* without ever
+   deciding what the walk *concludes* — the first segment read must link to the
+   cairn's head, so a resumed walk proves its own join. Deleting every cairn
+   therefore changes what a read costs and never what it reports, which is what
+   `losing_every_cairn_changes_what_a_read_costs_and_nothing_else` asserts and
+   what `a_command_keeps_no_state_that_a_kill_could_lose` asserts for the rest.
+
+   **The one exception is deliberate and is the point of having a cairn.** Against
+   a host that withholds or replaces a drop, an endpoint that has read before
+   refuses what contradicts what it read, while an endpoint reading for the first
+   time cannot. Two readers therefore disagree, and the one with a memory is the
+   one that is right.
 2. **Memory does not grow with the work.** `Verifier` holds one author and one
    head for a chain of any length; `Segment::extend` takes a 40-byte `ChainHead`,
    not a predecessor. A change that buffers a chain has broken the design.
@@ -213,6 +242,23 @@ Reopening one of these requires a reason that did not exist when it was taken.
   S3-compatible hosts, and the divergences fail *open* — the condition is ignored
   and the write succeeds. `kusanagi doctor` writes twice and reads back, then
   issues a certificate naming a tier.
+- **`Tier::AckFirstSeen` is enforced by the cairn, not merely named.** The tier
+  said both sides must remember what they first saw at an address and refuse
+  anything that arrives later; for two versions nothing did, so the tier was a
+  label. The cairn is that memory. A host can still refuse to serve a drop —
+  nothing prevents that — but it can no longer make a reader who has already read
+  believe the stream is shorter, which is the difference between an outage and a
+  retraction somebody never sent.
+- **A head may come from this endpoint's own record, not only from a segment in
+  hand.** `ChainHead` had one constructor because a head is a witness: holding one
+  meant having held the segment. `ChainHead::recorded` adds a second provenance
+  and is the weaker one. It is admitted on one argument, and if that argument ever
+  fails the constructor goes: **every use of a head is a comparison, so a false
+  head can only cause a refusal, never an acceptance.** The alternative — keeping
+  the last segment itself, which re-verifies its own signature and needs no new
+  constructor — was rejected because it would put a copy of every channel's most
+  recent message on disk forever, and `crates/kusanagi/tests/at_rest.rs` is what
+  holds that line.
 - **The invitation is a bearer token.** Whoever writes one cannot know who will
   accept it, so it carries a one-time key that the acceptor immediately delegates
   to their own handle.
@@ -250,7 +296,7 @@ version of its own.
 
 | Missing | Why it waits |
 |---|---|
-| `Bell` | an optimisation, and there is no traffic yet to measure it against |
+| `Bell` | **no longer only an optimisation.** A reader that polls names the address it waits on, then the next one after a hit, so a host watching one endpoint can follow the live edge; a host that can be asked to wait is told one address instead. It is still unbuilt, and now it is a privacy mechanism whose absence is measured in §3 rather than a latency tweak |
 | `Veil` — padding, jitter, pluggable transports | untestable without a real censor to fail against |
 | `Cohort` — rosters and epochs | needs multi-node test infrastructure; two parties do not need a roster |
 | `Depot` — chunked workspaces | a separate problem; 64 KiB carries the whole protocol today |

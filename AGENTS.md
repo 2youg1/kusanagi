@@ -70,6 +70,7 @@ Violating any of these turns the build red.
 |---|---|
 | Identifiers, error codes, rustdoc, comments, commit subjects | English |
 | `README.md`, `AGENTS.md`, `ARCHITECTURE.md` | English |
+| `README.zh-CN.md` | Chinese. **A translation of `README.md`, never a second source.** When the two disagree the English one is right, and a change to one is not finished until the other says the same thing |
 | Crate SPECs and design discussion | Chinese, with concept names kept in their English form |
 | Pull requests, issues, review comments | **your own language.** A parallel translation is welcome, not required |
 

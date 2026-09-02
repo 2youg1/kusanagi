@@ -7,12 +7,7 @@
 
 use kusanagi_kernel::{ChainHead, Handle, Segment, SegmentId};
 
-/// What the verifier remembers: exactly one author and one head.
-#[derive(Clone, Copy, Debug)]
-struct Seen {
-    author: Handle,
-    head: ChainHead,
-}
+use crate::Cairn;
 
 /// Accepts segments in order and reports the first one that breaks the chain.
 ///
@@ -23,7 +18,7 @@ struct Seen {
 /// property that makes this type worth having.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Verifier {
-    seen: Option<Seen>,
+    seen: Option<Cairn>,
 }
 
 impl Verifier {
@@ -31,6 +26,27 @@ impl Verifier {
     #[must_use]
     pub const fn new() -> Self {
         Self { seen: None }
+    }
+
+    /// A verifier that carries on from a position already verified.
+    ///
+    /// The segments at or below the cairn are not read again, which is the point:
+    /// a reader that re-reads them re-announces their addresses to the host, and
+    /// a host that may rewrite a drop gets a second chance to revise what this
+    /// endpoint already accepted. Both are closed by not looking.
+    #[must_use]
+    pub const fn resume(cairn: Cairn) -> Self {
+        Self { seen: Some(cairn) }
+    }
+
+    /// The position reached, in the form that survives this process.
+    ///
+    /// `None` before the first segment: a verifier that has seen nothing has
+    /// nothing to record, and an empty stream must stay distinguishable from a
+    /// stream whose genesis was verified.
+    #[must_use]
+    pub const fn cairn(&self) -> Option<Cairn> {
+        self.seen
     }
 
     /// Accepts the next segment.
@@ -56,14 +72,14 @@ impl Verifier {
             (Some(seen), Some(previous)) => {
                 // Author first: if the author is wrong, a height or hash mismatch
                 // is a true statement that points at the wrong problem.
-                if seen.author != segment.author() {
+                if seen.author() != segment.author() {
                     return Err(ChainError::AuthorChanged {
-                        expected: seen.author,
+                        expected: seen.author(),
                         found: segment.author(),
                     });
                 }
                 let expected = seen
-                    .head
+                    .head()
                     .index()
                     .checked_add(1)
                     .ok_or(ChainError::Exhausted)?;
@@ -73,33 +89,30 @@ impl Verifier {
                         found: segment.index(),
                     });
                 }
-                if previous != seen.head.id() {
+                if previous != seen.head().id() {
                     return Err(ChainError::PreviousMismatch {
                         index: segment.index(),
-                        expected: seen.head.id(),
+                        expected: seen.head().id(),
                         found: previous,
                     });
                 }
             }
         }
 
-        self.seen = Some(Seen {
-            author: segment.author(),
-            head: segment.head(),
-        });
+        self.seen = Some(Cairn::new(segment.author(), segment.head()));
         Ok(())
     }
 
     /// The head of everything accepted so far.
     #[must_use]
     pub fn head(&self) -> Option<ChainHead> {
-        self.seen.map(|seen| seen.head)
+        self.seen.map(|seen| seen.head())
     }
 
     /// The author of everything accepted so far.
     #[must_use]
     pub fn author(&self) -> Option<Handle> {
-        self.seen.map(|seen| seen.author)
+        self.seen.map(|seen| seen.author())
     }
 }
 

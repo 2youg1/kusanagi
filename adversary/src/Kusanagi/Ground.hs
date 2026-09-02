@@ -22,13 +22,20 @@ module Kusanagi.Ground
   , waypoint
   , stored
   , corrupt
+  , vanish
+  , transplant
   ) where
 
 import Control.Monad (forM)
 import Data.ByteString qualified as ByteString
 import Data.List (sort)
 import Data.Text qualified as Text
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, listDirectory)
+import System.Directory
+  ( createDirectoryIfMissing
+  , doesDirectoryExist
+  , listDirectory
+  , removeFile
+  )
 import System.FilePath (takeFileName, (</>))
 import System.IO.Temp (withSystemTempDirectory)
 
@@ -111,3 +118,25 @@ corrupt ground address = do
   case ByteString.uncons bytes of
     Nothing -> fail ("the host is holding nothing at " <> show address)
     Just (first, rest) -> ByteString.writeFile path (ByteString.cons (first + 1) rest)
+
+-- | Drops an object the host was holding.
+--
+-- A host cannot forge a segment, but it can always refuse to hand one over, and
+-- refusing selectively is a lie about history rather than an outage. Nothing
+-- stops it; what it must not achieve is a reader believing less than that reader
+-- has already verified.
+vanish :: Ground -> Address -> IO ()
+vanish ground = removeFile . placed ground
+
+-- | Serves the object from one address at another.
+--
+-- The strongest move a store gets for free. It forges nothing and corrupts
+-- nothing: every byte it hands over is a byte an endpoint really wrote and
+-- really signed. What it changes is only *where* those bytes are, and this
+-- network answers that with the key rather than with a check — an address
+-- derives the key its contents are sealed under, so bytes that arrive at the
+-- wrong address do not open at all.
+transplant :: Ground -> Address -> Address -> IO ()
+transplant ground from to = do
+  bytes <- ByteString.readFile (placed ground from)
+  ByteString.writeFile (placed ground to) bytes

@@ -34,6 +34,7 @@ import Data.ByteString qualified as ByteString
 import Data.List (intercalate)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Word (Word64)
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.Exit (ExitCode (..))
@@ -97,6 +98,7 @@ data Verb
   | Join Invitation ChannelName
   | Send ChannelName Text
   | Read ChannelName
+  | ReadAfter ChannelName Word64
   | Revoke ChannelName
   deriving stock (Eq, Show)
 
@@ -186,6 +188,8 @@ spoken = \case
   Send (ChannelName name) text ->
     ["send", "--to", Text.unpack name, Text.unpack text]
   Read (ChannelName name) -> ["read", "--from", Text.unpack name]
+  ReadAfter (ChannelName name) floor' ->
+    ["read", "--from", Text.unpack name, "--after", show floor']
   Revoke (ChannelName name) -> ["revoke", "--from", Text.unpack name]
 
 listed :: Abilities -> String

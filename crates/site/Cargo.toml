@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 kusanagi-kernel.workspace = true
+kusanagi-chain.workspace = true
 kusanagi-grant.workspace = true
 kusanagi-seal.workspace = true
 thiserror.workspace = true
