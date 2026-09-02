@@ -25,9 +25,27 @@ deny:
 # implementation must stay small enough to hold in mind, and the workspace as a
 # whole — tests included, because a reader reads those too — must stay small
 # enough to hold at all.
+#
+# The first gate is the strictest and the most local. A file is the unit somebody
+# opens — a reviewer, an editor, a model reading one — so a file that no longer
+# fits in one reading is split or deleted, and the limit is not raised.
 budget:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    # `Cargo.lock` and `LICENSE` are outside the count because their contents are
+    # not written here: cargo generates one, and the other is the licence text
+    # verbatim. `awk END{NR}` rather than `wc -l` so that a file whose last line
+    # has no newline is counted, not rounded down.
+    over=$(git ls-files | grep -Ev '^(Cargo\.lock|LICENSE)$' | while IFS= read -r file; do
+        lines=$(awk 'END { print NR }' "$file")
+        if [ "$lines" -gt 500 ]; then printf '  %5s  %s\n' "$lines" "$file"; fi
+    done)
+    if [ -n "$over" ]; then
+        printf 'over 500 lines. Split it or delete it; the limit does not move.\n%s\n' "$over"
+        exit 1
+    fi
+
     total=0
     printf '%-12s %8s %8s %8s\n' crate src limit all
     for dir in crates/*/; do
@@ -76,7 +94,7 @@ demo:
     ls "$ground/host"/*/* | head -4
     echo '(opaque addresses, sealed bytes, no author anywhere)'
 
-# The Haskell property oracle in `adversary/`.
+# The Haskell counterexample hunter in `adversary/`.
 #
 # Deliberately not part of `check`. It needs GHC, and a contributor who is
 # changing Rust must be able to finish without installing a second toolchain —

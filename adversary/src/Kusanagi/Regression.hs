@@ -7,7 +7,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- | What this oracle delivers: a Rust test.
+-- | What this adversary delivers: a Rust test.
 --
 -- A counterexample that stays in Haskell is knowledge this repository does not
 -- have. Rendering it as a test beside the code it accuses moves the knowledge
@@ -86,7 +86,7 @@ preamble name actions =
   , "//! A trace the adversary found, kept here so this repository remembers it."
   , "//!"
   , "//! Written by `adversary/src/Kusanagi/Regression.hs` and compared against it"
-  , "//! byte for byte. Change the trace there; changing it here turns the oracle"
+  , "//! byte for byte. Change the trace there; changing it here turns the adversary"
   , "//! red, which is exactly what should happen when the two disagree."
   , ""
   , "#![allow("
@@ -186,7 +186,7 @@ refused world bound act =
        ]
   where
     owed (Just (Code code)) = code
-    owed Nothing = "the model owes no code here, which is a bug in the oracle"
+    owed Nothing = "the model owes no code here, which is a bug in the adversary"
 
 -- | One call to `run`, laid out the way rustfmt lays a method chain out.
 call :: Int -> Text -> Site -> Action World a -> Text -> [Text]
@@ -232,7 +232,7 @@ fields = \case
     , "name: " <> quoted (spelled name) <> ".to_owned(),"
     ]
   -- A payload is bytes on the Rust side, so the literal is a byte string. The
-  -- oracle only ever sends words, and a word is its own ASCII.
+  -- adversary only ever sends words, and a word is its own ASCII.
   Send _ name text ->
     [ "name: " <> quoted (spelled name) <> ".to_owned(),"
     , "payload: b" <> quoted text <> ".to_vec(),"

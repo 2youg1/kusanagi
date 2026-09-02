@@ -24,7 +24,7 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 | `just demo` | two identities, one host, one verifiable exchange, in a throwaway directory |
 | `just budget` | line counts against the budget in `ARCHITECTURE.md` §5 |
 | `just dist` | a stripped release binary and its SHA-256 |
-| `just adversary` | the Haskell property oracle in `adversary/`. **Not part of `just check`**, needs GHC, and skips itself when GHC is absent |
+| `just adversary` | the Haskell counterexample hunter in `adversary/`. **Not part of `just check`**, needs GHC, and skips itself when GHC is absent |
 
 ## Read before you write
 
@@ -56,7 +56,7 @@ Violating any of these turns the build red.
 | Start every `.rs` file with the MPL-2.0 notice and the copyright line. | review |
 | Take the time as a parameter. The single sampling point is `kusanagi::world::sample`, and randomness has one source beside it. | `clippy.toml` disallowed methods |
 | One name per concept, taken from `ARCHITECTURE.md` §4. A word with no implementation does not enter the code. | review |
-| Keep each crate's `src/` under **2,500 lines** and the whole workspace, tests included, under **25,000**. | `just budget` |
+| Keep every file under **500 lines**, each crate's `src/` under **2,500**, and the whole workspace, tests included, under **25,000**. A file over the limit is split or deleted — the limit is not raised. | `just budget` |
 | Anything hashed or signed is encoded by hand. `serde` is for `--json` output and nothing else. | review |
 
 **Two laws that are not lints, and matter more than any of them:**

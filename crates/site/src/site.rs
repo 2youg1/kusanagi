@@ -24,10 +24,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use kusanagi_grant::{Revocations, StepId};
-use kusanagi_kernel::{Handle, Signer};
+use kusanagi_kernel::Signer;
 
 use crate::channel::Channel;
-use crate::complaint::Complaint;
+use crate::error::SiteError;
 
 /// The longest a channel name may be.
 const MAX_NAME: usize = 32;
@@ -55,19 +55,19 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Local`] when the file exists and cannot be read, and
-    /// [`Complaint::Malformed`] when it is not a seed.
-    pub fn identity(&self) -> Result<Option<Signer>, Complaint> {
+    /// [`SiteError::Local`] when the file exists and cannot be read, and
+    /// [`SiteError::Malformed`] when it is not a seed.
+    pub fn identity(&self) -> Result<Option<Signer>, SiteError> {
         let path = self.root.join("identity");
         match fs::read(&path) {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(Complaint::Local {
+            Err(source) => Err(SiteError::Local {
                 action: "read this endpoint's identity",
                 source,
             }),
             Ok(bytes) => {
                 let seed =
-                    <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| Complaint::Malformed {
+                    <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| SiteError::Malformed {
                         what: "an identity file",
                         reason: format!("an identity is 32 bytes; this one is {}", bytes.len()),
                     })?;
@@ -83,8 +83,8 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Local`] when the file cannot be written.
-    pub fn adopt(&self, seed: &[u8; 32]) -> Result<Signer, Complaint> {
+    /// [`SiteError::Local`] when the file cannot be written.
+    pub fn adopt(&self, seed: &[u8; 32]) -> Result<Signer, SiteError> {
         if let Some(existing) = self.identity()? {
             return Ok(existing);
         }
@@ -97,16 +97,16 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::UnknownChannel`] when there is no such channel.
-    pub fn channel(&self, name: &str) -> Result<Channel, Complaint> {
+    /// [`SiteError::UnknownChannel`] when there is no such channel.
+    pub fn channel(&self, name: &str) -> Result<Channel, SiteError> {
         let path = self.channel_path(name)?;
         match fs::read(&path) {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-                Err(Complaint::UnknownChannel {
+                Err(SiteError::UnknownChannel {
                     name: name.to_owned(),
                 })
             }
-            Err(source) => Err(Complaint::Local {
+            Err(source) => Err(SiteError::Local {
                 action: "read a channel",
                 source,
             }),
@@ -118,8 +118,8 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Malformed`] when the name is not usable as one.
-    pub fn holds(&self, name: &str) -> Result<bool, Complaint> {
+    /// [`SiteError::Malformed`] when the name is not usable as one.
+    pub fn holds(&self, name: &str) -> Result<bool, SiteError> {
         Ok(self.channel_path(name)?.exists())
     }
 
@@ -127,16 +127,16 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Local`] when the file cannot be written.
-    pub fn keep(&self, name: &str, channel: &Channel) -> Result<(), Complaint> {
+    /// [`SiteError::Local`] when the file cannot be written.
+    pub fn keep(&self, name: &str, channel: &Channel) -> Result<(), SiteError> {
         let path = self.channel_path(name)?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| Complaint::Local {
+            fs::create_dir_all(parent).map_err(|source| SiteError::Local {
                 action: "create the channel directory",
                 source,
             })?;
         }
-        fs::write(&path, channel.to_bytes()).map_err(|source| Complaint::Local {
+        fs::write(&path, channel.to_bytes()).map_err(|source| SiteError::Local {
             action: "write a channel",
             source,
         })
@@ -146,13 +146,13 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Local`] when the directory cannot be listed.
-    pub fn names(&self) -> Result<Vec<String>, Complaint> {
+    /// [`SiteError::Local`] when the directory cannot be listed.
+    pub fn names(&self) -> Result<Vec<String>, SiteError> {
         let dir = self.root.join("channels");
         let entries = match fs::read_dir(&dir) {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(source) => {
-                return Err(Complaint::Local {
+                return Err(SiteError::Local {
                     action: "list the channels",
                     source,
                 });
@@ -162,7 +162,7 @@ impl Site {
 
         let mut names = Vec::new();
         for entry in entries {
-            let entry = entry.map_err(|source| Complaint::Local {
+            let entry = entry.map_err(|source| SiteError::Local {
                 action: "list the channels",
                 source,
             })?;
@@ -178,16 +178,16 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Local`] when the list cannot be read, and
-    /// [`Complaint::Malformed`] when a line is not a step identifier.
-    pub fn revocations(&self) -> Result<Revocations, Complaint> {
+    /// [`SiteError::Local`] when the list cannot be read, and
+    /// [`SiteError::Malformed`] when a line is not a step identifier.
+    pub fn revocations(&self) -> Result<Revocations, SiteError> {
         let path = self.root.join("revoked");
         let text = match fs::read_to_string(&path) {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Revocations::new());
             }
             Err(source) => {
-                return Err(Complaint::Local {
+                return Err(SiteError::Local {
                     action: "read the revocation list",
                     source,
                 });
@@ -206,25 +206,25 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Local`] when the list cannot be written.
-    pub fn revoke(&self, step: StepId) -> Result<(), Complaint> {
+    /// [`SiteError::Local`] when the list cannot be written.
+    pub fn revoke(&self, step: StepId) -> Result<(), SiteError> {
         let revoked = self.revocations()?.revoking(step);
         let lines: Vec<String> = revoked.iter().map(ToString::to_string).collect();
         self.make_root()?;
-        fs::write(self.root.join("revoked"), lines.join("\n")).map_err(|source| Complaint::Local {
+        fs::write(self.root.join("revoked"), lines.join("\n")).map_err(|source| SiteError::Local {
             action: "write the revocation list",
             source,
         })
     }
 
-    fn make_root(&self) -> Result<(), Complaint> {
-        fs::create_dir_all(&self.root).map_err(|source| Complaint::Local {
+    fn make_root(&self) -> Result<(), SiteError> {
+        fs::create_dir_all(&self.root).map_err(|source| SiteError::Local {
             action: "create the site directory",
             source,
         })
     }
 
-    fn channel_path(&self, name: &str) -> Result<PathBuf, Complaint> {
+    fn channel_path(&self, name: &str) -> Result<PathBuf, SiteError> {
         check_name(name)?;
         Ok(self.root.join("channels").join(name))
     }
@@ -236,7 +236,7 @@ impl Site {
 /// in a path, safe in a shell, and safe in a URL is safe everywhere this network
 /// might carry it, and the ways of getting escaping wrong all start with allowing
 /// something interesting.
-fn check_name(name: &str) -> Result<(), Complaint> {
+fn check_name(name: &str) -> Result<(), SiteError> {
     let usable = !name.is_empty()
         && name.len() <= MAX_NAME
         && name
@@ -245,7 +245,7 @@ fn check_name(name: &str) -> Result<(), Complaint> {
     if usable {
         return Ok(());
     }
-    Err(Complaint::Malformed {
+    Err(SiteError::Malformed {
         what: "a channel name",
         reason: format!(
             "a name is 1 to {MAX_NAME} characters of a-z, 0-9 and -, and `{name}` is not"
@@ -254,23 +254,17 @@ fn check_name(name: &str) -> Result<(), Complaint> {
 }
 
 /// Writes a file that must not already exist.
-fn write_new(path: &Path, bytes: &[u8], action: &'static str) -> Result<(), Complaint> {
+fn write_new(path: &Path, bytes: &[u8], action: &'static str) -> Result<(), SiteError> {
     use std::io::Write as _;
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|source| Complaint::Local { action, source })?;
+        .map_err(|source| SiteError::Local { action, source })?;
     file.write_all(bytes)
-        .map_err(|source| Complaint::Local { action, source })?;
+        .map_err(|source| SiteError::Local { action, source })?;
     file.sync_all()
-        .map_err(|source| Complaint::Local { action, source })
-}
-
-/// A handle rendered short enough to read, for listings.
-#[must_use]
-pub fn abbreviate(handle: &Handle) -> String {
-    handle.to_string().chars().take(12).collect()
+        .map_err(|source| SiteError::Local { action, source })
 }
 
 #[cfg(test)]
@@ -283,6 +277,7 @@ pub fn abbreviate(handle: &Handle) -> String {
 mod tests {
     use super::Site;
     use crate::channel::{Channel, Standing};
+    use crate::error::SiteError;
     use kusanagi_grant::StepId;
     use kusanagi_kernel::Signer;
     use kusanagi_seal::Secret;
@@ -335,19 +330,18 @@ mod tests {
     #[test]
     fn an_unknown_channel_is_named_as_such() {
         let site = scratch("unknown");
-        assert_eq!(
-            site.channel("nobody").unwrap_err().code(),
-            "kusanagi.unknown_channel"
-        );
+        assert!(matches!(
+            site.channel("nobody"),
+            Err(SiteError::UnknownChannel { .. })
+        ));
     }
 
     #[test]
     fn a_name_that_could_escape_the_directory_is_refused() {
         let site = scratch("names");
         for bad in ["../escape", "with/slash", "Upper", "", "with space"] {
-            assert_eq!(
-                site.channel(bad).unwrap_err().code(),
-                "kusanagi.malformed",
+            assert!(
+                matches!(site.channel(bad), Err(SiteError::Malformed { .. })),
                 "`{bad}` was accepted as a channel name"
             );
         }

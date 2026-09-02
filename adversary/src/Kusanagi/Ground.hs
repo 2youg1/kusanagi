@@ -95,7 +95,7 @@ stored ground = sort <$> walk (groundHost ground)
 -- | Where a host keeps one object.
 --
 -- The first two characters of an address name a directory. That is the one
--- implementation detail this oracle depends on; when it changes, these
+-- implementation detail this adversary depends on; when it changes, these
 -- properties fail loudly rather than silently testing nothing.
 placed :: Ground -> Address -> FilePath
 placed ground (Address address) =

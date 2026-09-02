@@ -1,0 +1,18 @@
+[package]
+name = "kusanagi-site"
+description = "What one endpoint keeps on its own disk: an identity, one file per channel, and the invitations that open them."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+kusanagi-kernel.workspace = true
+kusanagi-grant.workspace = true
+kusanagi-seal.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

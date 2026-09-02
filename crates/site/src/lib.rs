@@ -1,0 +1,31 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
+
+//! Everything one endpoint keeps on its own disk, and the formats it keeps it in.
+//!
+//! A site is a directory: one signing seed, one file per [`Channel`], and a list
+//! of revoked steps. There is no daemon, no database and no cache, so killing any
+//! command loses at most that command — the law `ARCHITECTURE.md` §7 states as
+//! "no resident state" is held here by there being nothing here to hold.
+//!
+//! [`Invite`] lives beside them because an invitation is the same bytes as a
+//! channel seen from outside: it is what one endpoint hands over so that another
+//! can write the record this crate stores.
+//!
+//! **What this crate does not do is decide what a failure means.** A
+//! [`SiteError`] says what was being done and what was wrong with the bytes. The
+//! stable code a caller matches on, and the command that recovers, are assigned
+//! by the door in `kusanagi::Complaint` — because recovery is phrased in verbs
+//! (`kusanagi channels`, `--root`) that only a front end knows it has.
+
+mod channel;
+mod error;
+mod invite;
+mod site;
+
+pub use channel::{Channel, Peer, Standing};
+pub use error::SiteError;
+pub use invite::Invite;
+pub use site::Site;

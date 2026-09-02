@@ -69,7 +69,8 @@ pub fn seal(key: &Key, plain: &[u8]) -> Result<Vec<u8>, OpenFailed> {
 /// [`OpenFailed::Rejected`] whenever the bytes were not sealed under this exact
 /// key, whatever the reason — a wrong key, a flipped bit, a truncated body, or a
 /// blob moved here from another address. They are one answer deliberately: an
-/// attacker who learns *why* a forgery failed has been given a test oracle.
+/// attacker who learns *why* a forgery failed has been handed a way to test
+/// guesses one at a time.
 pub fn open(key: &Key, sealed: &[u8]) -> Result<Vec<u8>, OpenFailed> {
     key.cipher()?
         .decrypt(&Nonce::from(key.nonce), sealed)

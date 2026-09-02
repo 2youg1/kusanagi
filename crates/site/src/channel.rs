@@ -32,7 +32,7 @@ use kusanagi_grant::{Ability, Grant, GrantError, Revocations};
 use kusanagi_kernel::{Handle, Instant, Reader};
 use kusanagi_seal::Secret;
 
-use crate::complaint::Complaint;
+use crate::error::SiteError;
 
 const VERSION: u8 = 1;
 const STANDING_ROOT: u8 = 0;
@@ -105,13 +105,13 @@ impl Standing {
         }
     }
 
-    fn read(reader: &mut Reader<'_>) -> Result<Self, Complaint> {
+    fn read(reader: &mut Reader<'_>) -> Result<Self, SiteError> {
         let tag = reader.take_byte().map_err(malformed)?;
         let block = take_block(reader)?;
         match tag {
             STANDING_ROOT => Ok(Self::Root),
             STANDING_GRANTED => Ok(Self::Granted(Grant::from_canonical_bytes(&block)?)),
-            other => Err(Complaint::Malformed {
+            other => Err(SiteError::Malformed {
                 what: "a standing",
                 reason: format!("a standing is root or granted, not {other}"),
             }),
@@ -174,13 +174,13 @@ impl Channel {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Malformed`] for any shape this decoder does not recognise,
+    /// [`SiteError::Malformed`] for any shape this decoder does not recognise,
     /// including a version it was not written for.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Complaint> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SiteError> {
         let mut reader = Reader::new(bytes);
         let version = reader.take_byte().map_err(malformed)?;
         if version != VERSION {
-            return Err(Complaint::Malformed {
+            return Err(SiteError::Malformed {
                 what: "a channel",
                 reason: format!("this file is version {version}, and this build reads {VERSION}"),
             });
@@ -202,7 +202,7 @@ impl Channel {
                 standing: peer_standing,
             }),
             other => {
-                return Err(Complaint::Malformed {
+                return Err(SiteError::Malformed {
                     what: "a channel",
                     reason: format!("a peer is present or absent, not {other}"),
                 });
@@ -210,7 +210,7 @@ impl Channel {
         };
 
         if reader.remaining() != 0 {
-            return Err(Complaint::Malformed {
+            return Err(SiteError::Malformed {
                 what: "a channel",
                 reason: format!("{} byte(s) follow a complete record", reader.remaining()),
             });
@@ -238,22 +238,22 @@ pub(crate) fn put_block(out: &mut Vec<u8>, block: &[u8]) {
     out.extend_from_slice(block);
 }
 
-pub(crate) fn take_block(reader: &mut Reader<'_>) -> Result<Vec<u8>, Complaint> {
+pub(crate) fn take_block(reader: &mut Reader<'_>) -> Result<Vec<u8>, SiteError> {
     let len = usize::from(u16::from_be_bytes(
         reader.take_array::<2>().map_err(malformed)?,
     ));
     Ok(reader.take(len).map_err(malformed)?.to_vec())
 }
 
-pub(crate) fn take_text(reader: &mut Reader<'_>) -> Result<String, Complaint> {
-    String::from_utf8(take_block(reader)?).map_err(|error| Complaint::Malformed {
+pub(crate) fn take_text(reader: &mut Reader<'_>) -> Result<String, SiteError> {
+    String::from_utf8(take_block(reader)?).map_err(|error| SiteError::Malformed {
         what: "a locator",
         reason: error.to_string(),
     })
 }
 
-pub(crate) fn malformed(error: kusanagi_kernel::Incomplete) -> Complaint {
-    Complaint::Malformed {
+pub(crate) fn malformed(error: kusanagi_kernel::Incomplete) -> SiteError {
+    SiteError::Malformed {
         what: "a stored record",
         reason: error.to_string(),
     }

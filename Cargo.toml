@@ -6,6 +6,7 @@ members = [
     "crates/seal",
     "crates/grant",
     "crates/waypoint",
+    "crates/site",
     "crates/kusanagi",
 ]
 
@@ -23,6 +24,7 @@ kusanagi-chain = { path = "crates/chain", version = "0.0.1" }
 kusanagi-waypoint = { path = "crates/waypoint", version = "0.0.1" }
 kusanagi-seal = { path = "crates/seal", version = "0.0.1" }
 kusanagi-grant = { path = "crates/grant", version = "0.0.1" }
+kusanagi-site = { path = "crates/site", version = "0.0.1" }
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }

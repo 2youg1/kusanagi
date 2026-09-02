@@ -86,6 +86,7 @@ One name per concept. A word with no implementation does not enter the code.
 | **Grant** | offline-verifiable authority that can only narrow | permission exists in this form and no other |
 | **Channel** | one conversation: a secret, a locator, a standing, a peer | the unit an endpoint joins, lists, and revokes |
 | **Standing** | why somebody is allowed on a channel — root, or granted | "the authority holds no grant" is a fact, not a missing value |
+| **Site** | what one endpoint keeps on its own disk: a seed, a file per channel, a revocation list | the only state there is; anything else would be state a kill could lose |
 
 Reserved for work not yet done, and therefore **not** in the code: `Bell`,
 `Cohort`, `Depot`, `Veil`.
@@ -98,36 +99,55 @@ kernel      identifiers, identity, signed segments, canonical bytes, seams
   seal      address derivation and content sealing
   grant     issue, attenuate, verify, revoke
   waypoint  directory / memory / HTTP box / S3, the box server, conformance, probe
-kusanagi    the verbs, the local site, and the one assembly point
+  site      one endpoint's own disk: identity, channel records, invitations
+kusanagi    the verbs and the one assembly point
 ```
 
 Dependencies point one way only: `kernel` depends on nothing of ours, and
 `kusanagi` depends on everything.
 
-**Budget.** Each crate's `src/` stays under **2,500** lines; the workspace
-including tests stays under **25,000**. `just budget` fails the build otherwise.
-The per-crate limit counts implementation because it is a rule about how large one
-idea may grow; the total counts tests too, because the reason for the budget is
-that a newcomer — human or model — can read all of it, and tests are read.
+**Budget.** Three limits, one purpose, all held by `just budget`:
+
+| Limit | Applies to | What it bounds |
+|---|---|---|
+| **500 lines** | every file in the repository | how much has to be in your head to judge one line |
+| **2,500 lines** | each crate's `src/` | how large one idea may grow |
+| **25,000 lines** | the workspace, tests included | how much there is to read at all |
+
+The file is the unit that actually gets opened: a reviewer opens one, an editor
+jumps into one, a model reads one. So the limit that decides whether this code can
+be read is the limit on a single file, and it is the strictest of the three. **A
+file over 500 lines is split or deleted; the number is not raised.** Splitting the
+assertions about a rule away from the rule is a legitimate answer — the workspace
+total counts tests, so nothing is hidden by moving it.
+
+Two files are outside the count because their contents are not written here:
+`Cargo.lock`, which cargo generates, and `LICENSE`, which is the licence verbatim.
+That exclusion list is closed; a third entry is a decision, not an oversight.
 
 | crate | src | measured by |
 |---|---|---|
 | chain | 438 | `just budget` |
-| grant | 1,347 | |
-| kernel | 1,479 | |
+| grant | 1,055 | |
+| kernel | 1,320 | |
 | kusanagi | **2,424** | |
 | seal | 392 | |
 | waypoint | **2,448** | |
-| **workspace, tests included** | **9,944 / 25,000** | |
+| **workspace, tests included** | **9,960 / 25,000** | |
+| **largest single file** | **472** (`waypoint/src/s3.rs`) | |
 
-**Two crates are close to the line, and that is information rather than a
-problem.** The next substantive change to `kusanagi` or to `waypoint` begins by
-splitting it — the budget exists to make that decision arrive on time, instead of
-arriving as a feature bent into the space left over.
-`crates/kusanagi/kusanagi-SPEC.md` §7 records which seam was examined and why it
-is not free.
+**`waypoint` is close to the line, and that is information rather than a
+problem.** The next substantive change to it begins by splitting it — the budget
+exists to make that decision arrive on time, instead of arriving as a feature bent
+into the space left over.
 
-**Outside the workspace.** `adversary/` is a Haskell property oracle. It is not a
+`kusanagi` was in the same position and has been split: `site` carries the disk
+formats away, and the boundary that made the split possible is the one recorded in
+`crates/site/site-SPEC.md` §3 — **a `SiteError` says what failed on the disk, and
+the door says what it is called and how to recover from it.** Merging the two
+would put the words `kusanagi channels` inside a crate that has no verbs.
+
+**Outside the workspace.** `adversary/` is a Haskell counterexample hunter. It is not a
 crate, not a dependency, not part of the release, and not counted here. §8 records
 why it is allowed to exist and what stops it becoming a second authority.
 

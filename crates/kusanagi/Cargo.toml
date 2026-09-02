@@ -21,6 +21,7 @@ kusanagi-kernel.workspace = true
 kusanagi-chain.workspace = true
 kusanagi-grant.workspace = true
 kusanagi-seal.workspace = true
+kusanagi-site.workspace = true
 kusanagi-waypoint.workspace = true
 clap.workspace = true
 getrandom.workspace = true

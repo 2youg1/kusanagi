@@ -484,6 +484,7 @@ dependencies = [
  "kusanagi-grant",
  "kusanagi-kernel",
  "kusanagi-seal",
+ "kusanagi-site",
  "kusanagi-waypoint",
  "serde",
  "serde_json",
@@ -524,6 +525,16 @@ dependencies = [
  "blake3",
  "chacha20poly1305",
  "kusanagi-kernel",
+ "thiserror",
+]
+
+[[package]]
+name = "kusanagi-site"
+version = "0.0.1"
+dependencies = [
+ "kusanagi-grant",
+ "kusanagi-kernel",
+ "kusanagi-seal",
  "thiserror",
 ]
 

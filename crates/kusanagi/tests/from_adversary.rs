@@ -6,7 +6,7 @@
 //! A trace the adversary found, kept here so this repository remembers it.
 //!
 //! Written by `adversary/src/Kusanagi/Regression.hs` and compared against it
-//! byte for byte. Change the trace there; changing it here turns the oracle
+//! byte for byte. Change the trace there; changing it here turns the adversary
 //! red, which is exactly what should happen when the two disagree.
 
 #![allow(

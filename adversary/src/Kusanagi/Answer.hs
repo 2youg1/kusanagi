@@ -112,7 +112,7 @@ instance FromJSON Outcome where
       "revoked" -> Revoked <$> o .: "name" <*> o .: "step"
       "examined" -> Examined <$> o .: "waypoint" <*> o .: "tier"
       "hosted" -> pure Hosted
-      other -> fail ("the door reported a command this oracle does not know: " <> Text.unpack other)
+      other -> fail ("the door reported a command this adversary does not know: " <> Text.unpack other)
 
 -- | What the program reports when it could not.
 --

@@ -135,13 +135,13 @@ seed and one file per channel, so killing any command changes no result.
 ```bash
 cargo test --all-features    # 151 tests, including two endpoints over real TCP
 just check                   # fmt, clippy at -D warnings, tests, line budget
-just adversary               # the property oracle, if you have GHC
+just adversary               # the counterexample hunter, if you have GHC
 ```
 
 `AGENTS.md` is how work is done here. Each crate has a `<crate>-SPEC.md` that is
 written before its code changes.
 
-`adversary/` is a Haskell property oracle. It drives this binary through `--json`
+`adversary/` is a Haskell counterexample hunter. It drives this binary through `--json`
 the way you would, hunts for traces that break a promise, and delivers what it
 finds as a Rust test committed beside the Rust code. It is outside the Cargo
 workspace, outside the release, and outside `just check` — so you never need GHC

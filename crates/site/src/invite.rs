@@ -37,7 +37,7 @@ use kusanagi_kernel::{Handle, Hex, Reader, Signer, unhex};
 use kusanagi_seal::Secret;
 
 use crate::channel::{malformed, put_block, take_block, take_text};
-use crate::complaint::Complaint;
+use crate::error::SiteError;
 
 const VERSION: u8 = 1;
 
@@ -77,13 +77,13 @@ impl Invite {
     ///
     /// # Errors
     ///
-    /// [`Complaint::Malformed`] when the text is not an invitation this build
+    /// [`SiteError::Malformed`] when the text is not an invitation this build
     /// understands, including one for a different cipher suite.
-    pub fn parse(text: &str) -> Result<Self, Complaint> {
+    pub fn parse(text: &str) -> Result<Self, SiteError> {
         let body = text
             .trim()
             .strip_prefix(PREFIX)
-            .ok_or(Complaint::Malformed {
+            .ok_or(SiteError::Malformed {
                 what: "an invitation",
                 reason: format!("an invitation starts with `{PREFIX}`"),
             })?;
@@ -93,7 +93,7 @@ impl Invite {
         let version = reader.take_byte().map_err(malformed)?;
         let suite = reader.take_byte().map_err(malformed)?;
         if version != VERSION || suite != BASELINE_SUITE {
-            return Err(Complaint::Malformed {
+            return Err(SiteError::Malformed {
                 what: "an invitation",
                 reason: format!(
                     "this invitation is version {version} suite {suite}; \
@@ -109,7 +109,7 @@ impl Invite {
         let grant = Grant::from_canonical_bytes(&take_block(&mut reader)?)?;
 
         if reader.remaining() != 0 {
-            return Err(Complaint::Malformed {
+            return Err(SiteError::Malformed {
                 what: "an invitation",
                 reason: format!(
                     "{} byte(s) follow a complete invitation",

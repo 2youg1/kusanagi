@@ -5,9 +5,9 @@
 
 //! The property the whole permission model rests on: **delegation never widens**.
 //!
-//! The unit tests next to the code check the cases somebody thought of. This
-//! checks the ones nobody thought of, over arbitrary chains of arbitrary
-//! requests, including requests for far more than the delegator holds.
+//! `tests/chain.rs` checks the cases somebody thought of. This checks the ones
+//! nobody thought of, over arbitrary chains of arbitrary requests, including
+//! requests for far more than the delegator holds.
 //!
 //! `ARCHITECTURE.md` names `kani` as the tool that should eventually prove this
 //! against real MIR rather than sample it. The proof harness is committed beside

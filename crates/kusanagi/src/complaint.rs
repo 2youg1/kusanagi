@@ -16,8 +16,9 @@
 
 use kusanagi_chain::ChainError;
 use kusanagi_grant::GrantError;
-use kusanagi_kernel::{DigestParseError, HexError, SegmentError, WaypointError};
+use kusanagi_kernel::{SegmentError, WaypointError};
 use kusanagi_seal::OpenFailed;
+use kusanagi_site::SiteError;
 use kusanagi_waypoint::LocatorError;
 use serde::Serialize;
 
@@ -127,20 +128,20 @@ pub enum Complaint {
     },
 }
 
-impl From<HexError> for Complaint {
-    fn from(error: HexError) -> Self {
-        Self::Malformed {
-            what: "an invitation",
-            reason: error.to_string(),
-        }
-    }
-}
-
-impl From<DigestParseError> for Complaint {
-    fn from(error: DigestParseError) -> Self {
-        Self::Malformed {
-            what: "an identifier",
-            reason: error.to_string(),
+/// Gives a local failure the code and the way out that only the door can name.
+///
+/// The shapes are the same on both sides, and that is the point rather than an
+/// accident: `kusanagi-site` says what was being done and what was wrong with the
+/// bytes, and this is where that becomes a stable code plus a command a caller
+/// can run. Merging the two types would put the words `kusanagi channels` inside
+/// a crate that has no verbs.
+impl From<SiteError> for Complaint {
+    fn from(error: SiteError) -> Self {
+        match error {
+            SiteError::Local { action, source } => Self::Local { action, source },
+            SiteError::Malformed { what, reason } => Self::Malformed { what, reason },
+            SiteError::UnknownChannel { name } => Self::UnknownChannel { name },
+            SiteError::Grant(error) => Self::Grant(error),
         }
     }
 }
@@ -247,5 +248,60 @@ impl Complaint {
             "error: {}\n  code: {}\n  try:  {}",
             rendered.error, rendered.code, rendered.recover
         )
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code"
+)]
+mod tests {
+    use super::Complaint;
+    use kusanagi_grant::GrantError;
+    use kusanagi_site::SiteError;
+
+    /// The codes a caller matches on are published, and the layer that produces
+    /// the failure does not know them. This is the only place the two meet, so
+    /// it is the only place the meeting can be checked.
+    #[test]
+    fn every_local_failure_arrives_with_the_code_it_had_before_the_split() {
+        let cases = [
+            (
+                SiteError::Local {
+                    action: "read this endpoint's identity",
+                    source: std::io::Error::other("disk"),
+                },
+                "kusanagi.local",
+            ),
+            (
+                SiteError::Malformed {
+                    what: "a channel name",
+                    reason: "has a slash in it".to_owned(),
+                },
+                "kusanagi.malformed",
+            ),
+            (
+                SiteError::UnknownChannel {
+                    name: "nobody".to_owned(),
+                },
+                "kusanagi.unknown_channel",
+            ),
+            (SiteError::Grant(GrantError::Empty), "grant.empty"),
+        ];
+        for (error, code) in cases {
+            assert_eq!(Complaint::from(error).code(), code);
+        }
+    }
+
+    /// A failure with no way forward is a failure a caller cannot act on.
+    #[test]
+    fn a_local_failure_still_carries_a_way_out() {
+        let complaint = Complaint::from(SiteError::UnknownChannel {
+            name: "nobody".to_owned(),
+        });
+        assert!(complaint.render(false).contains("kusanagi channels"));
     }
 }

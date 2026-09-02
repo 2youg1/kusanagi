@@ -24,12 +24,11 @@ use kusanagi_kernel::{Clock as _, Instant, PutOutcome, Segment, Signer, Waypoint
 use kusanagi_seal::{Secret, derive, seal};
 use kusanagi_waypoint::{Locator, Place, Server, probe};
 
-use crate::channel::{Channel, Peer, Standing};
+use kusanagi_site::{Channel, Invite, Peer, Site, Standing};
+
 use crate::complaint::Complaint;
-use crate::invite::Invite;
 use crate::report::Outcome;
 use crate::request::Request;
-use crate::site::Site;
 use crate::walk::{peek, walk};
 use crate::world::{SystemClock, fresh_seed};
 
@@ -70,7 +69,7 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
 fn signer(site: &Site) -> Result<Signer, Complaint> {
     match site.identity()? {
         Some(signer) => Ok(signer),
-        None => site.adopt(&fresh_seed()?),
+        None => Ok(site.adopt(&fresh_seed()?)?),
     }
 }
 

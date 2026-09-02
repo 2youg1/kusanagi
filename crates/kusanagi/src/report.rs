@@ -10,13 +10,21 @@
 //! door is usually an agent, and a program whose human output and machine output
 //! drift apart is a program that lies to one of its two readers.
 
-use kusanagi_kernel::Hex;
+use kusanagi_kernel::{Handle, Hex};
 use kusanagi_waypoint::{Certificate, Verdict};
 use serde::Serialize;
 
-use crate::channel::{Channel, Standing};
-use crate::site::abbreviate;
+use kusanagi_site::{Channel, Standing};
+
 use crate::walk::Walked;
+
+/// A handle rendered short enough to read, for listings.
+///
+/// Shortening is a rendering decision, so it lives with the renderings and not
+/// with the record: what is stored is always the whole handle.
+fn abbreviate(handle: &Handle) -> String {
+    handle.to_string().chars().take(12).collect()
+}
 
 /// One segment as it is reported.
 #[derive(Serialize, Debug)]

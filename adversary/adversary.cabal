@@ -1,7 +1,7 @@
 cabal-version:   3.0
 name:            kusanagi-adversary
 version:         0.0.1
-synopsis:        A property oracle that attacks kusanagi through the door a user has
+synopsis:        A counterexample hunter that attacks kusanagi through the door a user has
 description:
   Out of the Rust workspace, out of the release, and out of `just check`. It
   drives the shipped binary with `--json`, asserts relations between traces, and

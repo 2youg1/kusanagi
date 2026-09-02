@@ -51,7 +51,7 @@ properties :: Door -> TestTree
 properties door =
   testGroup
     "adversary"
-    [ testCase "the committed Rust test is what this oracle renders" deliverable
+    [ testCase "the committed Rust test is what this adversary renders" deliverable
     , testProperty "what one endpoint says is what the other hears" (traces door)
     , testProperty "a revoked peer is never readable again" (revocation door)
     , testProperty "a corrupted object is refused, not believed" (tampering door)
@@ -72,12 +72,12 @@ deliverable = do
       there <- doesFileExist path
       assertBool ("there is no " <> path <> "; rerun with KUSANAGI_ACCEPT=1") there
       onDisk <- Text.readFile path
-      assertEqual "the committed Rust test is not what this oracle renders" rendered onDisk
+      assertEqual "the committed Rust test is not what this adversary renders" rendered onDisk
   where
     rendered = render "an_endpoint_cannot_accept_its_own_invitation" remembered
     path = ".." </> "crates" </> "kusanagi" </> "tests" </> "from_adversary.rs"
 
--- | The counterexample this oracle found, as it was minimised.
+-- | The counterexample this adversary found, as it was minimised.
 --
 -- Before the fix, the third and fourth steps passed: accepting your own
 -- invitation gave one endpoint two local names for one stream — both derived

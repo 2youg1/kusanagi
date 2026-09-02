@@ -9,7 +9,7 @@
 
 -- | The only place that knows a binary exists.
 --
--- Everything this oracle learns, it learns by running the program a user runs,
+-- Everything this adversary learns, it learns by running the program a user runs,
 -- with the arguments a user types, and reading the two streams a user reads.
 -- There is no linking, no FFI, and no shared type: what cannot be reached
 -- through this module cannot be tested here, which is the point.
@@ -76,7 +76,7 @@ neither = Abilities False False
 
 -- | How long an invitation stands.
 --
--- Two values, not a number: the oracle never predicts a clock, so the only
+-- Two values, not a number: the adversary never predicts a clock, so the only
 -- distinction it can honestly draw is between an invitation that has already
 -- expired and one that will not expire during a test.
 data Lifetime = Forever | Instantly
@@ -131,7 +131,7 @@ ask (Door binary) site verb = do
   where
     unreadable raw reason =
       fail $
-        "the door answered in a shape this oracle cannot read: "
+        "the door answered in a shape this adversary cannot read: "
           <> reason
           <> "\n  asked: "
           <> show verb

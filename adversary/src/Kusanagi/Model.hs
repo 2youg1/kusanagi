@@ -189,7 +189,7 @@ attemptable _ _ = True
 -- | The refusal the model says a caller must see, if any.
 --
 -- The order of the guards is the order the program checks in. Getting that
--- order wrong would not weaken the property — it would make the oracle demand a
+-- order wrong would not weaken the property — it would make the adversary demand a
 -- different failure than the one the caller is entitled to.
 refusal :: World -> Action World a -> Maybe Code
 refusal world = \case
@@ -201,7 +201,7 @@ refusal world = \case
     | otherwise -> case Map.lookup ticket (worldMinted world) of
         Nothing -> Nothing
         Just mint
-          -- Found by this oracle, then fixed in Rust: an endpoint that accepted
+          -- Found by this adversary, then fixed in Rust: an endpoint that accepted
           -- its own invitation held two local names for one stream and read its
           -- own segments back as a peer's.
           | fst (mintedBy mint) == site -> Just (Code "kusanagi.own_invitation")
@@ -332,7 +332,7 @@ instance RunModel World Attempt where
 --
 -- Uniform random traces reach this state rarely and by accident. Naming the
 -- attack and quantifying over what surrounds it is the difference between a
--- fuzzer and an adversary, and it is the reason this oracle is written in a
+-- fuzzer and an adversary, and it is the reason this hunt is written in a
 -- language with dynamic logic in it.
 revocationIsFinal :: DL World ()
 revocationIsFinal = do
