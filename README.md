@@ -147,6 +147,25 @@ finds as a Rust test committed beside the Rust code. It is outside the Cargo
 workspace, outside the release, and outside `just check` — so you never need GHC
 to change anything here.
 
+## A sister repository: [sprawling-agents](https://github.com/2youg1/sprawling-agents)
+
+`kusanagi` gives one pair of endpoints a chain nobody else can read, link, or
+order. `sprawling-agents` is where endpoints like that have something to say: a
+city of agents on one machine, whose entire history is a single append-only
+ledger.
+
+It keeps **one chain** on purpose, and for a reason that does not survive the
+trip between machines. Inside one city, claiming a piece of work, detecting two
+edits that collided, arbitrating two goals, dropping a message already
+delivered, and refusing a stale write all ask the same question — *who was
+first* — and only a total order answers it. Between machines that same total
+order is a fact an observer could read, which is why every address here is
+derived instead of agreed, and why there is one chain per pair rather than one
+chain.
+
+One chain inside a city, one chain per pair between cities. Each repository is
+half of one answer to how agents keep a history they can trust.
+
 ## Licence
 
 MPL-2.0. `docs/third-party.md` lists every dependency and its licence.
