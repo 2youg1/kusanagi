@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use kusanagi::{Complaint, Request, Site};
+use kusanagi::{Complaint, Request, Site, Whose};
 use kusanagi_grant::{Abilities, Ability};
 use kusanagi_kernel::MAX_PAYLOAD;
 
@@ -81,11 +81,23 @@ enum Verb {
         /// either way.
         #[arg(long, value_name = "HEIGHT")]
         after: Option<u64>,
+        /// Read back your own stream on this channel instead of the peer's.
+        ///
+        /// This is how a program that was interrupted finds out how far it got
+        /// without writing a segment to find out.
+        #[arg(long)]
+        mine: bool,
     },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
         /// Which channel.
         #[arg(long = "from", value_name = "NAME")]
+        name: String,
+    },
+    /// Delete a channel from this endpoint. It cannot be re-entered afterwards.
+    Forget {
+        /// Which channel.
+        #[arg(long = "channel", value_name = "NAME")]
         name: String,
     },
     /// Measure what a host actually does before trusting it with anything.
@@ -182,8 +194,15 @@ fn request(verb: Verb) -> Result<Request, Complaint> {
             name,
             payload: payload(text)?,
         },
-        Verb::Read { name, after } => Request::Read { name, after },
+        Verb::Read { name, after, mine } => Request::Read {
+            name,
+            after,
+            // The flag is a flag because that is what a command line has; the
+            // enum starts here so that nothing below carries an unnamed bool.
+            whose: if mine { Whose::Mine } else { Whose::Peer },
+        },
         Verb::Revoke { name } => Request::Revoke { name },
+        Verb::Forget { name } => Request::Forget { name },
         Verb::Doctor { waypoint } => Request::Doctor { waypoint },
         Verb::Host { bind, directory } => Request::Host { bind, directory },
     })

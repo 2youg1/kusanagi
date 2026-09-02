@@ -15,6 +15,19 @@ use std::path::PathBuf;
 
 use kusanagi_grant::Abilities;
 
+/// Which stream a read reports.
+///
+/// An enum rather than a flag because the two readings answer different
+/// questions — *what was I told* and *what did I say* — and a `bool` named
+/// `mine` at a call site three functions away says neither.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Whose {
+    /// The peer's stream: what the other end wrote.
+    Peer,
+    /// This endpoint's own stream: what it wrote itself.
+    Mine,
+}
+
 /// One thing to do.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -52,7 +65,7 @@ pub enum Request {
         /// peer is what was handed over here.
         payload: Vec<u8>,
     },
-    /// Read the peer's stream on a channel, verifying it end to end.
+    /// Read one stream on a channel, verifying it end to end.
     Read {
         /// Which channel.
         name: String,
@@ -63,9 +76,19 @@ pub enum Request {
         /// reader that trusted a prefix it did not check would be trusting the
         /// host.
         after: Option<u64>,
+        /// Whose stream to report.
+        whose: Whose,
     },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
+        /// Which channel.
+        name: String,
+    },
+    /// Delete one channel from this endpoint, keeping nothing.
+    ///
+    /// Local and one-sided: the peer is not told, the host keeps every byte it
+    /// already holds, and the revocation list is untouched.
+    Forget {
         /// Which channel.
         name: String,
     },

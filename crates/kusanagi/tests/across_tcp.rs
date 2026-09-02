@@ -23,7 +23,7 @@
 mod common;
 
 use common::{Endpoint, invite_line, json, scratch};
-use kusanagi::{Request, SystemClock};
+use kusanagi::{Request, SystemClock, Whose};
 use kusanagi_waypoint::Server;
 use std::net::TcpListener;
 
@@ -64,6 +64,7 @@ fn two_endpoints_meet_over_tcp_through_a_host_neither_of_them_trusts() {
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .expect("bob could not read alice over tcp"),
     );
@@ -75,6 +76,7 @@ fn two_endpoints_meet_over_tcp_through_a_host_neither_of_them_trusts() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: None,
+                whose: Whose::Peer,
             })
             .expect("alice could not read bob over tcp"),
     );

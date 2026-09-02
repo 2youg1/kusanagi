@@ -211,9 +211,11 @@ impl Complaint {
             Self::OwnInvitation => "hand this line to the endpoint you mean to admit; \
                  the channel it opens is already here under the name you gave it"
                 .to_owned(),
-            Self::CannotRevokeRoot { .. } => {
-                "leave the channel instead: delete it from `channels` and stop reading it"
-                    .to_owned()
+            Self::CannotRevokeRoot { name } => {
+                format!(
+                    "leave instead: `kusanagi forget --channel {name}` drops the channel here, \
+                     and nothing on the host is touched"
+                )
             }
             Self::UnknownChannel { .. } | Self::NoPeerYet { .. } => {
                 "run `kusanagi channels` to see what is here".to_owned()

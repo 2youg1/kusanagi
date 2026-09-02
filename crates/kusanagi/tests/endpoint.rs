@@ -21,7 +21,7 @@
 mod common;
 
 use common::{Endpoint, invite_line, json, scratch};
-use kusanagi::Request;
+use kusanagi::{Request, Whose};
 
 #[test]
 fn two_endpoints_exchange_messages_through_a_host_neither_of_them_runs() {
@@ -49,6 +49,7 @@ fn two_endpoints_exchange_messages_through_a_host_neither_of_them_runs() {
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .expect("bob could not read alice"),
     );
@@ -61,6 +62,7 @@ fn two_endpoints_exchange_messages_through_a_host_neither_of_them_runs() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: None,
+                whose: Whose::Peer,
             })
             .expect("alice could not read bob"),
     );
@@ -90,6 +92,7 @@ fn one_flipped_byte_on_the_host_is_caught() {
         bob.run(&Request::Read {
             name: "alice".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .is_ok()
     );
@@ -102,6 +105,7 @@ fn one_flipped_byte_on_the_host_is_caught() {
         .run(&Request::Read {
             name: "alice".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .expect_err("a tampered drop was accepted");
     assert_eq!(complaint.code(), "seal.rejected");
@@ -130,6 +134,7 @@ fn revoking_a_peer_stops_their_messages_from_that_moment() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: None,
+                whose: Whose::Peer,
             })
             .unwrap(),
     );
@@ -153,6 +158,7 @@ fn revoking_a_peer_stops_their_messages_from_that_moment() {
         .run(&Request::Read {
             name: "bob".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .expect_err("a revoked peer was still readable");
     assert_eq!(refused.code(), "grant.revoked");
@@ -165,6 +171,7 @@ fn revoking_a_peer_stops_their_messages_from_that_moment() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: None,
+                whose: Whose::Peer,
             })
             .unwrap_err()
             .code(),
@@ -243,6 +250,7 @@ fn an_endpoint_with_only_read_cannot_send() {
         bob.run(&Request::Read {
             name: "alice".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .is_ok()
     );
@@ -308,6 +316,7 @@ fn a_command_keeps_no_state_that_a_kill_could_lose() {
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .unwrap(),
     );
@@ -340,6 +349,7 @@ fn a_channel_lists_itself_before_and_after_somebody_joins() {
         .run(&Request::Read {
             name: "bob".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .unwrap();
 

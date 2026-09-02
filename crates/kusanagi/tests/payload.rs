@@ -20,7 +20,7 @@
 mod common;
 
 use common::{Endpoint, invite_line, json, scratch};
-use kusanagi::Request;
+use kusanagi::{Request, Whose};
 
 #[test]
 fn a_payload_that_is_not_text_survives_the_round_trip() {
@@ -50,6 +50,7 @@ fn a_payload_that_is_not_text_survives_the_round_trip() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: None,
+                whose: Whose::Peer,
             })
             .expect("alice could not read bob"),
     );
@@ -82,6 +83,7 @@ fn reading_after_a_height_reports_only_what_follows() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: None,
+                whose: Whose::Peer,
             })
             .unwrap(),
     );
@@ -92,6 +94,7 @@ fn reading_after_a_height_reports_only_what_follows() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: Some(0),
+                whose: Whose::Peer,
             })
             .unwrap(),
     );
@@ -107,6 +110,7 @@ fn reading_after_a_height_reports_only_what_follows() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: Some(2),
+                whose: Whose::Peer,
             })
             .unwrap(),
     );

@@ -20,7 +20,7 @@
 mod common;
 
 use common::{Endpoint, json, scratch};
-use kusanagi::Request;
+use kusanagi::{Request, Whose};
 use kusanagi_grant::Abilities;
 
 #[test]
@@ -62,6 +62,7 @@ fn an_endpoint_cannot_accept_its_own_invitation() {
         .run(&Request::Read {
             name: "one".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .unwrap_err();
     assert_eq!(refused4.code(), "kusanagi.no_peer_yet");

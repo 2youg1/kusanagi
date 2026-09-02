@@ -37,7 +37,7 @@ mod common;
 use std::collections::BTreeSet;
 
 use common::{Endpoint, invite_line, json, scratch, stored};
-use kusanagi::Request;
+use kusanagi::{Request, Whose};
 
 /// How many segments each side writes.
 const ROUNDS: usize = 50;
@@ -127,6 +127,7 @@ fn a_host_holding_a_hundred_segments_can_link_none_of_them() {
         &bob.run(&Request::Read {
             name: "alice".to_owned(),
             after: None,
+            whose: Whose::Peer,
         })
         .unwrap(),
     );
@@ -136,6 +137,7 @@ fn a_host_holding_a_hundred_segments_can_link_none_of_them() {
             .run(&Request::Read {
                 name: "bob".to_owned(),
                 after: None,
+                whose: Whose::Peer,
             })
             .unwrap(),
     );

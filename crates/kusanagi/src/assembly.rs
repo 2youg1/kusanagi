@@ -28,7 +28,7 @@ use kusanagi_site::{Channel, Invite, Peer, Site, Standing};
 
 use crate::complaint::Complaint;
 use crate::report::Outcome;
-use crate::request::Request;
+use crate::request::{Request, Whose};
 use crate::walk::{peek, walk};
 use crate::world::{SystemClock, fresh_seed};
 
@@ -45,7 +45,7 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
     let now = SystemClock.now();
     match request {
         Request::Identity => identity(site),
-        Request::Channels => channels(site),
+        Request::Channels => channels(site, now),
         Request::Invite {
             name,
             waypoint,
@@ -54,8 +54,9 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
         } => invite(site, name, waypoint, *lifetime, *abilities, now),
         Request::Join { invite, name } => join(site, invite, name, now),
         Request::Send { name, payload } => send(site, name, payload, now),
-        Request::Read { name, after } => read(site, name, *after, now),
+        Request::Read { name, after, whose } => read(site, name, *after, *whose, now),
         Request::Revoke { name } => revoke(site, name),
+        Request::Forget { name } => forget(site, name),
         Request::Doctor { waypoint } => doctor(waypoint, now),
         Request::Host { bind, directory } => host(bind, directory),
     }
@@ -80,11 +81,19 @@ fn identity(site: &Site) -> Result<Outcome, Complaint> {
     })
 }
 
-fn channels(site: &Site) -> Result<Outcome, Complaint> {
+/// Lists what is here, with each standing checked against the clock.
+///
+/// The abilities reported are the ones that survive verification right now, not
+/// the ones the record claims: an expired or revoked channel is visible as such
+/// in the listing instead of being discovered by a command that fails. No
+/// request leaves this machine — expiry and revocation are local facts.
+fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
+    let revoked = site.revocations()?;
     let mut channels = Vec::new();
     for name in site.names()? {
         let channel = site.channel(&name)?;
-        channels.push(Outcome::summarise(&name, &channel));
+        let me = signer(site)?.handle();
+        channels.push(Outcome::summarise(&name, &channel, &me, now, &revoked));
     }
     Ok(Outcome::Channels { channels })
 }
@@ -255,10 +264,19 @@ fn send(site: &Site, name: &str, payload: &[u8], now: Instant) -> Result<Outcome
     })
 }
 
-fn read(site: &Site, name: &str, after: Option<u64>, now: Instant) -> Result<Outcome, Complaint> {
+fn read(
+    site: &Site,
+    name: &str,
+    after: Option<u64>,
+    whose: Whose,
+    now: Instant,
+) -> Result<Outcome, Complaint> {
     let me = signer(site)?;
     let channel = site.channel(name)?;
     let revoked = site.revocations()?;
+    if whose == Whose::Mine {
+        return mine(&channel, &me, name, after, now);
+    }
     channel
         .standing
         .permits(&channel.root, &me.handle(), Ability::Read, now, &revoked)?;
@@ -285,6 +303,30 @@ fn read(site: &Site, name: &str, after: Option<u64>, now: Instant) -> Result<Out
         &theirs,
         after,
     ))
+}
+
+/// Reports this endpoint's own stream, verified the same way a peer's is.
+///
+/// No standing is checked, and that is a statement about where enforcement can
+/// live rather than a relaxation. These segments sit at addresses derived from a
+/// secret this endpoint holds and carry signatures this endpoint made; refusing
+/// to show them would refuse nothing, because the bytes are reachable with or
+/// without this program's permission. The checks that can stop something are in
+/// `send` and in the peer's `read`, and they stay there.
+///
+/// An agent that was killed mid-loop needs exactly this: its own height, without
+/// writing a segment to find out.
+fn mine(
+    channel: &Channel,
+    me: &Signer,
+    name: &str,
+    after: Option<u64>,
+    now: Instant,
+) -> Result<Outcome, Complaint> {
+    let place = open(&channel.locator, now)?;
+    let stream = channel.secret.stream(&me.handle());
+    let ours = walk(&place, &stream, &me.handle(), name)?;
+    Ok(Outcome::read(name, &me.handle().to_string(), &ours, after))
 }
 
 /// Learns who accepted an invitation, from the introduction stream.
@@ -348,6 +390,22 @@ fn revoke(site: &Site, name: &str) -> Result<Outcome, Complaint> {
     Ok(Outcome::Revoked {
         name: name.to_owned(),
         step: step.to_string(),
+    })
+}
+
+/// Removes one channel from this endpoint and tells nobody.
+///
+/// Revoking and forgetting are not two spellings of one act. Revoking is a
+/// statement about the world that survives here and is enforced on every later
+/// read; forgetting is this machine dropping a key, which the peer cannot
+/// observe and the host cannot be asked to help with. Doing both from one verb
+/// would mean a caller who wanted one always got the other.
+fn forget(site: &Site, name: &str) -> Result<Outcome, Complaint> {
+    let channel = site.channel(name)?;
+    site.forget(name)?;
+    Ok(Outcome::Forgotten {
+        name: name.to_owned(),
+        waypoint: channel.locator,
     })
 }
 

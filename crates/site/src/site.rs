@@ -142,6 +142,37 @@ impl Site {
         })
     }
 
+    /// Deletes one channel record.
+    ///
+    /// This is the only destructive operation a site has, and what it destroys
+    /// is the channel secret: every address on that channel derives from it, so
+    /// a forgotten channel cannot be re-entered by any means, including a fresh
+    /// copy of the invitation that opened it.
+    ///
+    /// The revocation list is deliberately left alone. A revoked step has to
+    /// outlive the record that mentioned it, or joining the same name again
+    /// would bring a revoked grant back to life.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::UnknownChannel`] when there is no such channel, and
+    /// [`SiteError::Local`] when the file cannot be removed.
+    pub fn forget(&self, name: &str) -> Result<(), SiteError> {
+        let path = self.channel_path(name)?;
+        match fs::remove_file(&path) {
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                Err(SiteError::UnknownChannel {
+                    name: name.to_owned(),
+                })
+            }
+            Err(source) => Err(SiteError::Local {
+                action: "forget a channel",
+                source,
+            }),
+            Ok(()) => Ok(()),
+        }
+    }
+
     /// Every channel name here, in a stable order.
     ///
     /// # Errors
@@ -345,6 +376,24 @@ mod tests {
                 "`{bad}` was accepted as a channel name"
             );
         }
+    }
+
+    #[test]
+    fn a_forgotten_channel_leaves_no_trace_and_frees_its_name() {
+        let site = scratch("forget");
+        site.keep("alice", &channel()).unwrap();
+        site.forget("alice").unwrap();
+
+        assert!(!site.holds("alice").unwrap());
+        assert!(site.names().unwrap().is_empty());
+        assert!(matches!(
+            site.forget("alice"),
+            Err(SiteError::UnknownChannel { .. })
+        ));
+        // the name is free again, which is what makes forgetting a way out
+        site.keep("alice", &channel()).unwrap();
+        assert!(site.holds("alice").unwrap());
+        std::fs::remove_dir_all(site.root()).unwrap();
     }
 
     #[test]

@@ -21,7 +21,7 @@ mod world;
 pub use assembly::run;
 pub use complaint::Complaint;
 pub use report::Outcome;
-pub use request::Request;
+pub use request::{Request, Whose};
 pub use walk::{Held, Walked, peek, walk};
 pub use world::{SystemClock, fresh_seed};
 

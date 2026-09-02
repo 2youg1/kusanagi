@@ -1,6 +1,6 @@
 # kusanagi-SPEC
 
-> `kusanagi` —— 九个动词、一份本地状态、一个装配点。这是唯一知道具体东西存在的 crate。
+> `kusanagi` —— 十个动词、一个装配点。这是唯一知道具体东西存在的 crate。
 >
 > 权威顺序：用户裁决 → `ARCHITECTURE.md` → 本文 → 代码与测试。本文先于代码改动。
 
@@ -16,6 +16,9 @@
 | U6 装配 | `assembly::run` | 九个动词；时钟每条命令采样一次 |
 | U7 输出 | `Outcome` / `Complaint` | 同一个值渲染成散文与 JSON，两者不可能不一致 |
 | U8 代理可用的门 | 载荷进得去也出得来，增量读得到，参数错误也带码 | 任意字节经 stdin 进、经 `payload` 出且逐字节相等；`--after H` 只报 H 之后的段；每一条失败都有稳定码与恢复命令 |
+| U9 退出一条通道 | `forget` | 忘掉后 `channels` 不再列出它；同名可以重新 join；撤销表不受影响 |
+| U10 看自己写过什么 | `read --mine` | 崩溃后不写入即可问出自己的链头；报告的 `author` 是自己 |
+| U11 通道的现时权限 | `channels` 报 `can` 与 `expires_at` | 过期或被撤销的通道在列表里就能看出来，不必先失败一次 |
 
 ## 2 验收标准
 
@@ -38,6 +41,9 @@
 15. 三段之后 `read --after 0` 只报两段，而 `height` 仍是已验证的链头——增量报告不得影响验证。
 16. 经**真正的二进制**管道写入一段，再用 `--json` 读回（`door.rs`）——前端那几十行胶水只能这么测，而那正是代理真实走的那扇门。
 17. 自己发出的邀请被拒，得 `kusanagi.own_invitation`（`from_adversary.rs`）。**这条验收不是人想出来的**：`adversary/` 在首次完整运行时把它最小化成四步轨迹，那个文件就是它的渲染结果。
+18. `forget` 之后通道不再被列出，同一个名字可以重新 join，而撤销表里的条目仍在（`leaving.rs`）。
+19. 一个端点连发三段后**不写任何东西**就能读回自己的链头，`author` 是自己的 handle（`leaving.rs`）。
+20. 被撤销的一端在 `channels` 里就看得出来：`can` 为空，`refused` 是 `grant.revoked`（`leaving.rs`）。
 
 ## 3 假设与歧义
 
@@ -48,6 +54,8 @@
 | 通道名 | 本地私有，从不上线 | 永不失效 |
 | 身份文件权限 | 不设 Unix 模式位 | 跨平台一致优先；见 §14 |
 | 读操作可否写盘 | 可以，且仅限一处：把已验证的 peer 记下来 | 见 §10 步骤 4 |
+| 读自己的流要不要权限 | **不要**。见 §10 步骤 11 | 除非某天自己的流不再由自己的密钥派生 |
+| `forget` 要不要顺带撤销 | 不要。忘记是本机动作，撤销是对世界的声明 | 永不失效；两件事失败方式不同 |
 
 ## 4 现状分析
 
@@ -70,37 +78,43 @@
 ```
 lib.rs        模块索引
 request.rs    Request —— 动词集合的唯一权威
-site.rs       Site —— identity / channels / revoked
-channel.rs    Channel / Standing / Peer 与其磁盘格式
-invite.rs     Invite 与 kusanagi1: 文本形式
 walk.rs       peek / walk —— 读一条流并逐段检查
 report.rs     Outcome —— 一个值，两种渲染
 complaint.rs  Complaint —— 失败 + 稳定码 + 恢复命令
 world.rs      时钟与熵的唯一采样点
-assembly.rs   九个动词的组装
+assembly.rs   十个动词的组装
 main.rs       clap ↔ Request
 ```
 
-依赖全部五个内部 crate，加 `clap`、`getrandom`、`serde`、`serde_json`、`thiserror`。
+磁盘那一半已拆出为 `kusanagi-site`（`Site` / `Channel` / `Invite`），见
+`crates/site/site-SPEC.md`。本 crate 依赖全部六个内部 crate，加 `clap`、`getrandom`、
+`serde`、`serde_json`、`thiserror`。
 
-### 行数预算：下一次改动先拆 crate
+### 行数预算：拆分已完成
 
-本 crate 的 `src/` 现为 **2,405 / 2,500**。剩下的余量不够再进一个特性，所以**下一次实质改动的第一步是拆分，而不是把特性塑形得刚好塞得进去**。本次已把两条缝看完，结论写在这里，下一个人不必重新推一遍：
+上一版记下的欠账是「`src/` 到了 2,405 / 2,500，下一次实质改动的第一步是拆分」，
+以及拆分前必须先回答的那个问题——`Local` / `Malformed` 这个「本机 IO 失败」的形状归谁。
 
-| 候选缝 | 会得到什么 | 为什么本次没做 |
-|---|---|---|
-| 把 `site.rs` + `channel.rs` + `invite.rs`（937 行）拆成存储 crate | 主 crate 降到 ~1,470，且剩掉的正好是读动词时不需要在场的磁盘格式细节 | **错误分类不沿这条缝切开**。`Complaint::Local { action, source }` 与 `Malformed` 不是 site 特有的形状：main.rs 读 stdin、assembly 绑端口都用它。拆分必须先回答“这个形状归谁”，而那个回答本身就是一次改动 |
-| 把 `main.rs`（215 行）拆成前端 crate | 买到 215 行，并为 `ARCHITECTURE.md` §9 的 `port` 先摆好位置 | 买到的是**最不占脑子的那 215 行**。预算存在是为了“一个想法能装进脑子”，搬走 clap 胶水不改善这件事，只改善数字——那叫挪门柱 |
+**答案：形状归碰了磁盘的那一层，名字归门。** `SiteError` 说「读身份文件时操作系统拒绝了」，
+`Complaint` 说这叫 `kusanagi.local`、以及「检查 `--root` 指向一个可写目录」。
+恢复是用动词说的，而动词只有前端有；合成一个类型就等于把 `kusanagi channels` 这句话
+写进一个没有动词的 crate。拆分照此执行，`src/` 由 2,424 降到 1,494。
 
-因此建议的顺序是：**先定下 `Local` / `Malformed` 这个“本机 IO 失败”形状归哪一层，再拆存储 crate**。在那之前向本 crate 加代码的人，会在 `just budget` 上撑住——那正是预算该做的事。
+剩下的一条缝仍不建议现在切：把 `main.rs`（约 240 行）拆成前端 crate 买到的是
+**最不占脑子的那 240 行**，预算存在是为了「一个想法能装进脑子」，搬走 clap 胶水
+只改善数字——那叫挪门柱。等 `ARCHITECTURE.md` §9 的 `port` 真的到来再说。
 
 ## 8 接口先行
 
 ```rust
 pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint>;
 
-pub enum Request { Identity, Channels, Invite{..}, Join{..}, Send{..}, Read{..},
-                   Revoke{..}, Doctor{..}, Host{..} }
+pub enum Request { Identity, Channels, Invite{..}, Join{..}, Send{..},
+                   Read{ name, after, whose: Whose }, Revoke{..}, Forget{..},
+                   Doctor{..}, Host{..} }
+
+/// 读哪一条流。布尔旗标会在调用点丢掉这个名字，枚举不会。
+pub enum Whose { Peer, Mine }
 
 pub enum Standing { Root, Granted(Grant) }
 impl Standing {
@@ -124,6 +138,7 @@ send  ：查 standing 是否允许 Send → walk 自己的流取链头 → 签�
 read  ：查 standing 是否允许 Read → 若 peer 未知则读介绍流并落盘 → 查 peer 是否被允许 Send
         → walk 对方的流
 revoke：取 peer grant 的最末一节 id → 写进 revoked
+forget：删掉本机那一个通道文件。撤销表不动，宿主上的字节不动
 ```
 
 ## 10 实现逻辑
@@ -146,6 +161,23 @@ revoke：取 peer grant 的最末一节 id → 写进 revoked
 
 **步骤 9：`--after` 只剪报告，不剪验证。** 链仍从创世段逐段验证（`ARCHITECTURE.md` 的读取契约），`--after` 只决定哪几段进入 `segments`。它省的是输出与调用方的比对，**不省请求钱**——把它写成省钱会诱使人以为验证变短了。
 
+**步骤 11：读自己的流不查权限。** `--mine` 走的是同一条 `walk`，但不问 standing。
+理由不是宽松而是诚实：那些段由自己的密钥派生的地址装着、由自己的签名签着，
+检查过不过都拿得到同样的字节，**执行不了的检查是表演**。真正的执行点在别处——
+`send` 查自己能不能写、`read` 查对方当时能不能写，两处都能真的拦住事情发生。
+过期或被撤销之后仍然读得到自己写过什么，这正是崩溃后要恢复的那个代理需要的。
+
+**步骤 12：`channels` 用本地时钟验一次 standing。** 列表里的 `can` 是**验证过的**能力，
+不是记录里抄出来的声明；`refused` 出现时带的是 `grant.*` 那个稳定码。
+一次网络请求都不发，因为过期与撤销都是本地事实。
+代价是同一条通道在 `channels` 与 `send` 之间可能跨过失效时刻——那不是不一致，
+那是时间。
+
+**步骤 13：`forget` 只删本机那一个文件。** 它不撤销、不通知对方、不动宿主上的字节，
+也不清撤销表——撤销必须活得比通道记录长，否则重新 join 同一个名字就能让一份
+已撤销的 grant 复活。它删掉的是通道密钥，所以那条通道**再也回不去**，这句话必须
+出现在散文输出里。
+
 **步骤 10：参数错误也走 `Complaint`。** 以前 clap 到 `Request` 的翻译失败只向 stderr 打一句散文，于是门上有一类失败没有稳定码。现在它们是 `Complaint::Argument`，与其他十四种失败同形。这是**删掉一个特例**，不是加一个。
 
 ## 11 边界枚举
@@ -167,6 +199,11 @@ revoke：取 peer grant 的最末一节 id → 写进 revoked
 | stdin 给了零字节 | 照发。空载荷是合法的段，拒绝它需要一条没人写过的规则 |
 | `--after H` 中 H ≥ 链头 | `segments` 为空而 `height` 照报——这正是轮询者要的那一条回答 |
 | `--can` 里出现不认识的词 | `kusanagi.argument`，而不是静默地少授予一项 |
+| `forget` 一个不存在的通道 | `kusanagi.unknown_channel` |
+| `forget` 之后再用同名 `join` | 允许。名字是本地的，忘掉即空出 |
+| `read --mine` 而自己一段都没写 | `height` 为 `null`，`segments` 为空，不是错误 |
+| `read --mine` 在被撤销之后 | 照读。见 §10 步骤 11 |
+| `channels` 里有一条 grant 已过期 | 列出来，`can` 为空，`refused` 为 `grant.expired` |
 
 ## 12 错误处理
 
@@ -199,6 +236,7 @@ revoke：取 peer grant 的最末一节 id → 写进 revoked
 | `--after H` 是**严格大于** | 调用方手里持有 H，要的是 H 之后的 | 改成含 H 会让每次轮询重复一段 |
 | stdin 最多读 `MAX_PAYLOAD + 1` 字节 | 越限由 kernel 判，本层只负责不无界 | 跟随 `kernel::MAX_PAYLOAD`，不另写常量 |
 | `payload` 用小写十六进制 | 全仓只有一套十六进制编解码（`kernel::wire`），不为一个字段引入 base64 | 体积翻倍；64 KiB 载荷 → 128 KiB 文本，在可接受范围 |
+| `read` 的输出字段是 `author` 而不是 `peer` | 加了 `--mine` 之后那条流可能是自己的，`peer` 会变成一句假话 | 门上的**破坏性改名**，pre-alpha 期内按 README 的约定直接改 |
 
 ## 15 影响面
 

@@ -15,6 +15,7 @@ without a migration path. Read the next table before relying on anything.
 | | Status |
 |---|---|
 | Two endpoints exchanging messages through a directory, an HTTP box, or an S3 bucket | **works** |
+| Reading your own stream back, and leaving a channel for good | **works** |
 | Every address unlinkable to every other, and to its author, from the host's side | **works**, asserted over 100 segments |
 | Content sealed with ChaCha20-Poly1305 under a key used once | **works** |
 | Segments signed; a chain verified from genesis on every read | **works** |
@@ -70,7 +71,11 @@ Alice changes her mind:
 kusanagi --root ~/.alice revoke --from bob
 ```
 
-Nothing Bob writes is accepted afterwards, including what he wrote before.
+Nothing Bob writes is accepted afterwards, including what he wrote before. Bob is
+not told — there is no channel left on which to tell him — so his endpoint goes
+on reporting a live grant while Alice's `channels` shows him cut off. When Alice
+is done with the channel entirely, `kusanagi forget --channel bob` drops it here
+and leaves the host untouched.
 
 `docs/joining.md` is the same thing at one page, written for somebody who has
 never seen this repository. `just demo` runs the whole story in a temporary
@@ -84,9 +89,10 @@ directory.
 | `invite --name N --waypoint W [--for SECS] [--can send,read]` | open a channel and mint one invitation |
 | `join <INVITE> --name N` | accept an invitation |
 | `send --to N ["text"]` | append one segment to your stream; without the text, the payload is read from stdin |
-| `read --from N [--after H]` | read the peer's stream, verified from genesis; `--after` reports only what follows `H` |
-| `channels` | list what is here |
+| `read --from N [--after H] [--mine]` | read the peer's stream, verified from genesis; `--after` reports only what follows `H`, and `--mine` reads back your own |
+| `channels` | list what is here, with what each channel still permits and until when |
 | `revoke --from N` | cut a peer off, immediately and permanently |
+| `forget --channel N` | drop a channel from this endpoint; the host keeps its bytes and the channel cannot be re-entered |
 | `doctor <WAYPOINT>` | measure what a host actually does, and certify it |
 | `host --bind ADDR --dir PATH` | be a host for other people's drops |
 
@@ -95,9 +101,10 @@ failure carries a stable code and the command that recovers from it — includin
 mistyped argument, which is a failure like any other.
 
 For a caller that is a program: pipe the payload in rather than quoting it, read
-`payload` rather than `text` because only the first is lossless, and poll with
-`--after H`, which reports the verified height even when it reports no segments.
-`docs/joining.md` has the three of them worked through.
+`payload` rather than `text` because only the first is lossless, poll with
+`--after H`, which reports the verified height even when it reports no segments,
+and recover a lost position with `--mine` rather than by writing a segment to see
+where you are. `docs/joining.md` has the four of them worked through.
 
 ## Where drops can live
 
