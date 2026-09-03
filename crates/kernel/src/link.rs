@@ -104,6 +104,10 @@ impl ChainHead {
 /// shows the proof the segment below promised, and a proof is worth exactly one
 /// height to exactly one reader.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the difference is the design: a genesis segment carries an               ML-DSA-87 signature and a following one carries none. Boxing it               would cost `Copy`, which every `const fn` accessor on `Segment`               relies on, to save a copy the ruling in ARCHITECTURE.md §8               explicitly authorises spending"
+)]
 pub enum Link {
     /// The first segment of a chain.
     Genesis {

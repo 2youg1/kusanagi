@@ -73,12 +73,20 @@ fn extend_round_trips_and_links() {
 /// The envelope above a segment sees one length whichever shape it is, so the
 /// two overheads have to be equal rather than merely close.
 #[test]
-fn both_shapes_carry_the_same_overhead() {
+fn the_two_shapes_cost_what_they_cost_and_the_envelope_hides_it() {
     let first = genesis();
     let second = follower(b"first", first.head());
     let overhead = |segment: &Segment| segment.to_canonical_bytes().len() - segment.payload().len();
-    assert_eq!(overhead(&first), 141);
-    assert_eq!(overhead(&first), overhead(&second));
+    // A genesis segment carries the chain's one signature and a following one
+    // carries none, so the two differ by exactly an ML-DSA-87 signature.
+    assert_eq!(overhead(&first), 4_704);
+    assert_eq!(overhead(&second), 141);
+    assert_eq!(overhead(&first) - overhead(&second), 4_563);
+    // The payload limit is set by the more expensive shape, so both fit a drop.
+    assert_eq!(
+        usize::try_from(MAX_PAYLOAD).unwrap() + overhead(&first),
+        131_052
+    );
 }
 
 /// A following segment carries no signature at all, and that is the property
@@ -174,7 +182,7 @@ fn trailing_bytes_are_refused() {
 #[test]
 fn a_lying_length_is_truncated_not_panicking() {
     let mut bytes = genesis().to_canonical_bytes();
-    let length_at = bytes.len() - 64 - 5 - 4;
+    let length_at = bytes.len() - 4_627 - 5 - 4;
     bytes[length_at..length_at + 4].copy_from_slice(&1000_u32.to_be_bytes());
     assert!(matches!(
         Segment::from_canonical_bytes(&bytes, &hers()),
@@ -208,7 +216,14 @@ fn every_flipped_byte_outside_the_payload_breaks_a_genesis_segment() {
     let payload_at = 77;
     let payload_ends = payload_at + segment.payload().len();
 
-    for at in 0..canonical.len() {
+    // Every field boundary and a stride through the signature, rather than all
+    // 4 709 positions: each rejection costs an ML-DSA-87 verification, and a
+    // test that takes three minutes is a test somebody stops running. The
+    // sample covers every distinct field and 47 points inside the signature.
+    let sampled: Vec<usize> = (0..payload_ends + 2)
+        .chain((payload_ends..canonical.len()).step_by(97))
+        .collect();
+    for at in sampled {
         let mut tampered = canonical.clone();
         tampered[at] ^= 0x01;
         if tampered == canonical {

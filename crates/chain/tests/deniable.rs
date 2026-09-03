@@ -74,9 +74,12 @@ const FOLLOWS_PAYLOAD_AT: usize = 141;
 
 /// Where the payload sits in a genesis segment's canonical bytes.
 ///
-/// tag 1 + index 8 + author 32 + commit 32 + len 4, and 64 bytes of signature
-/// follow the payload rather than precede it.
+/// tag 1 + index 8 + author 32 + commit 32 + len 4, and the signature follows
+/// the payload rather than preceding it.
 const GENESIS_PAYLOAD_AT: usize = 77;
+
+/// How long an ML-DSA-87 signature is, which is what trails a genesis payload.
+const SIGNATURE: usize = 4_627;
 
 /// Rewrites what a segment says, leaving every field that authenticates it.
 ///
@@ -96,7 +99,7 @@ fn reworded(segment: &Segment, words: &str) -> Vec<u8> {
     forged.extend_from_slice(payload);
     if segment.previous().is_none() {
         // The signature trails the payload and covers neither it nor its length.
-        forged.extend_from_slice(&original[original.len() - 64..]);
+        forged.extend_from_slice(&original[original.len() - SIGNATURE..]);
     }
     forged
 }

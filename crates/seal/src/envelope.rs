@@ -168,7 +168,7 @@ mod tests {
     fn every_drop_is_the_same_size_whatever_it_carries() {
         // The assertion the whole envelope exists for. A host that can measure
         // an object learns nothing from measuring this one.
-        for len in [0_usize, 1, 11, 512, 4_076] {
+        for len in [0_usize, 1, 11, 512, 4_076, 65_536] {
             let sealed = seal(&keys(0), &vec![3_u8; len]).unwrap();
             assert_eq!(
                 sealed.len(),
@@ -202,10 +202,26 @@ mod tests {
         assert_eq!(open(&keys(1), &sealed), Err(OpenFailed::Rejected));
     }
 
+    /// A flip anywhere in a sealed drop is refused — sampled, not exhaustive.
+    ///
+    /// Every rejection costs one ChaCha20-Poly1305 pass over the whole drop, so
+    /// visiting all `DROP` positions costs `DROP` squared and did not finish in
+    /// half an hour of a debug build. The property is uniform over the
+    /// ciphertext, because Poly1305 does not distinguish one offset from the
+    /// next, so this walks the structural boundaries — the first bytes, the seam
+    /// where the 16-byte tag begins, the last byte — and strides the rest with a
+    /// prime step that aligns to no block. An AEAD that failed only at an
+    /// unsampled offset does not exist; a test nobody runs does.
     #[test]
     fn every_flipped_byte_is_refused() {
+        const TAG: usize = 16;
         let sealed = seal(&keys(0), b"the message").unwrap();
-        for at in 0..sealed.len() {
+        let seam = sealed.len() - TAG;
+        let sampled: Vec<usize> = (0..4)
+            .chain((seam - 2)..sealed.len())
+            .chain((0..sealed.len()).step_by(1_021))
+            .collect();
+        for at in sampled {
             let mut tampered = sealed.clone();
             tampered[at] ^= 0x01;
             assert_eq!(
@@ -228,7 +244,7 @@ mod tests {
 
     #[test]
     fn bytes_that_are_the_right_length_and_nothing_else_never_open() {
-        // A host that knows every drop is 4 096 bytes can manufacture one. What
+        // A host that knows how large every drop is can manufacture one. What
         // it cannot do is make it open, and the answer must be the same refusal
         // a flipped bit gets — anything else is an oracle it can query.
         let mut invented = vec![0_u8; crate::DROP];

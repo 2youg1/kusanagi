@@ -9,13 +9,13 @@
 //! no arithmetic on attacker-supplied sizes.
 //!
 //! ```text
-//! issuer      32 bytes  the verifying key that signed this step
+//! issuer    2592 bytes  the verifying key that signed this step
 //! subject     32 bytes  the handle it was signed over to
 //! abilities    1 byte   the ability bitset
 //! expires_at   8 bytes  big endian, seconds since the Unix epoch
 //! has_parent   1 byte   0 for the root step, 1 otherwise
 //! parent      32 bytes  the identifier of the step above; zeroes at the root
-//! signature   64 bytes  by the issuer, over everything above
+//! signature 4627 bytes  by the issuer, over everything above
 //! ```
 //!
 //! **A step carries the issuer's key and the subject's name, and the asymmetry
@@ -38,10 +38,10 @@ const STEP_DOMAIN: &[u8] = b"kusanagi.grant.v1";
 const SIGNING_DOMAIN: &[u8] = b"kusanagi.grant.v1.sign";
 
 /// The size of one encoded step, signature included.
-pub(crate) const STEP_BYTES: usize = 170;
+pub(crate) const STEP_BYTES: usize = 7_293;
 
 /// Everything a step is, except the signature over it.
-const BODY_BYTES: usize = 106;
+const BODY_BYTES: usize = 2_666;
 
 identifier! {
     /// The identity of one step, and the thing a revocation names.
@@ -148,7 +148,7 @@ impl Step {
     /// knows which position in which chain it sat at, so the check belongs to
     /// `Grant::verify` where that position is known.
     pub(crate) fn read(reader: &mut Reader<'_>) -> Result<Self, GrantError> {
-        let issuer = VerifyingKey::from_bytes(reader.take_array::<32>()?);
+        let issuer = VerifyingKey::from_bytes(reader.take_array::<{ VerifyingKey::WIDTH }>()?);
         let subject = Handle::from_bytes(reader.take_array::<32>()?);
         let abilities = Abilities::from_bits(reader.take_byte()?)?;
         let expires_at = Instant::from_unix_seconds(reader.take_u64()?);
@@ -164,7 +164,7 @@ impl Step {
         if parent.is_none() && parent_bytes != [0_u8; 32] {
             return Err(GrantError::UnknownParentTag { tag: 0 });
         }
-        let signature = Signature::from_bytes(reader.take_array::<64>()?);
+        let signature = Signature::from_bytes(reader.take_array::<4_627>()?);
         Ok(Self {
             issuer,
             subject,
@@ -228,7 +228,7 @@ mod tests {
             None,
         );
         assert_eq!(step.to_bytes().len(), STEP_BYTES);
-        assert_eq!(BODY_BYTES.saturating_add(64), STEP_BYTES);
+        assert_eq!(BODY_BYTES.saturating_add(4_627), STEP_BYTES);
     }
 
     #[test]

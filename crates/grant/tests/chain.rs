@@ -204,6 +204,10 @@ fn an_expiry_can_only_come_forward() {
 #[test]
 fn a_forged_step_does_not_verify() {
     let (root, first, _, _, one, _, _) = three_deep();
+    // Derived from a one-step grant rather than written down: the width of a
+    // step follows the signature scheme, and a literal here would have to be
+    // found and corrected every time that changes.
+    let step = one.to_canonical_bytes().len() - 1;
     // Somebody splices a step signed by a key that never held the grant.
     let forged = Grant::from_canonical_bytes(&{
         let mut bytes = one.to_canonical_bytes();
@@ -212,7 +216,7 @@ fn a_forged_step_does_not_verify() {
             .unwrap()
             .to_canonical_bytes();
         bytes[0] = 2;
-        bytes.extend_from_slice(&stolen.split_off(1 + 170));
+        bytes.extend_from_slice(&stolen.split_off(1 + step));
         bytes
     })
     .unwrap();
@@ -225,7 +229,7 @@ fn a_forged_step_does_not_verify() {
     );
 
     let mut tampered = forged.to_canonical_bytes();
-    tampered[1 + 170] ^= 0x01;
+    tampered[1 + step] ^= 0x01;
     let broken = Grant::from_canonical_bytes(&tampered).unwrap();
     assert!(
         broken
@@ -236,9 +240,10 @@ fn a_forged_step_does_not_verify() {
 
 #[test]
 fn the_wire_form_round_trips() {
-    let (_, _, _, _, _, _, three) = three_deep();
+    let (_, _, _, _, one, _, three) = three_deep();
+    let step = one.to_canonical_bytes().len() - 1;
     let bytes = three.to_canonical_bytes();
-    assert_eq!(bytes.len(), 1 + 3 * 170);
+    assert_eq!(bytes.len(), 1 + 3 * step);
     assert_eq!(Grant::from_canonical_bytes(&bytes).unwrap(), three);
 }
 

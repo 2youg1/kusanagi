@@ -27,11 +27,11 @@
 //! version         1 byte
 //! secret         32 bytes
 //! root           32 bytes   the handle every grant here descends from
-//! introduction   32 bytes   the one-time key whose stream carries the greeting
+//! introduction 2592 bytes   the one-time key whose stream carries the greeting
 //! locator_len     2 bytes   big endian, then that many utf-8 bytes
 //! standing        1 byte    0 = root, 1 = granted, then a length-prefixed grant
 //! has_peer        1 byte
-//! peer           32 bytes   the peer's verifying key; zeroes when absent
+//! peer         2592 bytes   the peer's verifying key; zeroes when absent
 //! peer_standing   1 byte    as above
 //! ```
 //!
@@ -183,7 +183,7 @@ impl Channel {
         match &self.peer {
             None => {
                 out.push(0);
-                out.extend_from_slice(&[0_u8; 32]);
+                out.extend_from_slice(&[0_u8; VerifyingKey::WIDTH]);
                 Standing::Root.write(&mut out);
             }
             Some(peer) => {
@@ -213,12 +213,20 @@ impl Channel {
 
         let secret = Secret::from_bytes(reader.take_array::<32>().map_err(malformed)?);
         let root = Handle::from_bytes(reader.take_array::<32>().map_err(malformed)?);
-        let introduction = VerifyingKey::from_bytes(reader.take_array::<32>().map_err(malformed)?);
+        let introduction = VerifyingKey::from_bytes(
+            reader
+                .take_array::<{ VerifyingKey::WIDTH }>()
+                .map_err(malformed)?,
+        );
         let locator = take_text(&mut reader)?;
         let standing = Standing::read(&mut reader)?;
 
         let has_peer = reader.take_byte().map_err(malformed)?;
-        let key = VerifyingKey::from_bytes(reader.take_array::<32>().map_err(malformed)?);
+        let key = VerifyingKey::from_bytes(
+            reader
+                .take_array::<{ VerifyingKey::WIDTH }>()
+                .map_err(malformed)?,
+        );
         let peer_standing = Standing::read(&mut reader)?;
         let peer = match has_peer {
             0 => None,

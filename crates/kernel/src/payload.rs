@@ -12,12 +12,20 @@
 
 use crate::segment::SegmentError;
 
-/// The fixed part of a segment's canonical bytes, in bytes.
+/// The fixed part of a genesis segment's canonical bytes, in bytes.
 ///
-/// tag 1 + index 8 + previous 32 + author 32 + `payload_len` 4 + signature 64. A
-/// genesis segment is 32 bytes shorter because it carries no predecessor, and
-/// the envelope in `seal` hides that difference along with every other one.
-pub(crate) const OVERHEAD: u32 = 141;
+/// tag 1 + index 8 + author 32 + commit 32 + `payload_len` 4 + signature 4 627.
+/// The signature is the whole of the difference: it is the one signature in a
+/// chain, and under ML-DSA-87 it is thirty times a following segment's fixed
+/// cost. The envelope in `seal` hides that difference along with every other one.
+pub(crate) const GENESIS_OVERHEAD: u32 = 4_704;
+
+/// The fixed part of a following segment's canonical bytes, in bytes.
+///
+/// tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32 +
+/// `payload_len` 4. No signature: what authenticates a following segment is the
+/// commitment the segment beneath it published.
+pub(crate) const FOLLOWS_OVERHEAD: u32 = 141;
 
 /// The largest canonical byte string a segment can have, in bytes.
 ///
@@ -25,25 +33,31 @@ pub(crate) const OVERHEAD: u32 = 141;
 /// a length rather than derived at each use. The two are tied by a compile-time
 /// assertion in `kusanagi_seal::veil`: change one without the other and the
 /// workspace stops building.
-pub const MAX_SEGMENT: usize = 65_516;
+pub const MAX_SEGMENT: usize = 131_052;
 
 /// The largest payload a single segment may carry, in bytes.
 ///
 /// **This number is not chosen; it is what is left over.** Every sealed drop is
 /// one fixed size, because a size that varies is a measurement a host can take
 /// without any cryptanalysis at all — and a ladder of sizes is still a
-/// measurement, only a coarser one. Fixing the drop at 64 KiB and subtracting
-/// the authentication tag, the length prefix and [`OVERHEAD`] leaves exactly
-/// this much room for what an author actually wants to say.
+/// measurement, only a coarser one. Fixing the drop at 128 KiB and subtracting
+/// the authentication tag, the length prefix and [`GENESIS_OVERHEAD`] — the more
+/// expensive of the two shapes, so that both fit — leaves exactly this much room
+/// for what an author actually wants to say.
 ///
 /// A payload larger than this is the job of content-addressed chunking, which
 /// does not exist yet; until it does, a larger payload is refused rather than
 /// silently split.
-pub const MAX_PAYLOAD: u32 = 65_375;
+pub const MAX_PAYLOAD: u32 = 126_348;
 
 const _: () = assert!(
-    MAX_SEGMENT == 65_516 && OVERHEAD + MAX_PAYLOAD == 65_516,
+    MAX_SEGMENT == 131_052 && GENESIS_OVERHEAD + MAX_PAYLOAD == 131_052,
     "MAX_SEGMENT and MAX_PAYLOAD disagree about how large a segment can be"
+);
+
+const _: () = assert!(
+    FOLLOWS_OVERHEAD < GENESIS_OVERHEAD,
+    "the payload limit is set by the more expensive shape, which is genesis"
 );
 
 /// A validated payload.

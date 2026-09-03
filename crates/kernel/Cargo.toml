@@ -12,8 +12,8 @@ authors.workspace = true
 blake3.workspace = true
 subtle.workspace = true
 zeroize.workspace = true
-ed25519-dalek.workspace = true
 thiserror.workspace = true
+fips204.workspace = true
 
 [lints]
 workspace = true

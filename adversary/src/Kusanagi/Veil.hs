@@ -18,9 +18,11 @@
 --   said is not a thing a host holds.
 -- * **Never twice.** No two drops are byte-identical, which is what a repeated
 --   key or a repeated nonce looks like from outside.
--- * **No seam.** Two drops agree at about one byte in 256 and no more. A longer
---   agreement means structure — a header, a version, a constant nonce, a
---   keystream reused — and structure is what a detection rule is made of.
+-- * **No seam.** Two drops agree at about one byte in 256 and no more than the
+--   noise around that. A longer agreement means structure — a header, a version,
+--   a constant nonce, a keystream reused — and structure is what a detection
+--   rule is made of. See 'tolerance' for what that bound reaches and what it
+--   does not.
 -- * **The pad is not a channel.** The same sentence sent twice leaves two drops
 --   with nothing in common. If the padding were ever left unchecked, or filled
 --   with anything but zeroes, the tails of those two drops would agree.
@@ -48,14 +50,38 @@ import Kusanagi.Door (Door)
 import Kusanagi.Door qualified as Door
 import Kusanagi.Ground (Ground, stored, waypoint)
 
--- | How much two drops may agree before the agreement means something.
+-- | How much two drops of @n@ bytes may agree before the agreement means
+-- something.
 --
--- Two independent ChaCha20 keystreams agree at one byte in 256, so a 4 096-byte
--- pair agrees at about sixteen positions. Sixty-four is four times that: high
--- enough that a run of good luck never trips it, low enough that any real
--- structure — even a four-byte tag repeated in every drop — is caught.
-tolerance :: Int
-tolerance = 64
+-- Two independent ChaCha20 keystreams agree at one byte in 256, so the count of
+-- agreeing positions is binomial: it expects @n \/ 256@ and has a standard
+-- deviation of @sqrt (n * 255 \/ 256^2)@. The threshold is five deviations above
+-- the expectation, which one pair clears by chance about three times in ten
+-- million while a run compares barely a dozen pairs.
+--
+-- __It has to be a function of @n@, and it used to be the constant 64.__ That
+-- constant was calibrated when a drop was 4 096 bytes and chance explained
+-- sixteen agreements. ML-DSA-87 pushed a drop to 131 072 bytes, chance began
+-- explaining 512, and three properties here failed on every run against a build
+-- with nothing wrong with it — the observed counts, 490 to 536, sit inside
+-- 512 ± 1.1 deviations. The noise floor grows with the square root of the drop,
+-- so the slack above it must too, and the next change of signature scheme now
+-- needs no edit here.
+--
+-- What this catches is agreement spread across the whole drop and larger than
+-- the noise: a reused keystream, a constant nonce, a tail left in the clear.
+-- What it does not catch is a short fixed field — a four-byte tag at the same
+-- offset in every drop lifts the count by four, far under a noise floor of 113.
+-- A leading header is caught by 'prefixTolerance'; a short one in the middle is
+-- watched by nothing here today, and the property that would watch it compares
+-- which /positions/ agree across many pairs rather than how many agree in one.
+tolerance :: Int -> Int
+tolerance n = expected + 5 * deviation
+  where
+    expected = n `div` 256
+    -- `sqrt` on a `Double` and back: the count is an integer, and the deviation
+    -- only has to be right to a byte.
+    deviation = ceiling (sqrt (fromIntegral n * 255 / 65536 :: Double)) :: Int
 
 -- | The longest run of equal leading bytes two drops may share.
 --
@@ -178,12 +204,12 @@ theSameSentenceTwiceSharesNothing door ground writer reader = do
 -- | Why two drops are too alike, if they are.
 apart :: ByteString.ByteString -> ByteString.ByteString -> Maybe String
 apart left right
-  | agreement > tolerance =
+  | agreement > tolerance width =
       Just
         ( "two drops agree at "
             <> show agreement
-            <> " byte positions, and chance explains about "
-            <> show (ByteString.length left `div` 256)
+            <> " byte positions, and chance explains up to "
+            <> show (tolerance width)
             <> "; that is structure, and structure is a detection rule"
         )
   | shared > prefixTolerance =
@@ -194,6 +220,7 @@ apart left right
         )
   | otherwise = Nothing
   where
+    width = min (ByteString.length left) (ByteString.length right)
     paired = ByteString.zip left right
     agreement = length [() | (a, b) <- paired, a == b]
     shared = length (takeWhile id [a == b | (a, b) <- paired])

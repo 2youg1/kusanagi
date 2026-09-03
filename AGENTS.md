@@ -56,7 +56,7 @@ Violating any of these turns the build red.
 | Start every `.rs` file with the MPL-2.0 notice and the copyright line. | review |
 | Take the time as a parameter. The single sampling point is `kusanagi::world::sample`, and randomness has one source beside it. | `clippy.toml` disallowed methods |
 | One name per concept, taken from `ARCHITECTURE.md` §4. A word with no implementation does not enter the code. | review |
-| Keep every file under its limit — **400** lines for `.rs` and `.hs`, **500** for `.md`, **300** for anything else — each crate's `src/` under **2,500**, and the whole workspace, tests included, under **25,000**. A file over the limit is split or deleted; the limit is not raised. | `just budget` |
+| Keep every file under **400** lines, whatever kind of file it is, each crate's `src/` under **2,500**, and the whole workspace, tests included, under **25,000**. A file over the limit is split or deleted; the limit is not raised. | `just budget` |
 | Anything hashed or signed is encoded by hand. `serde` is for `--json` output and nothing else. | review |
 
 **Two laws that are not lints, and matter more than any of them:**

@@ -1,12 +1,9 @@
 # ARCHITECTURE
 
 The authority for what kusanagi is and why it is shaped this way. Where this
-document and the code disagree, the code is wrong — except where reality
-disagrees with this document, in which case this document is corrected first,
-with its reason.
-
-Crate detail lives in `crates/<crate>/<crate>-SPEC.md`. Working rules live in
-`AGENTS.md`.
+document and the code disagree, the code is wrong; where reality disagrees with
+this document, this document is corrected first, with its reason. Crate detail
+lives in `crates/<crate>/<crate>-SPEC.md`, working rules in `AGENTS.md`.
 
 ---
 
@@ -15,158 +12,125 @@ Crate detail lives in `crates/<crate>/<crate>-SPEC.md`. Working rules live in
 **Two agents on two machines exchange authorised, mutually unlinkable messages
 through a host that neither of them trusts and neither of them runs.**
 
-Every design decision below is answerable to that sentence. A change that does
-not serve it is a change to the project, not to the code.
+Every design decision below answers to that sentence, and a change that does not
+serve it changes the project rather than the code.
 
 ## 2 The substrate is a dead drop, not a connection
 
-A sender leaves a segment at an opaque address; a reader collects it later. There
-is no session, no presence, no rendezvous.
+A sender leaves a segment at an opaque address and a reader collects it later:
+no session, no presence, no rendezvous.
 
-**Why this rather than an overlay network.** Three reasons, and the first is the
-decisive one.
+**Why this rather than an overlay network.** Three reasons, the first decisive.
 
 1. **The host already exists.** Anyone who wants a shared workspace has already
-   accepted an object store or a company server. Building NAT traversal and a
-   membership protocol for the hostless case is paying for a world you are not
-   in.
-2. **Offline is the normal state.** An agent thinks for tens of seconds and then
-   may be idle for hours. In a dead-drop model "the other side is offline" is not
-   a case to handle — it is the resting state, and costs no code at all.
-3. **One mechanism, two speeds.** Direct delivery is not deleted; it is demoted
-   to a waypoint whose implementation happens to be the peer's own process. The
-   fast path is a special case of the slow path rather than a second protocol
-   beside it.
+   accepted an object store or a company server, so building NAT traversal and a
+   membership protocol is paying for a world you are not in.
+2. **Offline is the normal state.** An agent thinks for tens of seconds and may
+   then be idle for hours. In a dead-drop model "the other side is offline" is
+   the resting state rather than a case to handle, and costs no code at all.
+3. **One mechanism, two speeds.** Direct delivery is demoted, not deleted: it is
+   a waypoint whose implementation happens to be the peer's own process, so the
+   fast path is a special case of the slow path rather than a second protocol.
 
-The price is that latency has a floor of one polling interval. That price is paid
-by a consumer that thinks for seconds, so it is not observable.
+The price is a latency floor of one polling interval, paid by a consumer that
+thinks for seconds, so it is not observable.
 
 ## 3 What "private" means here, exactly
 
 **Against whom, first.** Three adversaries, and every claim below names which one
-it answers:
+it answers: **the host**, which holds the bytes and keeps an access log, assumed
+hostile from the start — that assumption is the whole of §2; **somebody on the
+path**, an ISP or a proxy or a middlebox, who sees requests leave an endpoint and
+cannot read what is in them; and **somebody scanning**, who holds no address and
+is looking for hosts and users to add to a list.
 
-- **The host**, which holds the bytes and keeps an access log. Assumed hostile
-  from the start; that assumption is the whole of §2.
-- **Somebody on the path** — an ISP, a proxy, a middlebox — who sees requests
-  leave an endpoint and cannot read what is in them.
-- **Somebody scanning**, who holds no address and is looking for hosts and users
-  to add to a list.
+All three are assumed to hold **this repository**, which is not the ordinary
+Kerckhoffs assumption: a public implementation of a hiding mechanism is a
+supervised learning problem with unlimited labelled data, where an adversary runs
+our binary as often as they like, labels both sides, and trains a classifier. Any
+residual difference that is not cryptographically negligible will be found. Two
+rules follow. **Nothing here imitates a protocol**, because imitation must also
+imitate error handling, retries and quirks, and one discrepancy is enough. And
+**indistinguishability is measured rather than argued**, which is law 6 in §7.
 
-All three are assumed to hold **this repository**, and that is not the ordinary
-Kerckhoffs assumption. A public implementation of a hiding mechanism is a
-supervised learning problem with unlimited labelled data: an adversary runs our
-binary as often as they like, labels both sides, and trains a classifier. Any
-residual difference that is not cryptographically negligible will be found.
-
-Two rules follow. **Nothing here imitates a protocol**, because imitation must
-also imitate error handling, retries and quirks, and one discrepancy is enough.
-And **indistinguishability is measured rather than argued**, which is law 6 in
-§7.
-
-**And assume the compute is unbounded.** That is the design posture, and it has a
-precise consequence rather than a rhetorical one: **every computational guarantee
-here fails against it.** ChaCha20-Poly1305, BLAKE3's key derivation and Ed25519
-are all computationally secure and nothing else. An unbounded adversary recovers
-a channel secret by search, and *verifies* the guess against two addresses, so
-even unlinkability falls. No stronger cipher repairs this; only a one-time pad
-would, and a one-time pad needs as much key material as traffic plus a consumed
-position on disk, which is a different network from this one.
-
-What survives an unbounded adversary is the class of observables that are **not a
-function of any secret**. Not hard to invert — not a function at all. A drop is
-4 096 bytes whatever it carries, so the mutual information between what a host
-measures and how much was said is exactly zero, and it stays zero for an
-adversary of any size. That is an argument, not an experiment, and it is stronger
-than anything the discriminator can report.
-
-So the table below says which kind each property is, and the two kinds are ranked
-deliberately: **unbounded compute is useless against bytes nobody collected.** The
+**And assume the compute is unbounded.** The consequence is precise rather than
+rhetorical: **every computational guarantee here fails against it.**
+ChaCha20-Poly1305, BLAKE3's key derivation and the signature scheme are
+computationally secure and nothing else, so an unbounded adversary recovers a
+channel secret by search and *verifies* the guess against two addresses — even
+unlinkability falls. Only a one-time pad repairs that, and it needs as much key
+material as traffic plus a consumed position on disk, which is a different network
+from this one. What survives is the class of observables that are **not a function
+of any secret** — not hard to invert, not a function at all. Every drop is one
+size, so the mutual information between what a host measures and how much was said
+is zero for an adversary of any size. That is why the `Kind` column below is ranked
+as it is: **unbounded compute is useless against bytes nobody collected**, and the
 work of the information-theoretic rows is to deny an adversary the ciphertext on
-which their compute would otherwise be spent — which is why the row numbered 0
-comes first.
+which their compute would otherwise be spent.
 
 Seven separate properties. Claiming them as one word is how privacy claims
 become false.
 
-| # | Property | Kind | Today | By what |
-|---|---|---|---|---|
-| 0 | That this network is in use at all | information-theoretic once built | **leaks to a path observer, closed against a scanner** | a host answers a stranger exactly as a static file server does, and no request or response names this project; but an endpoint's own traffic is still traffic nobody else generates |
-| 1 | Content confidentiality | computational | **held until the compute is unbounded** | ChaCha20-Poly1305 under a key used for exactly one message |
-| 2a | Who talks to whom, in what the host **stores** | computational | **held until the compute is unbounded** | every address is `KDF(secret ‖ author ‖ height)`; no address is ever reused |
-| 2b | Who talks to whom, in what the host is **asked for** | computational | **held for a poll**, leaks on a catch-up | a reader resumes from a cairn, so a poll names one address instead of the stream |
-| 3 | Network size | information-theoretic once built | leaks the number of objects | nothing yet |
-| 4a | Traffic analysis — **how large** | **information-theoretic** | **held** | every sealed drop is exactly 65 536 bytes, whatever it carries, so the observation is a constant |
-| 4b | Traffic analysis — **when, and how often** | information-theoretic once built | **leaks** | nothing; cover traffic is §9 and is the largest thing still missing |
+| # | Property | Kind | Today | By what | Asserted by |
+|---|---|---|---|---|---|
+| 0 | That this network is in use at all | information-theoretic once built | **leaks to a path observer, closed against a scanner** | a host answers a stranger exactly as a static file server does, and no request or response names this project; but an endpoint's own traffic is still traffic nobody else generates | `box/tests/unmarked.rs`, `waypoint/tests/unannounced.rs` |
+| 1 | Content confidentiality | computational | **held until the compute is unbounded** | ChaCha20-Poly1305 under a key used for exactly one message | `seal`'s envelope tests |
+| 2a | Who talks to whom, in what the host **stores** | computational | **held until the compute is unbounded** | every address is `KDF(secret ‖ author ‖ height)`; no address is ever reused | `kusanagi/tests/unlinkable.rs` |
+| 2b | Who talks to whom, in what the host is **asked for** | computational | **held for a poll**, leaks on a catch-up | a reader resumes from a cairn, so a poll names one address instead of the stream | `kusanagi/tests/unwatched.rs` |
+| 3 | Network size | information-theoretic once built | leaks the number of objects | nothing yet | `adversary/`, as an equality against a declared list |
+| 4a | Traffic analysis — **how large** | **information-theoretic** | **held** | every sealed drop is one size whatever it carries, so the observation is a constant | `adversary/`, and `seal`'s envelope tests |
+| 4b | Traffic analysis — **when, and how often** | information-theoretic once built | **leaks** | nothing; cover traffic is §9 and is the largest thing still missing | nothing |
 
 Rows 0, 3 and 4b are marked "once built" because the mechanism that closes each
-of them makes an observation independent of the secret rather than expensive to
-invert. Filling every slot whether or not anybody is talking makes the count and
-the rhythm functions of the clock alone — and note what follows: **the schedule
-should then be public and deterministic, not secret.** Hiding a schedule is a
-computational defence that an unbounded adversary strips away; filling it is an
-information-theoretic one that survives knowing everything.
+makes an observation independent of the secret rather than expensive to invert.
+Filling every slot whether or not anybody is talking makes the count and the rhythm
+functions of the clock alone — and **the schedule should then be public and
+deterministic, not secret**, because hiding one is a computational defence an
+unbounded adversary strips away while filling it survives knowing everything.
 
-Property 2 is the one this project exists for, and splitting it in two is the
-correction of a real error rather than a refinement. Addresses derived to be
-unrelated stop being unrelated the moment one connection asks for them in
-ascending order, back to back — and a reader that began at height zero on every
-read did exactly that, once per poll, for the whole history. **The derivation was
-sound and the reading path gave the answer away.** A host needed no cryptanalysis,
-only an access log.
+Property 2 is the one this project exists for, and splitting it in two corrects a
+real error rather than refining one. Addresses derived to be unrelated stop being
+unrelated the moment one connection asks for them in ascending order, back to
+back — which is what a reader that began at height zero on every read did, once
+per poll, for the whole history. **The derivation was sound and the reading path
+gave the answer away.** A host needed no cryptanalysis, only an access log.
 
-Both halves are asserted rather than described.
-`crates/kusanagi/tests/unlinkable.rs` puts a hundred segments through a host, then
-takes the host's side and fails if any two records can be linked to each other or
-to a person. `crates/kusanagi/tests/unwatched.rs` takes the side of a host that
-keeps an access log, and fails if a poll names more than the one address it is
-waiting on — or if that cost grows with the length of the conversation.
+The last column is the point of the section, because a privacy claim nobody runs
+is a paragraph. `adversary/` builds paired worlds — four where a byte is said and
+four where three thousand are — measures ten features of what the host is left
+holding, and fails if any single threshold separates them by more than their own
+spread, because a stump that separates two groups *is* the rule a censor deploys.
+The features allowed to separate a silent channel from a busy one are a written
+list of exactly two, both the object count in different units, and the assertion is
+an equality: a feature that starts separating is a regression, and a declared one
+that stops is somebody closing a leak and having to come and say so.
 
-Property 4a is asserted from the other side as well, and that assertion is the
-only one here that takes the adversary's own method. `adversary/` builds paired
-worlds — four where a byte is said and four where three thousand are — measures
-ten features of what the host is left holding, and fails if any single threshold
-separates them by more than their own spread. A stump that separates two groups
-*is* the rule a censor deploys, so a run with no such stump is the claim, and a
-run with one prints it as a sentence.
+**What is still open, stated so it cannot be mistaken for closed.** A reader
+catching up on a stream it has never read names every height it fetches, and a host
+watching one endpoint can follow the live edge as it advances, because the address
+polled after a hit is the successor of that hit. An endpoint also emits requests
+only when there is something to say or to fetch, so the *rhythm* of a conversation
+survives when its content, size and parties do not — 4b, the largest gap here.
 
-The same experiment states property 3 rather than describing it: the features
-allowed to separate a silent channel from a busy one are written down as a list
-of exactly two, both of them the object count in different units, and the
-assertion is an equality. A new feature that starts separating is a regression; a
-declared one that stops is somebody closing a leak and having to come and say so.
-
-**What is still open, stated so that it cannot be mistaken for closed.** A reader
-catching up on a stream it has never read names every height it fetches, and a
-host watching one endpoint over time can follow the live edge as it advances,
-because the address polled after a hit is the successor of that hit. And an
-endpoint emits requests only when there is something to say or to fetch, so the
-*rhythm* of a conversation is visible even when none of its content, size or
-parties are. That last one is 4b, it is the largest gap in this table, and
-nothing in the code addresses it today.
-
-Two consequences follow from property 2 that were not designed for and are worth
-naming:
+Two consequences of property 2 that were not designed for:
 
 - **Unsolicited delivery is uncomputable, not filtered.** Writing to somebody
-  requires their address; deriving their address requires the shared secret;
-  holding the secret requires having been introduced. Spam is not rejected at the
-  door — there is no door to knock on.
+  requires their address, deriving it requires the shared secret, and holding the
+  secret requires having been introduced. There is no door to knock on.
 - **A one-time invitation needs no bookkeeping.** The greeting an invitee writes
-  lands at a write-once address, so the *host* refuses the second acceptance.
-  Nothing tracks whether an invitation has been used.
+  lands at a write-once address, so the *host* refuses the second acceptance and
+  nothing tracks whether an invitation has been used.
 
 **What the host still learns**, stated so it cannot grow quietly: the number of
-objects it holds and the time of every request. It no longer learns the size of
-any of them — they are all the same size — and it never learns content,
-authorship, relationships, or the existence of a relationship.
+objects it holds and the time of every request. It never learns their size, their
+content, their authorship, a relationship, or that a relationship exists.
 
-**What an endpoint's own disk gives up** is a separate question with a separate
-answer. A site holds the identity seed and every channel secret and cannot avoid
-holding them, so the claim is narrower and checkable: it holds **no message**
+**What an endpoint's own disk gives up** is a separate question. A site holds the
+identity seed and every channel secret and cannot avoid holding them, so the claim
+is narrower and checkable: it holds **no message**
 (`crates/kusanagi/tests/at_rest.rs`), and on a Unix host nothing it writes is
 readable by any other account (`crates/site/tests/unreadable.rs`). Windows has no
-equivalent because mode bits have none; that gap is §9.
+equivalent because mode bits have none, and that gap is §9.
 
 ## 4 The words
 
@@ -187,8 +151,7 @@ One name per concept. A word with no implementation does not enter the code.
 | **Veil** | the one size every sealed drop has: 4 096 bytes, a checked pad, no exceptions | how much was said stops being a thing anybody holds |
 | **Trail** | one author's private sequence of one-time proofs for one stream: each segment shows the current proof and commits to the next | a peer can check who wrote a message and can never prove it to anybody else |
 
-Reserved for work not yet done, and therefore **not** in the code: `Bell`,
-`Cohort`, `Depot`.
+Reserved for work not yet done, and therefore **not** in the code: `Bell`, `Cohort`, `Depot`.
 
 ## 5 The crates
 
@@ -203,63 +166,44 @@ kernel      identifiers, identity, signed segments, canonical bytes, seams
 kusanagi    the verbs and the one assembly point
 ```
 
-Dependencies point one way only: `kernel` depends on nothing of ours, and
-`kusanagi` depends on everything.
+Dependencies point one way: `kernel` depends on nothing of ours, `kusanagi` on all.
 
 **Budget.** Three limits, one purpose, all held by `just budget`:
 
 | Limit | Applies to | What it bounds |
 |---|---|---|
-| **400 lines** `.rs` and `.hs`, **500** `.md`, **300** anything else | every file in the repository | how much has to be in your head to judge one line |
+| **400 lines** | every file in the repository, whatever kind it is | how much has to be in your head to judge one line |
 | **2,500 lines** | each crate's `src/` | how large one idea may grow |
 | **25,000 lines** | the workspace, tests included | how much there is to read at all |
 
-The limit is per kind because the kinds fail differently.
+The file is the unit that actually gets opened — a reviewer opens one, an editor
+jumps into one, a model reads one — so the first limit is the strictest and the one
+that decides whether this code can be read. **A file over 400 lines is split or
+deleted; the number is not raised**, and splitting the assertions about a rule away
+from the rule is a legitimate answer, because the workspace total counts tests and
+nothing is hidden by moving it. The limit was a ladder until it was one number —
+400 for `.rs` and `.hs`, 500 for `.md`, 300 for the rest — whose 300 rung never
+once refused a file and whose 500 rung had exactly one effect: it let this document
+run to 479 lines. A limit nobody applies from memory is a limit met at the gate.
+`Cargo.lock` and `LICENSE` stay outside the count because their contents are not
+written here, and that list is closed; what each crate spends is what `just budget`
+prints, deliberately not copied here, because a number kept in two places drifts.
 
-The file is the unit that actually gets opened: a reviewer opens one, an editor
-jumps into one, a model reads one. So the limit that decides whether this code can
-be read is the limit on a single file, and it is the strictest of the three. **A
-file over 500 lines is split or deleted; the number is not raised.** Splitting the
-assertions about a rule away from the rule is a legitimate answer — the workspace
-total counts tests, so nothing is hidden by moving it.
+Two crates exist because the budget forced a split, and each is recorded where it
+happened. `kusanagi` gave up the disk formats to `site` on the boundary in
+`crates/site/site-SPEC.md` §3 — **a `SiteError` says what failed on the disk, and
+the door says what it is called and how to recover from it.** `waypoint` gave up
+the server to `box`, **overturning `waypoint-SPEC.md` §7**, which had ruled that
+the two halves of the box protocol share a crate: the reason that did not exist
+when it was taken is the 2,500-line limit, and separating two jobs — *reaching* a
+host and *being* one — beat separating two implementations of one seam. What that
+old decision feared, the halves drifting apart, is held by a test rather than by a
+directory: the box's own tests drive the shipped client against the shipped server
+over a real socket and run `conformance::run` against it.
 
-Two files are outside the count because their contents are not written here:
-`Cargo.lock`, which cargo generates, and `LICENSE`, which is the licence verbatim.
-That exclusion list is closed; a third entry is a decision, not an oversight.
-
-| crate | src | measured by |
-|---|---|---|
-| box | 538 | `just budget` |
-| chain | 704 | |
-| grant | 1,055 | |
-| kernel | 1,396 | |
-| kusanagi | 2,268 | |
-| seal | 694 | |
-| site | 1,161 | |
-| waypoint | 2,141 | |
-| **workspace, tests included** | **13,854 / 25,000** | |
-| **largest single file** | **388** (`kernel/src/segment.rs`) | |
-
-**The budget is what makes a split arrive on time rather than late.**
-
-
-`kusanagi` gave up the disk formats to `site`. The boundary that made it possible
-is recorded in `crates/site/site-SPEC.md` §3 — **a `SiteError` says what failed on
-the disk, and the door says what it is called and how to recover from it.** Merging
-the two would put the words `kusanagi channels` inside a crate that has no verbs.
-
-`waypoint` gave up the server to `box`, which **overturned a decision recorded in
-`waypoint-SPEC.md` §7** — that the two halves of the box protocol should share a
-crate. The reason that did not exist when it was taken is the 2,500-line limit
-itself, and the choice it forced: separating implementations of one seam would
-have been worse than separating two different jobs, *reaching* a host and *being*
-one. What the old decision feared, the halves drifting apart, is held by a test
-rather than by a directory — the box's own tests drive the shipped client against
-the shipped server over a real socket and run `conformance::run` against it.
-
-**Outside the workspace.** `adversary/` is a Haskell counterexample hunter. It is not a
-crate, not a dependency, not part of the release, and not counted here. §8 records
-why it is allowed to exist and what stops it becoming a second authority.
+**Outside the workspace.** `adversary/` is a Haskell counterexample hunter — not a
+crate, not a dependency, not part of the release, not counted here. §8 records why
+it may exist and what stops it becoming a second authority.
 
 ## 6 The seams
 
@@ -273,192 +217,164 @@ of these ships with a second, and with a contract both must satisfy.
 | `Clock` | `kernel::clock` | `kusanagi::world::SystemClock` | `kernel::FixedClock` | one sampling point, held by `clippy.toml` |
 
 **Deliberately not seams.** `chain`, `grant` and `seal` have one implementation
-each because they *are* the rules. An interface over a rule is an invitation to a
-second authority for that rule.
+each because they *are* the rules, and an interface over a rule invites a second
+authority for it.
 
 ## 7 The laws
 
 1. **No resident state, and no local fact a host could not confirm.** Every verb
    is a one-shot command that exits. An endpoint's height comes from the
-   waypoint, and the cairn beside it moves where a walk *starts* without ever
-   deciding what the walk *concludes* — the first segment read must link to the
-   cairn's head, so a resumed walk proves its own join. Deleting every cairn
-   therefore changes what a read costs and never what it reports, which is what
-   `losing_every_cairn_changes_what_a_read_costs_and_nothing_else` asserts and
-   what `a_command_keeps_no_state_that_a_kill_could_lose` asserts for the rest.
-
-   **The one exception is deliberate and is the point of having a cairn.** Against
-   a host that withholds or replaces a drop, an endpoint that has read before
-   refuses what contradicts what it read, while an endpoint reading for the first
-   time cannot. Two readers therefore disagree, and the one with a memory is the
-   one that is right.
-2. **Memory does not grow with the work.** `Verifier` holds one author and one
-   head for a chain of any length; `Segment::extend` takes a 40-byte `ChainHead`,
-   not a predecessor. A change that buffers a chain has broken the design.
+   waypoint, and the cairn beside it moves where a walk *starts* without deciding
+   what the walk *concludes* — the first segment read must link to the cairn's
+   head, so a resumed walk proves its own join. Deleting every cairn therefore
+   changes what a read costs and never what it reports, asserted by
+   `losing_every_cairn_changes_what_a_read_costs_and_nothing_else` and, for the
+   rest, by `a_command_keeps_no_state_that_a_kill_could_lose`. **The one exception
+   is the point of having a cairn**: against a host that withholds or replaces a
+   drop, an endpoint that has read before refuses what contradicts what it read
+   and a first-time reader cannot, so two readers disagree and the one with a
+   memory is right.
+2. **Memory does not grow with the work.** `Verifier` holds one author and one head
+   for a chain of any length, and `Segment::extend` takes a `ChainHead` rather than
+   a predecessor. A change that buffers a chain has broken the design.
 3. **One authority per rule.** Hex has one parser, time has one sampling point,
    randomness has one source, the verb set has one definition.
 4. **A segment that exists was signed.** Both constructors sign and the decoder
-   verifies, so there is no unverified-segment state for a later caller to
-   forget.
+   verifies, so no unverified-segment state exists for a caller to forget.
 5. **Failures are typed and carry a way out.** Every error names the action, the
    subject, a stable code, and the command that recovers.
-6. **Indistinguishability is measured, not argued.** §8 already holds that hosts
-   are measured rather than believed. Once this repository is public the same
-   applies to us: an adversary can generate labelled examples of our own traffic
-   without limit, so any claim that two situations look alike has to be an
-   experiment somebody ran, not a paragraph somebody wrote. `adversary/` runs it
-   — paired worlds, ten features, best single-threshold rule — and the leaks that
-   remain open are a written list it compares against, so both a new leak and a
-   closed one turn the run red.
+6. **Indistinguishability is measured, not argued.** §8 holds that hosts are
+   measured rather than believed, and a public repository turns the rule on us:
+   any claim that two situations look alike is an experiment somebody ran (§3).
 
 ## 8 Decisions on record
 
 Reopening one of these requires a reason that did not exist when it was taken.
 
-- **Identity is a hash, not a key.** `Handle` is `BLAKE3(public key)`, 32 bytes,
-  so address derivation, cairn filenames and the segment layout do not depend on
-  which signature scheme is in use. **A name therefore checks nothing**, and the
-  key travels only where a signature is checked: a grant carries the issuer's key
-  in every step, because a credential must convince a stranger, and a channel
-  record carries the peer's key, because a stream only has to convince the one
-  endpoint that was introduced to its author. A segment names its author and
-  carries no key, so `Segment::from_canonical_bytes` is told whose signature it
-  expects — which is the check a caller used to have to remember to make
-  afterwards, and the reason a stranger holding the ciphertext can verify
-  nothing at all.
-- **The signature scheme is ML-DSA-44 (FIPS 204).** Integer-only arithmetic, so
-  a constant-time implementation is reachable, and a standard that is final. The
-  invitation is a blob to send as a file or a QR code rather than a line to
-  paste.
-- **Every segment after the first is authenticated by a Trail, not a signature.**
-  A signature is transferable, so a peer who is compromised or coerced holds not
-  merely knowledge of what was said but proof of it that convinces anybody,
-  forever, without the author's participation. Segment *i* reveals `secret_i` and commits to `H(secret_{i+1})`; a reader
-  accepts it only when the reveal hashes to the previous segment's commitment.
-  Forging a segment, or racing to a height before its author, needs a preimage.
-  Anybody who has read the stream can afterwards fabricate a different one that
-  verifies exactly as well, which is what makes a quotation an assertion rather
-  than evidence. Both wire shapes carry 141 bytes of overhead, so the envelope
-  above them is unaffected.
-
-  **The genesis signature covers the author and the first commitment, and not
-  the payload.** That omission is the whole mechanism: a signature over what was
-  said is transferable proof of what was said. What is signed is only that this
-  author opened this stream, which is enough to stop a peer racing to height zero
-  and not enough to convict anybody of a sentence. A reader loses nothing,
-  because the bytes arrive inside an envelope sealed under the channel secret at
-  an address derived from it — the only party who can put different words at a
-  height is the peer who already read it, and that is precisely the party who
-  must not be able to prove what the words were.
-  `crates/chain/tests/deniable.rs` forges a whole transcript rather than
-  asserting that one could be forged.
-
+- **Identity is a hash, not a key.** `Handle` is `BLAKE3(public key)`, so address
+  derivation, cairn filenames and the segment layout do not depend on which
+  signature scheme is in use. **A name therefore checks nothing**, and the key
+  travels only where a signature is checked: a grant carries the issuer's key in
+  every step, because a credential must convince a stranger; a channel record
+  carries the peer's key, because a stream need only convince the endpoint
+  introduced to its author. A segment carries no key, so
+  `Segment::from_canonical_bytes` is told whose signature it expects, which is why
+  a stranger holding the ciphertext can verify nothing.
+- **The signature scheme is ML-DSA-87 (FIPS 204).** Integer-only arithmetic, so a
+  constant-time implementation is reachable, and a final standard. The parameter set
+  is the strongest rather than the cheapest, by ruling, and `DROP` is sized to
+  whatever it costs — so the price falls on an artefact nobody types: an invitation
+  is a file or a QR code, not a line to paste.
+- **Every segment after the first is authenticated by a Trail rather than a
+  signature, and the genesis signature covers the author and the first commitment
+  but not the payload.** A signature is transferable: a peer who is compromised or
+  coerced holds not merely knowledge of what was said but proof of it that
+  convinces anybody, forever, without the author's participation. So segment *i*
+  reveals `secret_i` and commits to `H(secret_{i+1})`, a reader accepts it only when
+  the reveal hashes to the previous commitment, and forging a segment or racing to a
+  height before its author needs a preimage — while anybody who has read the stream
+  can afterwards fabricate a different one that verifies exactly as well, which makes
+  a quotation an assertion rather than evidence. The genesis signature says that this
+  author opened this stream: enough to stop a peer racing to height zero, not enough
+  to convict anybody of a sentence. A reader loses nothing, because the bytes arrive
+  sealed under the channel secret at an address derived from it, so the only party
+  who could put different words at a height is the peer who already read them —
+  exactly the party who must not be able to prove what they were.
+  `crates/chain/tests/deniable.rs` forges a whole transcript rather than asserting
+  that one could be forged.
 - **The sealed form is the whole segment, not its payload.** A segment carries its
-  author in the clear; sealing only the payload would let a host group drops by
+  author in the clear, so sealing only the payload would let a host group drops by
   author and property 2 would be worth nothing.
 - **Attenuation is a lattice meet, not a check.** Asking for more than you hold
-  does not fail — it yields what you hold. Widening is unrepresentable rather than
-  rejected. Sampled by `crates/grant/tests/attenuation.rs`; the `kani` harness for
-  proving it against real MIR is committed in `src/chain.rs` under `#[cfg(kani)]`
-  and runs where `kani` is installed.
+  yields what you hold, so widening is unrepresentable rather than rejected. Sampled
+  by `crates/grant/tests/attenuation.rs`; the `kani` harness proving it against real
+  MIR is in `src/chain.rs` under `#[cfg(kani)]`.
 - **Hosts are measured, not believed.** Conditional-write support diverges between
-  S3-compatible hosts, and the divergences fail *open* — the condition is ignored
-  and the write succeeds. `kusanagi doctor` writes twice and reads back, then
-  issues a certificate naming a tier.
-- **`Tier::AckFirstSeen` is enforced by the cairn, not merely named.** The tier
-  said both sides must remember what they first saw at an address and refuse
-  anything that arrives later; for two versions nothing did, so the tier was a
-  label. The cairn is that memory. A host can still refuse to serve a drop —
-  nothing prevents that — but it can no longer make a reader who has already read
-  believe the stream is shorter, which is the difference between an outage and a
-  retraction somebody never sent.
+  S3-compatible hosts and the divergences fail *open*, condition ignored and write
+  succeeding, so `kusanagi doctor` writes twice and reads back before issuing a
+  certificate naming a tier.
+- **`Tier::AckFirstSeen` is enforced by the cairn, not merely named.** The tier said
+  both sides must remember what they first saw at an address and refuse anything
+  later; for two versions nothing did, so the tier was a label and the cairn is now
+  that memory. A host can still refuse to serve a drop, but it can no longer make a
+  reader who has already read believe the stream is shorter — the difference between
+  an outage and a retraction somebody never sent.
 - **A head may come from this endpoint's own record, not only from a segment in
-  hand.** `ChainHead` had one constructor because a head is a witness: holding one
-  meant having held the segment. `ChainHead::recorded` adds a second provenance
-  and is the weaker one. It is admitted on one argument, and if that argument ever
-  fails the constructor goes: **every use of a head is a comparison, so a false
-  head can only cause a refusal, never an acceptance.** The alternative — keeping
-  the last segment itself, which re-verifies its own signature and needs no new
-  constructor — was rejected because it would put a copy of every channel's most
-  recent message on disk forever, and `crates/kusanagi/tests/at_rest.rs` is what
-  holds that line.
+  hand.** `ChainHead::recorded` is a weaker provenance than holding the segment,
+  admitted on one argument, and it goes if that argument ever fails: **every use
+  of a head is a comparison, so a false head can only cause a refusal, never an
+  acceptance.** Keeping the last segment instead needs no new constructor and was
+  rejected anyway, because it would leave every channel's most recent message on
+  disk forever — the line `crates/kusanagi/tests/at_rest.rs` holds.
 - **The invitation is a bearer token.** Whoever writes one cannot know who will
-  accept it, so it carries a one-time key that the acceptor immediately delegates
-  to their own handle.
+  accept it, so it carries a one-time key the acceptor delegates to their own handle.
 - **One cipher suite, mandatory.** Two endpoints with different derivations cannot
-  compute each other's addresses; a pluggable suite is not a degradation but a
-  partition. The invitation carries a suite byte and refuses one it does not
-  know, so changing the suite is a network-wide flip rather than a negotiation —
-  which is the migration path for everything below.
-- **Scale is layered, not flat.** Cohorts of about a thousand, joined by
-  transitive grants. Flat global reachability needs a globally resolvable name
-  table, and that table is a relationship graph.
+  compute each other's addresses, so a pluggable suite is a partition rather than a
+  degradation. The invitation carries a suite byte and refuses one it does not know,
+  making a suite change a network-wide flip — the migration path for everything
+  below.
+- **Scale is layered, not flat.** Cohorts of about a thousand joined by transitive
+  grants, because flat global reachability needs a globally resolvable name table
+  and that table is a relationship graph.
 - **Bell is a waypoint capability, not a protocol requirement.** A host that can
-  long-poll needs no Bell and leaks nothing; the cost of the alternative is paid
-  only by whoever chose a dumb object store.
-- **Every sealed drop is one size, and the size is not a parameter.** 65 536
-  bytes, always, with `MAX_PAYLOAD` derived from what is left rather than chosen.
-  The size itself is derived too: the largest artefact this protocol can produce
-  is an introduction under ML-DSA-44 — an eight-hop grant at 30 449 bytes plus a
-  1 312-byte key, under a genesis segment spending 2 497 on fixed fields — so
-  64 KiB is what makes chunking unnecessary for anything the design can generate.
-  Fewer, larger objects also means fewer things for a host to count and fewer
-  requests for anybody on the path to time.
-  A size that varies is a measurement a host takes without any cryptanalysis, and
-  a ladder of buckets is the same measurement one step coarser — with boundaries
-  that are parameters, and two builds holding different parameters are two
-  distinguishable populations.
-- **The pad is checked, not skipped.** Unchecked padding is a covert channel:
-  inside the authenticated envelope, exactly as long as the message is short, and
-  never looked at again. A non-zero pad is refused.
-- **A host describes itself to nobody.** There is no banner and no status path,
-  every refusal has an empty body, and a caller who holds no address gets one
-  identical `404` to every question. A well-known path that answers with a
-  product name turns an internet-wide scan into a list of this network's users.
-  `doctor` measures a host rather than asking it.
+  long-poll needs no Bell and leaks nothing, so the alternative's cost falls only on
+  whoever chose a dumb object store.
+- **Every sealed drop is one size, and the size is not a parameter.** `DROP` is
+  derived rather than picked: the smallest power of two holding the largest
+  artefact this protocol can produce — an introduction, being a full-depth grant
+  plus the newcomer's key under a genesis segment — with `MAX_PAYLOAD` whatever is
+  left. Fewer, larger objects also leave a host fewer things to count and anybody
+  on the path fewer requests to time. A size that varies is a measurement a host
+  takes without cryptanalysis; a ladder of buckets is that measurement one step
+  coarser, with boundaries that are parameters, and two builds holding different
+  parameters are two distinguishable populations.
+- **The pad is checked, not skipped.** Unchecked padding is a covert channel: inside
+  the authenticated envelope, as long as the message is short, never looked at
+  again. A non-zero pad is refused.
+- **A host describes itself to nobody.** No banner, no status path, an empty body
+  on every refusal, one identical `404` to every question from a caller who holds
+  no address. A well-known path answering with a product name turns an
+  internet-wide scan into a list of this network's users, so `doctor` measures a
+  host rather than asking it.
 - **Only headers ordinary traffic already carries.** `If-None-Match` for the
-  conditional write, `Cache-Control: max-age` for a lifetime, and no
-  `User-Agent`. A header named after this project announces it to every proxy and
-  log on the route, including those inside TLS; a borrowed browser header above a
+  conditional write, `Cache-Control: max-age` for a lifetime, no `User-Agent`. A
+  header named after this project announces it to every proxy and log on the
+  route, including those inside TLS, and a borrowed browser header above a
   handshake that is plainly not a browser's is a worse tell than silence.
-- **The invitation is not an argument.** It carries the channel secret and a
-  signing key, and on Linux any account can read another process's command line
-  out of `/proc`, after which the shell keeps a copy. `join` reads it from stdin,
-  and there is no second way in.
-- **A site is readable by its owner and nobody else.** `0600` on every file,
-  `0700` on every directory, established at creation and never adjusted after —
-  `set_permissions` follows symbolic links, so a build that chmods a file it did
-  not create can be aimed at one it did not choose. A replacement stages beside
-  its target and renames over it. The attacker this answers is a second account
-  on a shared machine, not a nation state.
-- **Secrets erase themselves and cannot be compared.** `Secret`, `Stream` and
-  `Key` are `ZeroizeOnDrop`, so a channel secret does not outlive its value in
-  freed memory, a core dump or a swap file. None of them implements `PartialEq`:
-  nothing compares two secrets, and a derived comparison would run in a time that
-  depends on how many leading bytes match. Every fixed-width identifier compares
-  in constant time.
+- **The invitation is not an argument.** It carries the channel secret and a signing
+  key, and on Linux any account reads another process's command line out of `/proc`,
+  after which the shell keeps a copy. `join` reads it from stdin, and there is no
+  second way in.
+- **A site is readable by its owner and nobody else.** `0600` on every file, `0700`
+  on every directory, established at creation and never adjusted after, because
+  `set_permissions` follows symbolic links and a build that chmods a file it did
+  not create can be aimed at one it did not choose; a replacement stages beside its
+  target and renames over it. The attacker this answers is a second account on a
+  shared machine, not a nation state.
+- **Secrets erase themselves and cannot be compared.** `Secret`, `Stream` and `Key`
+  are `ZeroizeOnDrop`, so a channel secret does not outlive its value in freed
+  memory, a core dump or a swap file. None implements `PartialEq`, because a derived
+  comparison runs in a time that depends on how many leading bytes match; every
+  fixed-width identifier compares in constant time.
 - **The adversary is out of the workspace and speaks only through the door a user
   has.** `adversary/` drives the shipped binary with `--json` and asserts
-  *relations between traces* — never an expected output, because restating a rule
+  *relations between traces*, never an expected output, because restating a rule
   is what a second authority is. Haskell earns the place because a lying host is a
   choice over a strategy space and a directed attack is "any prefix, then this,
-  then any suffix": uniform random generation is a fuzzer, not an adversary. Four
-  properties keep it from drifting: it enters through the same door a person
-  enters through, it states relations rather than behaviour, it never gates the
-  Rust build, and **what it delivers is a Rust regression test**. Haskell finds,
-  Rust remembers, so knowledge only ever moves toward the shipped language. Delete
-  the directory and the network is unchanged.
-
+  then any suffix", where uniform random generation is a fuzzer rather than an
+  adversary. Four properties keep it from drifting: it enters through the door a
+  person enters through, it states relations rather than behaviour, it never gates
+  the Rust build, and **what it delivers is a Rust regression test**. Delete the
+  directory and the network is unchanged.
 **Deliberately not adopted.** Fuzzy message detection and oblivious message
-retrieval solve delivery *without* a shared secret, and we always have one. MLS
-is a later `seal` adapter, not a substrate. DHT or blockchain discovery publishes
-the relationship graph this design exists to hide. Mixnets and PIR conflict with
-the cost target; a SOCKS adapter outsources that problem to networks built for it.
+retrieval solve delivery *without* a shared secret, and we always have one; MLS is
+a later `seal` adapter, not a substrate; DHT or blockchain discovery publishes the
+relationship graph this design exists to hide; mixnets and PIR conflict with the
+cost target, and a SOCKS adapter outsources that to networks built for it.
 
 ## 9 Not built
 
-Named so that their absence is a decision rather than an oversight. Each is a
-version of its own.
+Named so that their absence is a decision rather than an oversight, each its own version.
 
 | Missing | Why it waits |
 |---|---|
@@ -470,9 +386,8 @@ version of its own.
 | **Windows file permissions** | `0600` has no counterpart; restricting a file there means writing an ACL, which needs an API this workspace cannot reach without `unsafe` or a crate that brings one |
 | `Bell` | a privacy mechanism rather than a latency tweak. A reader that polls names the address it waits on, then the next one after a hit, so a host watching one endpoint can follow the live edge; a host that can be asked to wait is told one address instead. Riding a carrier that bulk-syncs closes the same leak more completely, and whichever lands first decides whether the other is built |
 | `Cohort` — rosters and epochs | needs multi-node test infrastructure; two parties do not need a roster |
-| `Depot` — chunked content | now load-bearing rather than optional, and it is what ML-DSA-44 waits on: a drop carries 3 935 bytes, so anything larger — including a post-quantum introduction — needs chunking rather than a bigger envelope |
+| `Depot` — chunked content | optional again. `DROP` is sized to hold the largest artefact this protocol produces, so the signature swap did not need chunking after all; what still needs it is user content larger than one drop |
 | `port` — local socket and MCP front ends | the verb set is one enum, so a second front end is additive |
-| ML-DSA-44, replacing Ed25519 | the scheme is chosen (§8) and **blocked on `Depot`, not merely unbuilt.** A public key is 1 312 bytes and a signature 2 420, so one grant step is 3 806 bytes and a greeting — the newcomer's key plus a two-hop grant — is about 8 900. A drop carries 3 935 bytes today and would carry 1 579 once a genesis segment holds an ML-DSA signature, so the introduction stops fitting in one drop by a factor of five. Chunking lands first, then the swap; `Handle` no longer moves with it, because it is already a hash. Confidentiality needs none of this — it rests on a pre-shared secret through BLAKE3 and ChaCha20-Poly1305 with no public-key exchange anywhere, so harvest-now-decrypt-later does not apply to what this network carries |
 
 ---
 

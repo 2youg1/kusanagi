@@ -21,7 +21,7 @@
 //! ```text
 //! version         1 byte    = 1
 //! suite           1 byte    = 0, the baseline: BLAKE3, ChaCha20-Poly1305, Ed25519
-//! inviter        32 bytes   the inviter's verifying key; its handle roots the channel
+//! inviter      2592 bytes   the inviter's verifying key; its handle roots the channel
 //! secret         32 bytes   the channel secret
 //! bearer_seed    32 bytes   the one-time signing key
 //! locator_len     2 bytes   big endian
@@ -117,7 +117,11 @@ impl Invite {
             });
         }
 
-        let inviter = VerifyingKey::from_bytes(reader.take_array::<32>().map_err(mangled)?);
+        let inviter = VerifyingKey::from_bytes(
+            reader
+                .take_array::<{ VerifyingKey::WIDTH }>()
+                .map_err(mangled)?,
+        );
         let secret = Secret::from_bytes(reader.take_array::<32>().map_err(mangled)?);
         let bearer_seed = reader.take_array::<32>().map_err(mangled)?;
         let locator = take_text(&mut reader)?;

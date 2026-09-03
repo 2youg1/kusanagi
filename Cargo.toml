@@ -32,20 +32,19 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ed25519-dalek = { version = "2.1", default-features = false, features = [
-    "std",
-    "fast",
-    "zeroize",
+# The signature scheme, ML-DSA-87 (FIPS 204). Pure Rust with no C toolchain,
+# which `kernel-SPEC.md` §13 requires of anything that signs here.
+fips204 = { version = "0.4.6", default-features = false, features = [
+    "ml-dsa-87",
 ] }
 chacha20poly1305 = { version = "0.10", default-features = false, features = [
     "alloc",
 ] }
-# Already in the tree beneath `ed25519-dalek`, which zeroizes its signing key.
-# Taking it directly adds no crate to audit and extends the same guarantee to the
-# channel secret, the stream and the per-drop key.
+# Erasure and constant-time equality, both taken directly. They arrived in the
+# tree under `ed25519-dalek` and stayed when it left: `fips204` zeroizes its own
+# key material but exposes nothing to reach the channel secret, the stream, the
+# per-drop key or a fixed-width identifier, and those are what these two cover.
 zeroize = { version = "1", features = ["derive"] }
-# Also already in the tree, beneath `curve25519-dalek`. Constant-time equality
-# for every fixed-width identifier, in one place.
 subtle = { version = "2", default-features = false }
 getrandom = "0.3"
 hmac = "0.12"
@@ -57,6 +56,9 @@ proptest = "1"
 # A `#[expect]` in non-test code is permitted ONLY for a lint named here:
 #
 #   clippy::disallowed_methods — at exactly one function, `kusanagi::world::sample`.
+#   clippy::large_enum_variant — at exactly one type, `kernel::Link`, whose two
+#     shapes differ by an ML-DSA-87 signature. Boxing it would cost `Copy`, which
+#     every `const fn` accessor on `Segment` relies on.
 #     AGENTS.md already rules that "the single sampling point is
 #     `kusanagi::world::sample`", which `kusanagi::assembly` calls once per command
 #     and then passes down as a value; clippy.toml denies the clock everywhere so

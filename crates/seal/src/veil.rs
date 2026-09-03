@@ -16,7 +16,7 @@
 //! ```text
 //! length       4 bytes    big endian, how much of what follows is the segment
 //! segment      N bytes    the canonical bytes
-//! pad     65516-N bytes   zero
+//! pad    131052-N bytes   zero
 //!             +16 bytes   the authentication tag ChaCha20-Poly1305 appends
 //! ```
 //!
@@ -41,12 +41,13 @@ use crate::envelope::OpenFailed;
 /// that has not, and two populations of different sizes are two populations a
 /// host can tell apart, which is the leak this constant exists to close.
 ///
-/// **64 KiB is derived rather than picked.** The largest artefact this protocol
-/// can produce is an introduction under a post-quantum signature scheme: an
-/// eight-hop ML-DSA-44 grant is 30 449 bytes and the newcomer's key another
-/// 1 312, and a genesis segment carrying a 2 420-byte signature spends 2 497 on
-/// its fixed fields. Everything that can ever have to travel therefore fits in
-/// one drop, so no artefact of this design needs chunking in order to exist.
+/// **128 KiB is derived rather than picked.** The largest artefact this protocol
+/// can produce is an introduction: an eight-hop ML-DSA-87 grant is 58 345 bytes
+/// and the newcomer's key another 2 592, under a genesis segment that spends
+/// 4 704 on its fixed fields. Everything that can ever have to travel therefore
+/// fits in one drop, so no artefact of this design needs chunking in order to
+/// exist. 64 KiB fell 125 bytes short of that, which is the kind of margin that
+/// becomes an outage rather than a warning.
 ///
 /// The cost is paid deliberately: one drop is one message on the wire whatever
 /// the message is, so a conversation that would have been many small objects is
@@ -54,7 +55,7 @@ use crate::envelope::OpenFailed;
 /// 3) and fewer requests for anybody on the path to time (property 4b), and the
 /// bandwidth it spends is bandwidth the ruling in `ARCHITECTURE.md` §8 says to
 /// spend.
-pub const DROP: usize = 65_536;
+pub const DROP: usize = 131_072;
 
 /// What ChaCha20-Poly1305 appends to every ciphertext.
 const TAG: usize = 16;

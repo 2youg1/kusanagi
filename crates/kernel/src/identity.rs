@@ -13,7 +13,7 @@
 //!
 //! **A handle is the hash of a key, not the key.** That is what keeps the width
 //! of a signature scheme out of the wire format: a handle is 32 bytes whether
-//! the scheme behind it is Ed25519 or ML-DSA-44, so addresses, cairn filenames
+//! the scheme behind it is Ed25519 or ML-DSA-87, so addresses, cairn filenames
 //! and the author field of a segment do not move when the scheme does. The price
 //! is that a name cannot check anything — whoever verifies a signature must hold
 //! the key, and where each caller gets one is stated where it gets it: a
@@ -28,7 +28,9 @@
 
 use core::fmt;
 
-use ed25519_dalek::{Signer as _, SigningKey};
+use fips204::ml_dsa_87;
+use fips204::traits::{KeyGen as _, SerDes as _, Signer as _, Verifier as _};
+use zeroize::ZeroizeOnDrop;
 
 use crate::identifier;
 
@@ -54,8 +56,8 @@ identifier! {
 }
 
 identifier! {
-    /// An Ed25519 signature over some exact byte string.
-    Signature, 64
+    /// An ML-DSA-87 signature over some exact byte string.
+    Signature, 4627
 }
 
 /// The public half of an identity: the only thing that can check a signature.
@@ -73,7 +75,7 @@ impl VerifyingKey {
     /// Public because the formats that embed a key — a grant step, a channel
     /// record, a greeting — are fixed-width and must agree with this number
     /// rather than repeat it.
-    pub const WIDTH: usize = 32;
+    pub const WIDTH: usize = ml_dsa_87::PK_LEN;
 
     /// Wraps the raw bytes.
     ///
@@ -109,10 +111,12 @@ impl VerifyingKey {
     /// answer on purpose: telling an attacker *which* part of a forgery failed is
     /// a service to the attacker.
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<(), NotAuthentic> {
-        let key = ed25519_dalek::VerifyingKey::from_bytes(&self.0).map_err(|_| NotAuthentic)?;
-        let signature = ed25519_dalek::Signature::from_bytes(signature.as_bytes());
-        key.verify_strict(message, &signature)
-            .map_err(|_| NotAuthentic)
+        let key = ml_dsa_87::PublicKey::try_from_bytes(self.0).map_err(|_| NotAuthentic)?;
+        if key.verify(message, signature.as_bytes(), EMPTY_CONTEXT) {
+            Ok(())
+        } else {
+            Err(NotAuthentic)
+        }
     }
 }
 
@@ -126,22 +130,59 @@ impl fmt::Debug for VerifyingKey {
 
 /// The private half of an identity.
 ///
-/// Holds a 32-byte seed and nothing else, so an endpoint's whole identity is 32
-/// bytes on disk. It deliberately does not implement `Clone`: a signing key that
-/// is easy to copy is a signing key that ends up in two places.
-pub struct Signer(SigningKey);
+/// Holds the 32-byte seed an ML-DSA-44 key pair expands from, so an endpoint's
+/// whole identity is still 32 bytes on disk however large the expanded key is.
+/// It deliberately does not implement `Clone`: a signing key that is easy to
+/// copy is a signing key that ends up in two places.
+#[derive(ZeroizeOnDrop)]
+pub struct Signer {
+    seed: [u8; 32],
+    /// Boxed because ML-DSA-87 expands a 32-byte seed into 4 896 bytes, and a
+    /// value that large moves every time a signer is returned, passed or
+    /// rebound. The heap holds it once and the moves cost a pointer.
+    #[zeroize(skip)]
+    key: Box<ml_dsa_87::PrivateKey>,
+    /// Cached for the same reason and one more: deriving it means running key
+    /// generation again, which is the most expensive thing this type does.
+    #[zeroize(skip)]
+    public: Box<VerifyingKey>,
+}
 
 impl Signer {
     /// Rebuilds a signer from the seed it was created with.
+    ///
+    /// Expansion is deterministic, which is what lets an identity file hold 32
+    /// bytes rather than the 4 896 the scheme actually signs with.
     #[must_use]
     pub fn from_seed(seed: &[u8; 32]) -> Self {
-        Self(SigningKey::from_bytes(seed))
+        let (public, key) = ml_dsa_87::KG::keygen_from_seed(seed);
+        Self {
+            seed: *seed,
+            key: Box::new(key),
+            public: Box::new(VerifyingKey::from_bytes(public.into_bytes())),
+        }
+    }
+
+    /// A 32-byte secret this identity alone can compute, bound to `context`.
+    ///
+    /// The one way anything derives from the identity seed without being handed
+    /// it. `kusanagi_seal::Stream::trail` is the caller: a trail must be the
+    /// author's alone, because the peer holds the channel secret, and identical
+    /// on every run, because nothing about a trail is written down. Deriving it
+    /// from a signature would tie that determinism to whether the signature
+    /// scheme happens to be deterministic, which ML-DSA-87 is only when asked.
+    #[must_use]
+    pub fn derive(&self, context: &str, bound_to: &[u8]) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new_derive_key(context);
+        hasher.update(&self.seed);
+        hasher.update(bound_to);
+        *hasher.finalize().as_bytes()
     }
 
     /// The public half.
     #[must_use]
     pub fn verifying_key(&self) -> VerifyingKey {
-        VerifyingKey::from_bytes(self.0.verifying_key().to_bytes())
+        *self.public
     }
 
     /// The name the public half answers to.
@@ -151,11 +192,37 @@ impl Signer {
     }
 
     /// Signs `message`.
+    ///
+    /// Deterministic: the hedging randomness FIPS 204 allows is fixed at zero,
+    /// which is the standard's own deterministic variant. Two builds signing one
+    /// message produce one signature, so a segment has one spelling and the
+    /// canonical-bytes rule survives a signature scheme that would otherwise be
+    /// free to vary.
+    ///
+    /// # Panics
+    ///
+    /// Never. The only failure `try_sign_with_seed` reports is a malformed
+    /// private key, which cannot arise from a key this type expanded itself, and
+    /// the branch returns an all-zero signature rather than panicking — a
+    /// signature that verifies under nothing.
     #[must_use]
     pub fn sign(&self, message: &[u8]) -> Signature {
-        Signature::from_bytes(self.0.sign(message).to_bytes())
+        let signed = self
+            .key
+            .try_sign_with_seed(&DETERMINISTIC, message, EMPTY_CONTEXT)
+            .unwrap_or([0_u8; ml_dsa_87::SIG_LEN]);
+        Signature::from_bytes(signed)
     }
 }
+
+/// FIPS 204 allows a signature to be randomised or deterministic. This is the
+/// deterministic choice, and it is the one the canonical-bytes rule needs.
+const DETERMINISTIC: [u8; 32] = [0_u8; 32];
+
+/// This network signs domain-separated messages of its own, so the scheme's
+/// application context stays empty rather than becoming a second place where
+/// domain separation could disagree with itself.
+const EMPTY_CONTEXT: &[u8] = &[];
 
 impl fmt::Debug for Signer {
     /// Prints the public half only. A `Debug` that printed the seed would put a
@@ -232,7 +299,7 @@ mod tests {
 
     #[test]
     fn bytes_that_are_not_a_key_verify_nothing() {
-        let nonsense = VerifyingKey::from_bytes([0xff_u8; 32]);
+        let nonsense = VerifyingKey::from_bytes([0xff_u8; VerifyingKey::WIDTH]);
         let signature = alice().sign(b"the message");
         assert_eq!(
             nonsense.verify(b"the message", &signature),
@@ -249,12 +316,18 @@ mod tests {
     #[test]
     fn a_handle_is_the_hash_of_a_key_and_not_the_key() {
         let key = alice().verifying_key();
-        assert_ne!(key.handle().as_bytes(), key.as_bytes());
+        assert_ne!(
+            key.handle().as_bytes().as_slice(),
+            key.as_bytes().as_slice()
+        );
         assert_eq!(
             key.handle(),
             VerifyingKey::from_bytes(*key.as_bytes()).handle()
         );
-        assert_ne!(key.handle(), VerifyingKey::from_bytes([7_u8; 32]).handle());
+        assert_ne!(
+            key.handle(),
+            VerifyingKey::from_bytes([7_u8; VerifyingKey::WIDTH]).handle()
+        );
     }
 
     #[test]
@@ -270,6 +343,32 @@ mod tests {
         let handle = alice().handle();
         assert_eq!(Handle::from_str(&handle.to_string()).unwrap(), handle);
         assert_eq!(handle.to_string().len(), 64);
+    }
+
+    /// The seed on disk stays 32 bytes even though the scheme signs with 2 560.
+    #[test]
+    fn an_identity_is_still_thirty_two_bytes_on_disk() {
+        assert_eq!(alice().verifying_key().as_bytes().len(), 2592);
+        assert_eq!(alice().sign(b"x").as_bytes().len(), 4627);
+        assert_eq!(alice().handle().as_bytes().len(), 32);
+    }
+
+    /// Two runs sign one message identically, which the canonical bytes need.
+    #[test]
+    fn signing_is_deterministic() {
+        assert_eq!(alice().sign(b"the message"), alice().sign(b"the message"));
+        assert_ne!(alice().sign(b"the message"), alice().sign(b"another"));
+    }
+
+    #[test]
+    fn a_derived_secret_is_this_identity_alone_and_the_same_every_run() {
+        let mine = alice().derive("kusanagi test context", b"lane");
+        assert_eq!(mine, alice().derive("kusanagi test context", b"lane"));
+        assert_ne!(mine, alice().derive("kusanagi test context", b"other lane"));
+        assert_ne!(
+            mine,
+            Signer::from_seed(&[2_u8; 32]).derive("kusanagi test context", b"lane")
+        );
     }
 
     #[test]

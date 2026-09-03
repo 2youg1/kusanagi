@@ -66,8 +66,9 @@ deny:
 # opens — a reviewer, an editor, a model reading one — so a file that no longer
 # fits in one reading is split or deleted, and the limit is not raised.
 #
-# One limit per kind, because the kinds fail differently. See ARCHITECTURE.md §5
-# for why each number is the number it is.
+# One number for every kind of file, because a limit you cannot apply from memory
+# is one you meet at the gate instead of at the keyboard. See ARCHITECTURE.md §5
+# for what the ladder of per-kind limits cost and what it bought.
 budget:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -76,13 +77,8 @@ budget:
     # not written here: cargo generates one, and the other is the licence text
     # verbatim. `awk END{NR}` rather than `wc -l` so that a file whose last line
     # has no newline is counted, not rounded down.
+    limit=400
     over=$(git ls-files | grep -Ev '^(Cargo\.lock|LICENSE)$' | while IFS= read -r file; do
-        case "$file" in
-            *.rs) limit=400;;
-            *.hs) limit=400;;
-            *.md) limit=500;;
-            *)    limit=300;;
-        esac
         lines=$(awk 'END { print NR }' "$file")
         if [ "$lines" -gt "$limit" ]; then printf '  %5s / %-4s %s\n' "$lines" "$limit" "$file"; fi
     done)

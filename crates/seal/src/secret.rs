@@ -50,9 +50,9 @@ const TRAIL_CONTEXT: &str = "kusanagi 2026-01-01 trail seed for one lane";
 ///
 /// Signed rather than derived from the channel secret alone, because the peer
 /// holds that secret: a trail either end could compute would let either end
-/// write the other's stream. Ed25519 signing is deterministic, so the seed is
-/// the same on every run of every process — which is what keeps law 1 true,
-/// since nothing about a trail is ever written down.
+/// write the other's stream. `Signer::sign` is deterministic, so the seed is the
+/// same on every run of every process — which is what keeps law 1 true, since
+/// nothing about a trail is ever written down.
 const TRAIL_DOMAIN: &[u8] = b"kusanagi.trail.seed.v1";
 
 /// The root secret two endpoints share.
@@ -122,9 +122,12 @@ impl Stream {
     /// it**, because it starts from a signature only they can make — the channel
     /// secret is shared, so a seed derived from that alone would let a peer write
     /// segments in the author's name. And **it is the same on every run**,
-    /// because Ed25519 signs deterministically, so an endpoint that was killed
+    /// because `Signer::sign` is deterministic, so an endpoint that was killed
     /// mid-conversation recomputes the identical trail rather than losing the
-    /// ability to continue its own stream.
+    /// ability to continue its own stream. That second property is a choice
+    /// rather than a gift: FIPS 204 permits a randomised signature, and
+    /// `kernel::Signer` takes the standard's deterministic variant precisely so
+    /// that this holds.
     #[must_use]
     pub fn trail(&self, author: &Signer) -> Trail {
         let mut message = TRAIL_DOMAIN.to_vec();

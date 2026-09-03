@@ -12,13 +12,13 @@
 //! content addressing would stop meaning anything.
 //!
 //! ```text
-//! genesis:  tag 1 + index 8 + author 32 + commit 32 + payload_len 4 + payload + signature 64
+//! genesis:  tag 1 + index 8 + author 32 + commit 32 + payload_len 4 + payload + sig 4627
 //! follows:  tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32
 //!           + payload_len 4 + payload
 //! ```
 //!
-//! Both shapes carry 141 bytes besides the payload, so the envelope above them
-//! sees one length whichever it is.
+//! A genesis segment spends 4 704 bytes besides its payload and a following one
+//! spends 141, and the envelope above them shows one length whichever it is.
 //!
 //! **Only the first segment of a chain is signed.** A signature is transferable,
 //! and a peer who is compromised or coerced would otherwise hold proof of
@@ -301,7 +301,7 @@ impl Segment {
 
         let link = match (previous, reveal) {
             (None, _) => {
-                let signature = Signature::from_bytes(reader.take_array::<64>()?);
+                let signature = Signature::from_bytes(reader.take_array::<4_627>()?);
                 author.verify(&signed_bytes(&named, commit), &signature)?;
                 Link::Genesis { commit, signature }
             }

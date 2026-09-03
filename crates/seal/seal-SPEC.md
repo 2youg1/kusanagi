@@ -13,7 +13,7 @@
 | U1 通道秘密 | `Secret`，以及由它派生的 `Stream` | 同一 `(secret, author)` 得同一 `Stream`；不同 author 得不同 `Stream` |
 | U2 地址与密钥派生 | `derive(stream, index) -> (DropAddr, Key)` | 一千个高度得一千个互不相同的地址；换一个 secret 则整张地址表不相交 |
 | U3 封装 | `seal` / `open` | 往返恒等；任意一位翻转被拒；换一个高度的密钥打不开 |
-| U4 定长信封（`Veil`） | `veil::pad` / `veil::unpad`，以及常量 `DROP` | 任何长度的明文封出来都是 4 096 字节；非零填充被拒 |
+| U4 定长信封（`Veil`） | `veil::pad` / `veil::unpad`，以及常量 `DROP` | 任何长度的明文封出来都是 `DROP` 字节；非零填充被拒 |
 | U5 秘密不残留 | `Secret` / `Stream` / `Key` 的 `ZeroizeOnDrop` | 三个类型都满足 `ZeroizeOnDrop` 约束；`Secret` 与 `Stream` 不可比较 |
 
 **不负责**：谁被允许写（属 `grant`）、字节存在哪里（属 `waypoint`）、段的结构（属 `kernel`）。
@@ -24,9 +24,11 @@
 2. 一千次派生得到一千个不同的 `DropAddr`（`secret.rs` 的 `a_thousand_addresses_are_a_thousand_addresses`）。
 3. 同一通道内两个作者在每个高度都不碰撞（`the_two_lanes_of_one_channel_never_collide`，覆盖 0..64）。
 4. 封装后的字节不含明文（`the_sealed_form_does_not_contain_the_plain_form`）。
-4a. 任何长度的明文封出的密文都恰好 `DROP = 4 096` 字节（`every_drop_is_the_same_size_whatever_it_carries`）；长度不对的字节一律不开（`bytes_that_are_not_one_drop_long_never_open`）。
+4a. 任何长度的明文封出的密文都恰好 `DROP` 字节（`every_drop_is_the_same_size_whatever_it_carries`）；长度不对的字节一律不开（`bytes_that_are_not_one_drop_long_never_open`）。
 4b. 填充区任意一个非零字节使 `unpad` 返回 `Rejected`（`a_pad_that_carries_anything_is_refused`）。
-5. 密文任意一位翻转后 `open` 返回 `OpenFailed::Rejected`（`every_flipped_byte_is_refused`，逐字节遍历）。
+5. 密文任意一位翻转后 `open` 返回 `OpenFailed::Rejected`（`every_flipped_byte_is_refused`，**抽样遍历**）。
+
+   **从逐字节改为抽样，理由写在这里。** `DROP` 从 4 KiB 长到 128 KiB 后，逐字节版本要做 `DROP` 次解密，每次都跨过整个 `DROP`，代价是 `DROP²` —— debug 构建下实测超过三十分钟仍未结束。被断言的性质在密文上是均匀的：Poly1305 不区分位置，所以第 700 个字节与第 701 个字节不是两个独立的判例。抽样取两类位置：**结构边界**（密文开头、正文与 16 字节 tag 的接缝、末字节）与**一条步长为质数的步进**，后者保证不与任何块对齐。一个只在某一个未被采样字节上失效的 AEAD 不存在；一个没有人跑的测试存在。`kernel/tests/segment.rs` 已经因同一理由做过这个取舍。
 6. `Secret`、`Stream`、`Key` 的 `Debug` 不打印字节。
 7. 端到端：`crates/kusanagi/tests/unlinkable.rs` 从宿主视角断言一百段之间无可关联特征。
 
@@ -74,7 +76,7 @@ envelope.rs   Key / seal / open —— 标准件的装配
 ## 8 接口先行
 
 ```rust
-pub const DROP: usize = 4_096;            // 每个密封 drop 在线上的字节数
+pub const DROP: usize = 131_072;          // 每个密封 drop 在线上的字节数
 pub struct Secret([u8; 32]);              // 私有字段；Debug 为 "Secret(redacted)"；ZeroizeOnDrop；不可比较
 pub struct Stream([u8; 32]);              // 同上
 pub struct Key { bytes: [u8; 32], nonce: [u8; 12] }   // 无 Clone，无公开构造器，ZeroizeOnDrop
@@ -117,9 +119,9 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 
 **步骤 3：nonce 也是派生量。** 每个 drop 一把新钥匙，所以 nonce 取什么都安全；派生它只多两行，却让「零 nonce」这个需要读者停下来验算的写法从代码里消失。
 
-**步骤 5：一个尺寸，没有梯子。** 密文长度是宕主不需要任何密码分析就能拿到的一个事实，而一份记录的长度剖面在加密之后原封不动地存活。`veil::pad` 把「4 字节长度前缀 + 段的规范字节 + 零填充」凑成固定的 `DROP - 16` 字节（`DROP` = 65 536）。
+**步骤 5：一个尺寸，没有梯子。** 密文长度是宕主不需要任何密码分析就能拿到的一个事实，而一份记录的长度剖面在加密之后原封不动地存活。`veil::pad` 把「4 字节长度前缀 + 段的规范字节 + 零填充」凑成固定的 `DROP - 16` 字节。
 
-**尺寸本身也是推出来的**：本协议能产生的最大工件是 ML-DSA-44 下的一次引荐——八跳 grant 30 449 字节加一把 1 312 字节公钥，其上 genesis 段的固定字段占 2 497——所以 64 KiB 让这个设计能生成的任何东西都不需要分块才能存在。
+**尺寸本身也是推出来的**：本协议能产生的最大工件是 ML-DSA-87 下的一次引荐——八跳 grant 58 345 字节加一把 2 592 字节公钥，其上 genesis 段的固定字段占 4 704——所以 128 KiB 是让这个设计能生成的任何东西都不需要分块的最小 2 的幂。先试过 64 KiB，差 125 字节。
 
 **一个尺寸，不是一组分档。** 分档仍然告诉宿主落在哪一档，而每一个边界都是一个**有人选的参数**；两个持有不同参数的构建就是两个可区分的人群——可配置性就是匿名集分割。
 
@@ -162,12 +164,12 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 | 依赖 | 理由 | 替代方案与代价 |
 |---|---|---|
 | `chacha20poly1305` 0.10 | RustCrypto 的 AEAD，纯 Rust、无 C 工具链、软件实现常数时间 | `aes-gcm` 在无 AES-NI 的设备上更慢且更难做到常数时间 |
-| `zeroize` 1 | 三个秘密类型出作用域即擦除。**它本来就在依赖树里**（`ed25519-dalek` 用它擦签名私钥），直接依赖它不增加任何需要审计的代码 | 手写擦除会被优化器删掉，除非用 volatile 写入或内存屏障，而那正是这个 crate 在做的事 |
+| `zeroize` 1 | 三个秘密类型出作用域即擦除。它原本在 `ed25519-dalek` 下面，那个依赖走后改为全仓直接依赖；`fips204` 只擦除它自己的密钥材料，够不到通道秘密与每-drop 密钥 | 手写擦除会被优化器删掉，除非用 volatile 写入或内存屏障，而那正是这个 crate 在做的事 |
 | `blake3`（已在全仓） | 自带 KDF 模式，全仓一个哈希原语 | 引入 `hkdf` 会多一套需要审计的构造，且多一个依赖 |
 
 ## 14 硬编码声明
 
-**`DROP = 4 096`。** 它是线路格式的一部分，不是可调参数：改它的构建与没改的构建不能互相读写，而两个尺寸不同的人群是宕主分得开的两个人群。选 4 KiB 的理由是文件系统、对象存储与 TLS 记录都已经在用这个量级，且它把 `MAX_PAYLOAD` 留在 3 935 字节——对代理之间的一条消息绰绰有余。代价是一条 11 字节的消息也占 4 KiB，这是为属性 4a 付的带宽，已计入。
+**`DROP = 131 072`。** 它是线路格式的一部分，不是可调参数：改它的构建与没改的构建不能互相读写，而两个尺寸不同的人群是宕主分得开的两个人群。它不是挑的而是推的，理由在 §10 步骤 5；代价是一条 11 字节的消息也占 128 KiB，这是为属性 4a 付的带宽，已计入。
 
 三个 context 字符串（见 §10 步骤 1）。它们**是线路格式的一部分**：改动其中任何一个，之后派生出的全部地址与密钥都会改变，两个 context 不一致的端点连对方的信箱在哪都算不出来。日期部分按 BLAKE3 的约定保留，用于将来需要换代时给出一个新的、明确不同的 context。
 

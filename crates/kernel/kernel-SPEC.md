@@ -59,7 +59,7 @@ kernel **不**负责：链的规则（`chain`）、地址派生（`seal`）、�
 | 事实 | 来源 |
 |---|---|
 | BLAKE3 可用于内容寻址，`derive_key` 是其 KDF 模式 | `blake3` crate 文档 |
-| `verify_strict` 拒绝小阶点与签名可延展 | `ed25519-dalek` 文档 |
+| ML-DSA-87 的公钥 2 592 / 签名 4 627 / 私钥 4 896 字节；`try_sign_with_seed` 是标准自己的确定性变体 | FIPS 204，及 `fips204` crate 文档 |
 | 域分隔避免不同用途的哈希互撞 | 通行密码工程实践 |
 | 禁 panic / 禁裸算术 / 禁 `as` 的清单 | `rust-hardening`，已写入根 `Cargo.toml` |
 
@@ -91,7 +91,7 @@ clock.rs      Instant / Clock / FixedClock
 waypoint.rs   Waypoint trait、PutOutcome、WaypointError
 ```
 
-kernel 无内部依赖；外部依赖只有 `blake3`、`ed25519-dalek`、`thiserror`。
+kernel 无内部依赖；外部依赖只有 `blake3`、`fips204`、`subtle`、`zeroize`、`thiserror`。
 
 **`identity.rs` 四型同居一文件**是因为它们互相依赖：`Signer::verifying_key()` 产出 `VerifyingKey`，`VerifyingKey::handle()` 产出 `Handle`，`VerifyingKey::verify` 消费 `Signature`。拆开只会在文件之间制造一个环。
 
@@ -208,7 +208,8 @@ kernel 内部不做恢复——一切失败都是调用方的输入问题，一�
 | 依赖 | 理由 | 替代方案与代价 |
 |---|---|---|
 | `blake3` 1.8 | 树形哈希、SIMD、可用于内容寻址，全仓一个哈希原语 | SHA-256 更保守但更慢且无树形结构 |
-| `ed25519-dalek` 2.1 | 纯 Rust、无 C 工具链、有 `verify_strict` | `ring` 会引入 C 与汇编构建 |
+| `fips204` 0.4，特性 `ml-dsa-87` | 纯 Rust、无 C 工具链，且 `try_sign_with_seed` 能拿到确定性签名——规范字节规则要求一条消息只有一个签名 | `ring` 会引入 C 与汇编构建；随机化签名会让同一个段每次编码出不同字节 |
+| `subtle` 2 / `zeroize` 1 | 定宽标识符的恒时比较，以及种子出作用域即擦除。**它们原本在 `ed25519-dalek` 下面，那个依赖走后改为直接依赖** | 手写比较会泄露首字节匹配长度；手写擦除会被优化器删掉 |
 | `thiserror` 2 | 只生成 `Display` 与 `From`，无运行时足迹 | 手写约多 60 行且易与错误码脱节 |
 
 不引入 `serde`（§10 步骤 2）、不引入 `hex`（`wire` 约 40 行，少一个依赖）。

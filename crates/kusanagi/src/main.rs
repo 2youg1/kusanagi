@@ -162,7 +162,17 @@ fn abilities(text: &str) -> Result<Abilities, Complaint> {
 /// much larger is not one, and refusing to buffer it is cheaper than parsing it.
 fn invitation() -> Result<String, Complaint> {
     /// Room for an invitation carrying a long locator and a deep grant chain.
-    const MOST: u64 = 16_384;
+    ///
+    /// Derived from the widest one that can exist rather than picked: a
+    /// verifying key is 2 592 bytes, the channel secret and the bearer seed 32
+    /// each, and an eight-hop ML-DSA-87 grant 58 345 — about 61 000 bytes, and
+    /// twice that as hexadecimal. 256 KiB leaves room for a long locator and
+    /// still refuses to buffer anything that is not an invitation.
+    ///
+    /// **An invitation is no longer a line somebody pastes.** At this size it is
+    /// a file or a QR code, which is the price of a post-quantum signature and
+    /// is recorded in `ARCHITECTURE.md` §8.
+    const MOST: u64 = 262_144;
 
     let input = std::io::stdin();
     if input.is_terminal() {
@@ -304,7 +314,31 @@ fn misread(error: &clap::Error) -> Result<String, Complaint> {
     })
 }
 
+/// How much stack one command is given.
+///
+/// ML-DSA-87 is a lattice scheme: signing and verifying hold several matrices of
+/// 256-coefficient polynomials as ordinary locals, and rejection sampling calls
+/// into them repeatedly. That is tens of kilobytes per call in a call chain that
+/// is already several crates deep, and the main thread of a process on Windows
+/// gets one megabyte by default — which this overran the day the signature
+/// scheme changed, as a stack overflow with no error to report.
+///
+/// So the work runs on a thread this program sizes itself. Eight megabytes is
+/// what Rust gives a spawned thread by default on the platforms that have a
+/// choice, and the cost is one thread per command in a program that exits.
+const STACK: usize = 8 * 1_024 * 1_024;
+
 fn main() -> ExitCode {
+    // A thread rather than a linker flag, because a linker flag is per-target
+    // and this has to hold on every platform this ships to.
+    let Ok(worker) = std::thread::Builder::new().stack_size(STACK).spawn(run) else {
+        eprintln!("error: this program could not start a thread to work on");
+        return ExitCode::FAILURE;
+    };
+    worker.join().unwrap_or(ExitCode::FAILURE)
+}
+
+fn run() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) => match misread(&error) {
