@@ -107,6 +107,8 @@ data Outcome
     -- verified head, and the segments themselves.
     Read ChannelName Handle (Maybe Word64) [Entry]
   | Revoked ChannelName Text
+  | -- | The channel dropped here, and the locator its drops stay at.
+    Forgotten ChannelName Text
   | Examined Text Text
   | Hosted
   deriving stock (Eq, Show)
@@ -122,6 +124,7 @@ instance FromJSON Outcome where
       "sent" -> Sent <$> o .: "name" <*> o .: "index" <*> o .: "address"
       "read" -> Read <$> o .: "name" <*> o .: "author" <*> o .: "height" <*> o .: "segments"
       "revoked" -> Revoked <$> o .: "name" <*> o .: "step"
+      "forgotten" -> Forgotten <$> o .: "name" <*> o .: "waypoint"
       "examined" -> Examined <$> o .: "waypoint" <*> o .: "tier"
       "hosted" -> pure Hosted
       other -> fail ("the door reported a command this adversary does not know: " <> Text.unpack other)

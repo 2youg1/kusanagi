@@ -15,6 +15,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::indexing_slicing,
     reason = "test code"
 )]
 
@@ -29,9 +30,10 @@ fn scratch(tag: &str) -> Site {
     Site::at(root)
 }
 
-fn channel() -> Channel {
+fn channel(name: &str) -> Channel {
     let root = Signer::from_seed(&[1; 32]);
     Channel {
+        name: name.to_owned(),
         secret: Secret::from_bytes([7; 32]),
         root: root.handle(),
         introduction: Signer::from_seed(&[2; 32]).verifying_key(),
@@ -59,13 +61,68 @@ fn channels_are_kept_and_listed() {
     let site = scratch("channels");
     assert!(site.names().unwrap().is_empty());
     assert!(!site.holds("alice").unwrap());
+    site.adopt(&[5; 32]).unwrap();
 
-    site.keep("alice", &channel()).unwrap();
-    site.keep("bob", &channel()).unwrap();
+    site.keep(&channel("alice")).unwrap();
+    site.keep(&channel("bob")).unwrap();
     assert_eq!(site.names().unwrap(), vec!["alice", "bob"]);
     assert!(site.holds("alice").unwrap());
     assert_eq!(site.channel("alice").unwrap().locator, "./drops");
     std::fs::remove_dir_all(site.root()).unwrap();
+}
+
+/// A listing of the directory says how many channels there are, and no more.
+///
+/// The file used to be called `alice`, so any account that could read the
+/// directory read the relationship graph off it without opening anything. That
+/// is a different size of harm from a count, and it is the one this network's
+/// derived addresses exist to prevent.
+#[test]
+fn nothing_in_the_directory_is_readable_as_a_peer_name() {
+    let site = scratch("filed");
+    site.adopt(&[5; 32]).unwrap();
+    site.keep(&channel("alice")).unwrap();
+    site.keep(&channel("bob")).unwrap();
+
+    let filed: Vec<String> = std::fs::read_dir(site.root().join("channels"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(filed.len(), 2, "a channel is one file: {filed:?}");
+    for name in &filed {
+        assert!(!name.contains("alice") && !name.contains("bob"), "{name}");
+        assert!(
+            name.len() == 64 && name.chars().all(|c| c.is_ascii_hexdigit()),
+            "a filed name is a hash and nothing else: {name}"
+        );
+    }
+
+    // A second site with a different identity files the same name elsewhere,
+    // so the hash cannot be looked up in a table somebody built once.
+    let other = scratch("filed-other");
+    other.adopt(&[6; 32]).unwrap();
+    other.keep(&channel("alice")).unwrap();
+    let elsewhere: Vec<String> = std::fs::read_dir(other.root().join("channels"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    let one = elsewhere.first().expect("a channel was kept and not filed");
+    assert!(!filed.contains(one), "two sites filed one name alike");
+
+    std::fs::remove_dir_all(site.root()).unwrap();
+    std::fs::remove_dir_all(other.root()).unwrap();
+}
+
+/// A channel cannot be written before there is an identity to file it under.
+#[test]
+fn a_channel_needs_an_identity_to_be_filed_under() {
+    let site = scratch("no-identity");
+    assert!(matches!(
+        site.keep(&channel("alice")),
+        Err(SiteError::NoIdentity)
+    ));
+    assert!(site.names().unwrap().is_empty());
+    assert!(!site.holds("alice").unwrap());
 }
 
 #[test]
@@ -103,7 +160,8 @@ fn a_name_that_could_escape_the_directory_is_refused() {
 #[test]
 fn a_forgotten_channel_leaves_no_trace_and_frees_its_name() {
     let site = scratch("forget");
-    site.keep("alice", &channel()).unwrap();
+    site.adopt(&[5; 32]).unwrap();
+    site.keep(&channel("alice")).unwrap();
     site.forget("alice").unwrap();
 
     assert!(!site.holds("alice").unwrap());
@@ -113,7 +171,7 @@ fn a_forgotten_channel_leaves_no_trace_and_frees_its_name() {
         Err(SiteError::UnknownChannel { .. })
     ));
     // the name is free again, which is what makes forgetting a way out
-    site.keep("alice", &channel()).unwrap();
+    site.keep(&channel("alice")).unwrap();
     assert!(site.holds("alice").unwrap());
     std::fs::remove_dir_all(site.root()).unwrap();
 }

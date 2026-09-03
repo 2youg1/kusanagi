@@ -75,6 +75,13 @@ pub enum Complaint {
         /// What was wrong with it.
         reason: String,
     },
+    /// A channel was to be written before this endpoint had an identity.
+    ///
+    /// Every verb that writes one creates the identity first, so this is a
+    /// caller of the library rather than of the command line — and it is a
+    /// complaint rather than a panic for exactly that reason.
+    #[error("this endpoint has no identity yet")]
+    NoIdentity,
     /// No channel by that name has been joined.
     #[error("there is no channel called `{name}` here")]
     UnknownChannel {
@@ -185,6 +192,7 @@ impl From<SiteError> for Complaint {
             SiteError::BadInvitation { reason } => Self::BadInvitation { reason },
             SiteError::BadRecord { what, reason } => Self::BadRecord { what, reason },
             SiteError::UnknownChannel { name } => Self::UnknownChannel { name },
+            SiteError::NoIdentity => Self::NoIdentity,
             SiteError::Grant(error) => Self::Grant(error),
         }
     }
@@ -216,6 +224,7 @@ impl Complaint {
             Self::BadName { .. } | Self::BadInvitation { .. } | Self::BadRecord { .. } => {
                 "kusanagi.malformed"
             }
+            Self::NoIdentity => "kusanagi.no_identity",
             Self::UnknownChannel { .. } => "kusanagi.unknown_channel",
             Self::ChannelExists { .. } => "kusanagi.channel_exists",
             Self::NoPeerYet { .. } => "kusanagi.no_peer_yet",
@@ -284,6 +293,9 @@ impl Complaint {
             }
             Self::UnknownChannel { .. } | Self::NoPeerYet { .. } => {
                 "run `kusanagi channels` to see what is here".to_owned()
+            }
+            Self::NoIdentity => {
+                "run `kusanagi id` to create this endpoint's identity, then try again".to_owned()
             }
             Self::HistoryChanged { .. } => "run `kusanagi doctor <waypoint>`: only a write-once \
                  host can promise this cannot happen, and this one just did it"

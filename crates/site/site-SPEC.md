@@ -10,8 +10,9 @@
 |---|---|---|
 | U1 身份 | `Site::identity` / `Site::adopt` | 写一次不被覆盖；第二次 adopt 返回第一次的 handle |
 | U2 通道记录 | `Channel` / `Standing` / `Peer` 与其磁盘格式 | 有无 peer 两种形态各自往返；尾随字节与陌生版本被拒 |
-| U8 对端的钥匙 | `Peer::key` / `Channel::introduction` 存 `VerifyingKey` | 一条流只能用记录里的公钥读；记录版本为 2，版本 1 被拒而不是重新解释 |
-| U3 名字校验 | `Site::channel_path` 内的 `check_name` | 能逃出目录的名字被拒，而不是被转义 |
+| U8 对端的钥匙 | `Peer::key` / `Channel::introduction` 存 `VerifyingKey` | 一条流只能用记录里的公钥读；记录版本为 3，旧版本被拒而不是重新解释 |
+| U3 名字校验 | `naming::check` | 能逃出目录的名字被拒，而不是被转义 |
+| U9 文件名不是对端名 | `naming::filed`：以身份种子派生的密钥对名字做带密钥哈希 | 目录里每一项都是 64 位十六进制，既不含对端名也不能被别的站点复现；名字只在记录内部，且与文件名对不上即拒 |
 | U4 撤销表 | `Site::revocations` / `Site::revoke` | 重复撤销不重复计数；跨进程可见 |
 | U5 邀请 | `Invite` 的 `kusanagi1:` 一行文本形式 | 往返恒等；缺前缀、改套件字节各得错误 |
 | U6 失败形状 | `SiteError` 三个变体 | 每个变体在门那一层拿到稳定码；门加不出第四个码就编译不过 |
@@ -69,10 +70,12 @@
 
 ```
 lib.rs      模块索引
-site.rs     Site —— identity / channels / revoked 三份磁盘状态
-channel.rs  Channel / Standing / Peer 与其磁盘格式（版本 2）
+site.rs     Site —— identity / channels / cairns 的路径与读写
+naming.rs   名字能长什么样，以及它的文件叫什么（两条规则，一处）
+revoked.rs  <root>/revoked —— 撤销表，活得比通道记录长
+channel.rs  Channel / Standing / Peer 与其磁盘格式（版本 3）
 invite.rs   Invite 与 kusanagi1: 文本形式
-error.rs    SiteError —— 本机失败的三种形状
+error.rs    SiteError —— 本机失败的几种形状
 ```
 
 依赖 `kernel`、`grant`、`seal` 与 `thiserror`。**不依赖 `waypoint`**：本 crate 不做网络，
@@ -107,8 +110,9 @@ pub enum SiteError { Local{..}, BadName{..}, BadInvitation{..}, BadRecord{..},
 ```
 identity：读 <root>/identity；不存在则 None，不是错误
 adopt   ：已有身份则原样返回，绝不覆盖（覆盖等于静默放弃全部通道）
-channel ：校验名字 → 读 <root>/channels/<name> → 解码，版本不认识就拒
-keep    ：建目录 → 整文件写入
+channel ：校验名字 → 派生文件名 → 读 <root>/channels/<filed> → 解码 → 记录自称的名字须与查它用的名字一致
+keep    ：从记录自带的名字派生文件名 → 建目录 → 整文件写入
+names   ：列目录 → 逐个读出记录里的名字（文件名已不是名字）
 revoke  ：读全表 → 并入 → 整文件写回
 Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 ```
@@ -120,6 +124,22 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 单独一个 `-` 读成「名字从 stdin 来」（`kusanagi-SPEC.md` §10 步骤 14）。**一个打不出来的名字
 不如不许起。**
 转义写错的方式全都始于「允许一点有趣的东西」。
+
+**步骤 1b：文件名是名字的带密钥哈希，名字搬进记录里。** 从前 `<root>/channels/bob` 这一个
+路径就把关系图交了出去——**不必打开任何文件，列一次目录即可**。这条泄漏的量级与
+「这里有三条通道」不是一回事：后者是个计数，前者是这张网络所有派生地址存在的理由。
+
+密钥取自身份种子（`Signer` 之外，直接由 `Site::seed` 派生，不付 ML-DSA 展开的代价），
+所以**同一个名字在两个端点上被归档成两个字符串**，谁也做不出一张一次算好、到处能查的表。
+不加密钥的哈希不管用：把常见人名哈希一遍就是一张表，而那张表很短。
+
+代价有两处，都记在这里。其一，`names()` 从「列目录」变成「逐个读记录」——每条通道一次读，
+而调用它的人下一步本来就要打开每一条。其二，**记录版本从 2 升到 3**：名字进了记录，
+旧记录不再被接受。pre-alpha 期内这是允许的破坏性变更。
+
+**这条改动挡不住什么，也写清楚**：能读到文件内容的人照样看得见名字。它挡的是列目录、
+备份目录清单、同步客户端的索引、崩溃报告——**文件名是一个文件里泄漏面最广的部分**。
+按已裁决的 D-04，目标是同机器的第二个账户与顺手翻看，不是取证。
 
 **步骤 2：身份写入用 `create_new` + `sync_all`。** 覆盖一份身份等于放弃它持有的每条通道。
 
@@ -135,11 +155,15 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 | 重复 `adopt` | 保留原身份 |
 | 名字含 `../`、`/`、大写、空格 | `SiteError::BadName` |
 | 名字是 `-` 或以 `-` 开头 | `SiteError::BadName`。见 §10 步骤 1 |
+| 尚无身份就 `keep` | `SiteError::NoIdentity`。文件名派生自身份种子，没有种子就没有可归档之处 |
+| 尚无身份就 `channel` / `holds` / `names` | 分别是 `UnknownChannel` / `false` / 空表。**没有身份的站点可证明没有通道** |
+| 记录归档在 `filed(A)` 却自称叫 `B` | `SiteError::BadRecord`。两者互相派生，不一致即文件被搬动或被别的东西写过 |
+| `channels/` 里有一个本 build 读不懂的记录 | `names()` 整体报错，而不是跳过它。**悄悄不再列出的通道，在主人眼里就是丢了的通道** |
 | 通道文件版本不认识 | `SiteError::BadRecord`，拒绝而不是猜 |
 | 通道记录尾随字节 | 同上 |
 | 撤销表某行不是 StepId | `SiteError::BadRecord`（经 `DigestParseError`） |
 | 邀请缺 `kusanagi1:` 前缀 | `SiteError::BadInvitation` |
-| 邀请套件字节非 0 | `SiteError::BadInvitation`，指出本 build 说哪个版本 |
+| 邀请套件字节非 1 | `SiteError::BadInvitation`，指出本 build 说哪个版本。**套件 0 是 Ed25519 时代那一个，按号拒绝**：让它走到解析 2 592 字节公钥那一步，得到的报告会是「邀请损坏」而不是「套件不认识」 |
 
 ## 12 错误处理
 
@@ -168,7 +192,8 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 |---|---|---|
 | 通道名 `a-z0-9-`、≤32、首字符非 `-` | 路径、shell、URL 三处都安全，且名字打得出来 | 放宽须同时想清三处，并回看 `intake` 的 `-` 哨兵 |
 | 通道记录版本 1 | 拒绝未来格式而不是猜 | 换格式即换版本字节 |
-| `kusanagi1:` 前缀、版本 1、套件 0 | 邀请串的识别 | 换套件即换版本字节 |
+| `kusanagi1:` 前缀、版本 1、套件 1 | 邀请串的识别与拒绝不认识的格式 | 换密码学即换套件字节；套件 0 已作废 |
+| 归档密钥的语境串 `kusanagi 2026 channel file name v1` | BLAKE3 `derive_key` 的惯例：一个语境串全局只指一个用途，同一颗种子派生出的两把密钥因此永不相撞 | 改这个字符串会让已有站点的每一条通道都「找不到」；要改就得连迁移一起做 |
 | 不设身份文件的 Unix 模式位 | 跨平台一致优先 | 多用户机器上须把 site 放进仅本人可读的目录 |
 
 ## 15 影响面

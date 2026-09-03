@@ -64,6 +64,14 @@ pub enum SiteError {
         /// The name that was asked for.
         name: String,
     },
+    /// A channel was to be written before this endpoint had an identity.
+    ///
+    /// Channel files are filed under a name derived from the identity seed, so
+    /// there is nothing to file one under until the identity exists. Reading is
+    /// not affected: a site with no identity provably holds no channels, and
+    /// says so as [`SiteError::UnknownChannel`].
+    #[error("this endpoint has no identity yet, so it cannot keep a channel")]
+    NoIdentity,
     /// A grant inside a record or an invitation does not decode.
     #[error(transparent)]
     Grant(#[from] GrantError),

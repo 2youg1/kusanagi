@@ -20,7 +20,7 @@
 //!
 //! ```text
 //! version         1 byte    = 1
-//! suite           1 byte    = 0, the baseline: BLAKE3, ChaCha20-Poly1305, Ed25519
+//! suite           1 byte    = 1, the baseline: BLAKE3, ChaCha20-Poly1305, ML-DSA-87
 //! inviter      2592 bytes   the inviter's verifying key; its handle roots the channel
 //! secret         32 bytes   the channel secret
 //! bearer_seed    32 bytes   the one-time signing key
@@ -63,7 +63,15 @@ fn mangled(error: kusanagi_kernel::Incomplete) -> SiteError {
 /// A network whose members can disagree about this is not one network: two
 /// endpoints with different derivations cannot even compute each other's
 /// addresses, so they are not degraded, they are partitioned.
-const BASELINE_SUITE: u8 = 0;
+///
+/// **Suite 0 was the same field with Ed25519 in it.** The number moved when the
+/// signature scheme did, because the whole job of this byte is the one
+/// `ARCHITECTURE.md` §8 gives it — an endpoint "refuses one it does not know".
+/// Leaving it at 0 would leave a build from before the change believing it knew
+/// this suite, accepting the invitation, and then reporting a 2 592-byte
+/// verifying key as a damaged paste. The one failure this byte exists to
+/// prevent is the one it would have caused.
+const BASELINE_SUITE: u8 = 1;
 
 /// The prefix that makes an invitation recognisable when pasted into anything.
 const PREFIX: &str = "kusanagi1:";
@@ -124,7 +132,7 @@ impl Invite {
         );
         let secret = Secret::from_bytes(reader.take_array::<32>().map_err(mangled)?);
         let bearer_seed = reader.take_array::<32>().map_err(mangled)?;
-        let locator = take_text(&mut reader)?;
+        let locator = take_text(&mut reader, "a locator")?;
         let grant = Grant::from_canonical_bytes(&take_block(&mut reader)?)?;
 
         if reader.remaining() != 0 {
@@ -171,7 +179,7 @@ impl fmt::Display for Invite {
     reason = "test code"
 )]
 mod tests {
-    use super::{Invite, PREFIX};
+    use super::{Invite, PREFIX, SiteError};
     use kusanagi_grant::{Abilities, Grant, Scope};
     use kusanagi_kernel::{Instant, Signer};
     use kusanagi_seal::Secret;
@@ -234,12 +242,28 @@ mod tests {
         }
     }
 
+    /// Byte 1 is the suite, and its second hexadecimal character is at index 3.
+    fn with_suite(text: &str, suite: char) -> String {
+        let body = text.strip_prefix(PREFIX).unwrap();
+        format!("{PREFIX}{}{suite}{}", &body[..3], &body[4..])
+    }
+
     #[test]
     fn a_future_suite_is_refused_rather_than_guessed() {
         let text = invite().to_string();
-        let body = text.strip_prefix(PREFIX).unwrap();
-        // byte 1 is the suite; its second hex character is at index 3
-        let bumped = format!("{PREFIX}{}9{}", &body[..3], &body[4..]);
-        assert!(Invite::parse(&bumped).is_err());
+        assert!(Invite::parse(&with_suite(&text, '9')).is_err());
+    }
+
+    /// The suite this network spoke before ML-DSA-87 replaced Ed25519.
+    ///
+    /// It has to be refused by number, not discovered as damage. An endpoint
+    /// that reads suite 0 and then fails on the key length reports a corrupted
+    /// paste to somebody whose paste was perfect, and sends them looking for a
+    /// problem that is not there.
+    #[test]
+    fn the_suite_this_network_has_left_behind_is_refused() {
+        let text = invite().to_string();
+        let refused = Invite::parse(&with_suite(&text, '0'));
+        assert!(matches!(refused, Err(SiteError::BadInvitation { .. })));
     }
 }

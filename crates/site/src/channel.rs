@@ -25,6 +25,7 @@
 //!
 //! ```text
 //! version         1 byte
+//! name_len        2 bytes   big endian, then that many utf-8 bytes
 //! secret         32 bytes
 //! root           32 bytes   the handle every grant here descends from
 //! introduction 2592 bytes   the one-time key whose stream carries the greeting
@@ -34,6 +35,12 @@
 //! peer         2592 bytes   the peer's verifying key; zeroes when absent
 //! peer_standing   1 byte    as above
 //! ```
+//!
+//! **The name is in the record because it is no longer in the file name.** A
+//! directory listing used to say who this endpoint talks to, in plain text, to
+//! any account that could read the directory; see `site.rs` for what the file is
+//! called now. Here it means one thing: a record knows what it is called, and
+//! `Site` checks that answer against the name it looked the file up under.
 //!
 //! The two key fields are `VerifyingKey::WIDTH` wide, so a change of signature
 //! scheme is a change of record version.
@@ -46,11 +53,12 @@ use crate::error::SiteError;
 
 /// The record this build writes and reads.
 ///
-/// Version 2 names its peer by verifying key where version 1 named it by handle.
-/// The two are the same width and neither decodes as the other, which is exactly
-/// why the version byte moves: a silent reinterpretation would leave an endpoint
-/// verifying every segment against 32 bytes that are not a key.
-const VERSION: u8 = 2;
+/// Version 3 carries the channel's local name, which version 2 kept in the file
+/// name instead. Version 2 named its peer by verifying key where version 1 named
+/// it by handle — the two are the same width and neither decodes as the other,
+/// which is why the version byte moves at all: a silent reinterpretation would
+/// leave an endpoint verifying every segment against 32 bytes that are not a key.
+const VERSION: u8 = 3;
 const STANDING_ROOT: u8 = 0;
 const STANDING_GRANTED: u8 = 1;
 
@@ -155,6 +163,8 @@ impl Peer {
 /// One conversation, as this endpoint knows it.
 #[derive(Clone, Debug)]
 pub struct Channel {
+    /// What this endpoint calls the channel. Local, and never sent anywhere.
+    pub name: String,
     /// Every address on this channel derives from here.
     pub secret: Secret,
     /// The authority every grant on this channel descends from.
@@ -175,6 +185,7 @@ impl Channel {
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = vec![VERSION];
+        put_block(&mut out, self.name.as_bytes());
         out.extend_from_slice(self.secret.as_bytes());
         out.extend_from_slice(self.root.as_bytes());
         out.extend_from_slice(self.introduction.as_bytes());
@@ -211,6 +222,7 @@ impl Channel {
             });
         }
 
+        let name = take_text(&mut reader, "a channel name")?;
         let secret = Secret::from_bytes(reader.take_array::<32>().map_err(malformed)?);
         let root = Handle::from_bytes(reader.take_array::<32>().map_err(malformed)?);
         let introduction = VerifyingKey::from_bytes(
@@ -218,7 +230,7 @@ impl Channel {
                 .take_array::<{ VerifyingKey::WIDTH }>()
                 .map_err(malformed)?,
         );
-        let locator = take_text(&mut reader)?;
+        let locator = take_text(&mut reader, "a locator")?;
         let standing = Standing::read(&mut reader)?;
 
         let has_peer = reader.take_byte().map_err(malformed)?;
@@ -249,6 +261,7 @@ impl Channel {
             });
         }
         Ok(Self {
+            name,
             secret,
             root,
             introduction,
@@ -278,9 +291,9 @@ pub(crate) fn take_block(reader: &mut Reader<'_>) -> Result<Vec<u8>, SiteError> 
     Ok(reader.take(len).map_err(malformed)?.to_vec())
 }
 
-pub(crate) fn take_text(reader: &mut Reader<'_>) -> Result<String, SiteError> {
+pub(crate) fn take_text(reader: &mut Reader<'_>, what: &'static str) -> Result<String, SiteError> {
     String::from_utf8(take_block(reader)?).map_err(|error| SiteError::BadRecord {
-        what: "a locator",
+        what,
         reason: error.to_string(),
     })
 }
@@ -310,6 +323,7 @@ mod tests {
         let guest = Signer::from_seed(&[2; 32]);
         let scope = Scope::new(Abilities::ALL, Instant::from_unix_seconds(9_999));
         Channel {
+            name: "peer-one".to_owned(),
             secret: Secret::from_bytes([7; 32]),
             root: root.handle(),
             introduction: guest.verifying_key(),
@@ -328,6 +342,7 @@ mod tests {
         let decoded = Channel::from_bytes(&original.to_bytes()).unwrap();
         assert_eq!(decoded.to_bytes(), original.to_bytes());
         assert!(decoded.peer.is_none());
+        assert_eq!(decoded.name, original.name);
         assert_eq!(decoded.locator, original.locator);
         assert_eq!(decoded.standing, Standing::Root);
     }

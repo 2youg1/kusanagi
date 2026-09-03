@@ -144,7 +144,7 @@ data Complaint = Complaint { code :: Code, message :: Text, recover :: Text }
 data Outcome  = Identity Handle | Listing [Summary] | Invited ChannelName Invitation Word64
               | Joined ChannelName Handle Handle | Sent ChannelName Word64 Address
               | Heard ChannelName (Maybe Word64) [Entry] | Revoked ChannelName Text
-              | Examined Text Text | Hosted
+              | Forgotten ChannelName Text | Examined Text Text | Hosted
 
 -- Door.hs —— 怎么问
 newtype Door = Door FilePath

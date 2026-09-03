@@ -489,6 +489,7 @@ dependencies = [
 name = "kusanagi-site"
 version = "0.0.1"
 dependencies = [
+ "blake3",
  "kusanagi-chain",
  "kusanagi-grant",
  "kusanagi-kernel",

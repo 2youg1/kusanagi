@@ -264,7 +264,12 @@ Reopening one of these requires a reason that did not exist when it was taken.
   constant-time implementation is reachable, and a final standard. The parameter set
   is the strongest rather than the cheapest, by ruling, and `DROP` is sized to
   whatever it costs — so the price falls on an artefact nobody types: an invitation
-  is a file or a QR code, not a line to paste.
+  is a file, not a line to paste. **Not a QR code either**: that carrier holds
+  2 953 bytes, one signature is 4 627, and a measured one-hop invitation is
+  10 009, so no engineering brings the artefact within reach of it while this
+  scheme stands. What makes an invitation checkable face to face is separating
+  the 64 bytes that are secret from the 9 945 that are not — a change to the
+  invitation, not to how it is carried.
 - **Every segment after the first is authenticated by a Trail rather than a
   signature, and the genesis signature covers the author and the first commitment
   but not the payload.** A signature is transferable: a peer who is compromised or

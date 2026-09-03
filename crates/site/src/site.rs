@@ -12,10 +12,21 @@
 //!
 //! ```text
 //! <root>/identity                 32 bytes: this endpoint's signing seed
-//! <root>/channels/<name>          one channel record
-//! <root>/cairns/<name>/<author>   how far that author's stream is verified
+//! <root>/channels/<filed>         one channel record
+//! <root>/cairns/<filed>/<author>  how far that author's stream is verified
 //! <root>/revoked                  one revoked step identifier per line
 //! ```
+//!
+//! **`<filed>` is not the channel's name.** It is a keyed hash of the name under
+//! a key only this site can compute, so a directory listing says how many
+//! channels there are and nothing about who they are with. The name itself lives
+//! inside the record, where reading it already means holding the channel secret.
+//!
+//! The two facts are different sizes of harm. "This endpoint has three channels"
+//! is a count; "they are with bob, carol and dave" is the relationship graph that
+//! every derived address in this network exists to hide — and a file name is the
+//! part of a file that leaks the most widely, into backup catalogues, sync
+//! clients, crash reports and any listing anybody happens to take.
 //!
 //! Three of those four are facts this endpoint cannot recompute. A cairn is the
 //! exception: it can always be rebuilt by reading the stream again from height
@@ -39,10 +50,9 @@ use kusanagi_kernel::{Handle, Signer};
 
 use crate::channel::Channel;
 use crate::error::SiteError;
+use crate::naming;
 use crate::permissions;
-
-/// The longest a channel name may be.
-const MAX_NAME: usize = 32;
+use crate::revoked;
 
 /// One endpoint's local state.
 #[derive(Debug, Clone)]
@@ -65,27 +75,49 @@ impl Site {
 
     /// This endpoint's identity, if it has one yet.
     ///
+    /// Expanding the seed into a signing key is the most expensive thing this
+    /// crate does, so anything that needs the seed rather than the signer takes
+    /// [`Site::seed`] and does not pay for it.
+    ///
     /// # Errors
     ///
     /// [`SiteError::Local`] when the file exists and cannot be read, and
     /// [`SiteError::BadRecord`] when it is not a seed.
     pub fn identity(&self) -> Result<Option<Signer>, SiteError> {
-        let path = self.root.join("identity");
-        match fs::read(&path) {
+        Ok(self.seed()?.as_ref().map(Signer::from_seed))
+    }
+
+    /// The 32 bytes in the identity file, if there are any.
+    ///
+    /// The one place that reads that file. Private: the seed is the whole of
+    /// this endpoint, and the only thing outside this crate that may hold it is
+    /// the code that generated it.
+    fn seed(&self) -> Result<Option<[u8; 32]>, SiteError> {
+        match fs::read(self.root.join("identity")) {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(source) => Err(SiteError::Local {
                 action: "read this endpoint's identity",
                 source,
             }),
-            Ok(bytes) => {
-                let seed =
-                    <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| SiteError::BadRecord {
-                        what: "an identity file",
-                        reason: format!("an identity is 32 bytes; this one is {}", bytes.len()),
-                    })?;
-                Ok(Some(Signer::from_seed(&seed)))
-            }
+            Ok(bytes) => <[u8; 32]>::try_from(bytes.as_slice())
+                .map(Some)
+                .map_err(|_| SiteError::BadRecord {
+                    what: "an identity file",
+                    reason: format!("an identity is 32 bytes; this one is {}", bytes.len()),
+                }),
         }
+    }
+
+    /// What this site files a channel called `name` under.
+    ///
+    /// `None` when there is no identity yet, which is also when there are
+    /// provably no channels: the key comes from the identity seed, so a site
+    /// that has never had one has never written a channel either.
+    ///
+    /// What it is called instead is [`naming::filed`]'s rule, not this one's.
+    fn filed(&self, name: &str) -> Result<Option<String>, SiteError> {
+        naming::check(name)?;
+        Ok(self.seed()?.map(|seed| naming::filed(&seed, name)))
     }
 
     /// Writes `seed` as this endpoint's identity and returns the signer.
@@ -122,7 +154,22 @@ impl Site {
                 action: "read a channel",
                 source,
             }),
-            Ok(bytes) => Channel::from_bytes(&bytes),
+            Ok(bytes) => {
+                let channel = Channel::from_bytes(&bytes)?;
+                // The record says what it is called and the file says where it
+                // was filed; they are derived from each other, so disagreement
+                // means the file was moved or written by something else.
+                if channel.name != name {
+                    return Err(SiteError::BadRecord {
+                        what: "a channel",
+                        reason: format!(
+                            "this record is filed as `{name}` and calls itself `{}`",
+                            channel.name
+                        ),
+                    });
+                }
+                Ok(channel)
+            }
         }
     }
 
@@ -132,16 +179,23 @@ impl Site {
     ///
     /// [`SiteError::BadName`] when the name is not usable as one.
     pub fn holds(&self, name: &str) -> Result<bool, SiteError> {
-        Ok(self.channel_path(name)?.exists())
+        match self.channel_path(name) {
+            Ok(path) => Ok(path.exists()),
+            Err(SiteError::UnknownChannel { .. }) => Ok(false),
+            Err(other) => Err(other),
+        }
     }
 
-    /// Writes one channel, replacing what was there.
+    /// Writes one channel under the name the record carries, replacing what was
+    /// there.
     ///
     /// # Errors
     ///
-    /// [`SiteError::Local`] when the file cannot be written.
-    pub fn keep(&self, name: &str, channel: &Channel) -> Result<(), SiteError> {
-        let path = self.channel_path(name)?;
+    /// [`SiteError::NoIdentity`] when this endpoint has no identity to file it
+    /// under, and [`SiteError::Local`] when the file cannot be written.
+    pub fn keep(&self, channel: &Channel) -> Result<(), SiteError> {
+        let filed = self.filed(&channel.name)?.ok_or(SiteError::NoIdentity)?;
+        let path = self.root.join("channels").join(filed);
         if let Some(parent) = path.parent() {
             permissions::create_dir(parent, "create the channel directory")?;
         }
@@ -227,7 +281,9 @@ impl Site {
                 // The cairns go with it. They are recomputable and therefore not
                 // worth a failure of their own, but leaving them behind would let
                 // a later channel of the same name inherit a stranger's heights.
-                fs::remove_dir_all(self.root.join("cairns").join(name)).ok();
+                if let Ok(cairns) = self.cairn_dir(name) {
+                    fs::remove_dir_all(cairns).ok();
+                }
                 Ok(())
             }
         }
@@ -235,9 +291,18 @@ impl Site {
 
     /// Every channel name here, in a stable order.
     ///
+    /// Each name is read out of its record, because the file is no longer named
+    /// after it. That costs one read per channel and buys the property the file
+    /// names used to give away; a listing is rare and short, and every caller of
+    /// this opens each record immediately afterwards anyway.
+    ///
     /// # Errors
     ///
-    /// [`SiteError::Local`] when the directory cannot be listed.
+    /// [`SiteError::Local`] when the directory cannot be listed or a record
+    /// cannot be read, and [`SiteError::BadRecord`] when one does not decode.
+    /// A record this build cannot read is reported rather than skipped: a
+    /// channel that quietly stops being listed is a channel its owner believes
+    /// they no longer have.
     pub fn names(&self) -> Result<Vec<String>, SiteError> {
         let dir = self.root.join("channels");
         let entries = match fs::read_dir(&dir) {
@@ -257,15 +322,17 @@ impl Site {
                 action: "list the channels",
                 source,
             })?;
-            // A name a channel can have never starts with a dot — `check_name`
-            // allows only `a-z`, `0-9` and `-`. So anything that does is not a
-            // channel, and the one thing that produces one is a staged record
-            // left behind by a write this process did not live to finish.
-            if let Some(name) = entry.file_name().to_str()
-                && !name.starts_with('.')
-            {
-                names.push(name.to_owned());
+            // A filed name is 64 hexadecimal characters and never starts with a
+            // dot. The one thing that produces a dotted name here is a staged
+            // record left behind by a write this process did not live to finish.
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
             }
+            let bytes = fs::read(entry.path()).map_err(|source| SiteError::Local {
+                action: "read a channel while listing them",
+                source,
+            })?;
+            names.push(Channel::from_bytes(&bytes)?.name);
         }
         names.sort();
         Ok(names)
@@ -278,25 +345,7 @@ impl Site {
     /// [`SiteError::Local`] when the list cannot be read, and
     /// [`SiteError::BadRecord`] when a line is not a step identifier.
     pub fn revocations(&self) -> Result<Revocations, SiteError> {
-        let path = self.root.join("revoked");
-        let text = match fs::read_to_string(&path) {
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Revocations::new());
-            }
-            Err(source) => {
-                return Err(SiteError::Local {
-                    action: "read the revocation list",
-                    source,
-                });
-            }
-            Ok(text) => text,
-        };
-
-        let mut revoked = Revocations::new();
-        for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
-            revoked = revoked.revoking(line.parse::<StepId>()?);
-        }
-        Ok(revoked)
+        revoked::all(&self.root)
     }
 
     /// Adds a step to the revocation list.
@@ -305,56 +354,36 @@ impl Site {
     ///
     /// [`SiteError::Local`] when the list cannot be written.
     pub fn revoke(&self, step: StepId) -> Result<(), SiteError> {
-        let revoked = self.revocations()?.revoking(step);
-        let lines: Vec<String> = revoked.iter().map(ToString::to_string).collect();
-        self.make_root()?;
-        permissions::write(
-            &self.root.join("revoked"),
-            lines.join("\n").as_bytes(),
-            "write the revocation list",
-        )
+        revoked::add(&self.root, step)
     }
 
     fn make_root(&self) -> Result<(), SiteError> {
         permissions::create_dir(&self.root, "create the site directory")
     }
 
+    /// Where the record for `name` sits, if this site could hold one at all.
+    ///
+    /// A site with no identity has no channels, so asking for one by name is
+    /// answered the same way as asking for one that was never joined.
     fn channel_path(&self, name: &str) -> Result<PathBuf, SiteError> {
-        check_name(name)?;
-        Ok(self.root.join("channels").join(name))
+        let filed = self.filed(name)?.ok_or_else(|| SiteError::UnknownChannel {
+            name: name.to_owned(),
+        })?;
+        Ok(self.root.join("channels").join(filed))
     }
 
     /// A handle renders as 64 hexadecimal characters, which needs no checking
-    /// against [`check_name`]: it cannot be empty, cannot escape a directory, and
-    /// cannot collide with another author.
+    /// against [`naming::check`]: it cannot be empty, cannot escape a directory,
+    /// and cannot collide with another author.
     fn cairn_path(&self, name: &str, author: &Handle) -> Result<PathBuf, SiteError> {
-        check_name(name)?;
-        Ok(self.root.join("cairns").join(name).join(author.to_string()))
+        Ok(self.cairn_dir(name)?.join(author.to_string()))
     }
-}
 
-/// Refuses anything that is not plainly a name.
-///
-/// The rule is deliberately narrower than any filesystem's: a name that is safe
-/// in a path, safe in a shell, and safe in a URL is safe everywhere this network
-/// might carry it, and the ways of getting escaping wrong all start with allowing
-/// something interesting.
-///
-/// A name may not begin with `-`. Every command line ever written reads a
-/// leading hyphen as a flag, and this one reads a bare `-` as "the name arrives
-/// on stdin" — so a name that starts with one is a name somebody cannot type.
-fn check_name(name: &str) -> Result<(), SiteError> {
-    let plain = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-';
-    let usable = name.len() <= MAX_NAME
-        && name.bytes().all(plain)
-        && name.bytes().next().is_some_and(|first| first != b'-');
-    if usable {
-        return Ok(());
+    /// Where one channel's cairns sit, under the same filed name as its record.
+    fn cairn_dir(&self, name: &str) -> Result<PathBuf, SiteError> {
+        let filed = self.filed(name)?.ok_or_else(|| SiteError::UnknownChannel {
+            name: name.to_owned(),
+        })?;
+        Ok(self.root.join("cairns").join(filed))
     }
-    Err(SiteError::BadName {
-        name: name.to_owned(),
-        reason: format!(
-            "a name is 1 to {MAX_NAME} characters of a-z, 0-9 and -, and does not start with -"
-        ),
-    })
 }

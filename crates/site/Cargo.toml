@@ -13,6 +13,8 @@ kusanagi-kernel.workspace = true
 kusanagi-chain.workspace = true
 kusanagi-grant.workspace = true
 kusanagi-seal.workspace = true
+# The keyed hash that files a channel under something other than its name.
+blake3.workspace = true
 thiserror.workspace = true
 
 [lints]

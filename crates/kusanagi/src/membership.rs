@@ -98,17 +98,15 @@ pub(crate) fn invite(
     let expires_at = now.plus_seconds(lifetime);
     let grant = Grant::issue(&me, &bearer.handle(), Scope::new(abilities, expires_at));
 
-    site.keep(
-        name,
-        &Channel {
-            secret: secret.clone(),
-            root: me.handle(),
-            introduction: bearer.verifying_key(),
-            locator: waypoint.to_owned(),
-            standing: Standing::Root,
-            peer: None,
-        },
-    )?;
+    site.keep(&Channel {
+        name: name.to_owned(),
+        secret: secret.clone(),
+        root: me.handle(),
+        introduction: bearer.verifying_key(),
+        locator: waypoint.to_owned(),
+        standing: Standing::Root,
+        peer: None,
+    })?;
 
     let invitation = Invite {
         inviter: me.verifying_key(),
@@ -171,20 +169,18 @@ pub(crate) fn join(
         return Err(Complaint::InviteSpent);
     }
 
-    site.keep(
-        name,
-        &Channel {
-            secret: invitation.secret.clone(),
-            root,
-            introduction: bearer.verifying_key(),
-            locator: invitation.locator.clone(),
-            standing: Standing::Granted(mine),
-            peer: Some(Peer {
-                key: invitation.inviter,
-                standing: Standing::Root,
-            }),
-        },
-    )?;
+    site.keep(&Channel {
+        name: name.to_owned(),
+        secret: invitation.secret.clone(),
+        root,
+        introduction: bearer.verifying_key(),
+        locator: invitation.locator.clone(),
+        standing: Standing::Granted(mine),
+        peer: Some(Peer {
+            key: invitation.inviter,
+            standing: Standing::Root,
+        }),
+    })?;
 
     Ok(Outcome::Joined {
         name: name.to_owned(),
@@ -235,7 +231,7 @@ pub(crate) fn greet(
         }),
         ..channel
     };
-    site.keep(name, &channel)?;
+    site.keep(&channel)?;
     Ok(channel)
 }
 
