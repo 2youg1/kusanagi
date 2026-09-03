@@ -31,6 +31,8 @@
 //! at a few kilobytes a message with every test in this workspace still green.
 //! Refusing a non-zero pad costs one comparison.
 
+use subtle::ConstantTimeEq as _;
+
 use kusanagi_kernel::{MAX_SEGMENT, Reader};
 
 use crate::envelope::OpenFailed;
@@ -102,6 +104,9 @@ pub(crate) fn pad(plain: &[u8]) -> Result<Vec<u8>, OpenFailed> {
 /// rest of this crate gives: a body of the wrong size, a length that overruns
 /// its own body, and a pad that is not zero are all [`OpenFailed::Rejected`].
 ///
+/// The pad is checked in constant time — see the comment at the check for why
+/// that is worth doing here even though nothing today can reach it.
+///
 /// # Errors
 ///
 /// [`OpenFailed::Rejected`] whenever these are not the bytes [`pad`] produced.
@@ -119,7 +124,18 @@ pub(crate) fn unpad(veiled: &[u8]) -> Result<Vec<u8>, OpenFailed> {
     let pad = reader
         .take(reader.remaining())
         .map_err(|_| OpenFailed::Rejected)?;
-    if pad.iter().any(|byte| *byte != 0) {
+    // Constant-time, and folded rather than compared against a zero buffer this
+    // would otherwise have to allocate at the size of a drop.
+    //
+    // The reachable risk here is close to zero: this runs after Poly1305, so
+    // bytes that arrive have already been authenticated, and an attacker who can
+    // produce them can produce anything. It is written this way for the two
+    // reasons that survive that: this workspace already compares fixed-width
+    // identifiers in constant time, so an exception here is a signal to whoever
+    // reads it next — and the day somebody reorders the call so that unpadding
+    // happens first, a timing oracle appears with no change to this line.
+    let leaked = pad.iter().fold(0_u8, |seen, byte| seen | *byte);
+    if leaked.ct_ne(&0).into() {
         return Err(OpenFailed::Rejected);
     }
     Ok(plain)

@@ -30,22 +30,50 @@ fn abbreviate(handle: &Handle) -> String {
 }
 
 /// One segment as it is reported.
+///
+/// Two fields, and one of them used to be four. What went: `id` and `address`
+/// are derived values a caller can recompute and almost never wants, and the
+/// pair of payload renderings said the same sentence twice — once unreadably.
 #[derive(Serialize, Debug)]
 pub struct Entry {
     pub(crate) index: u64,
-    pub(crate) id: String,
-    pub(crate) address: String,
-    /// The exact bytes, in lowercase hexadecimal.
-    ///
-    /// This is the field a program reads. It exists because the one beside it
-    /// cannot be parsed back, and a caller that cannot recover what was sent is
-    /// not on a channel.
-    pub(crate) payload: String,
-    /// The same bytes as text, lossily.
-    ///
-    /// For eyes only: a payload that is not UTF-8 arrives here with replacement
-    /// characters, and nothing downstream can tell that from the real thing.
-    pub(crate) text: String,
+    #[serde(flatten)]
+    pub(crate) carried: Carried,
+}
+
+/// What a segment carried, in the one encoding that does not lose it.
+///
+/// **An enum because the two are exclusive, and were not before.** A payload
+/// that is valid UTF-8 survives a JSON string byte for byte, so hexadecimal
+/// beside it doubled the size of every ordinary message to say the same thing;
+/// a payload that is not text cannot go in a string at all, so hexadecimal is
+/// the only honest rendering of it. Which one appears therefore says something
+/// true about the bytes, and a reader that handles both handles everything.
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Carried {
+    /// Every byte of it is text, and this is exactly those bytes.
+    Text(String),
+    /// It is not text. The exact bytes, in lowercase hexadecimal.
+    Payload(String),
+}
+
+impl Carried {
+    /// Renders `bytes` in whichever form keeps all of them.
+    fn of(bytes: &[u8]) -> Self {
+        match core::str::from_utf8(bytes) {
+            Ok(text) => Self::Text(text.to_owned()),
+            Err(_) => Self::Payload(Hex(bytes).to_string()),
+        }
+    }
+
+    /// What a person sees. Bytes that are not text are named, not mangled.
+    pub(crate) fn shown(&self) -> String {
+        match self {
+            Self::Text(text) => text.clone(),
+            Self::Payload(hex) => format!("<{} bytes that are not text>", hex.len() / 2),
+        }
+    }
 }
 
 /// What this endpoint may do on a channel at one moment.
@@ -299,10 +327,7 @@ impl Outcome {
                 .filter(|held| after.is_none_or(|floor| held.segment.index() > floor))
                 .map(|held| Entry {
                     index: held.segment.index(),
-                    id: held.segment.id().to_string(),
-                    address: held.address.to_string(),
-                    payload: Hex(held.segment.payload()).to_string(),
-                    text: String::from_utf8_lossy(held.segment.payload()).into_owned(),
+                    carried: Carried::of(held.segment.payload()),
                 })
                 .collect(),
         }

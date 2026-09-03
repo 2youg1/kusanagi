@@ -20,6 +20,7 @@ module Kusanagi.Answer
   , Outcome (..)
   , Complaint (..)
   , Entry (..)
+  , Carried (..)
   , Summary (..)
   , Address (..)
   , ChannelName (..)
@@ -32,7 +33,7 @@ module Kusanagi.Answer
   , heard
   ) where
 
-import Data.Aeson (FromJSON (..), eitherDecodeStrict', withObject, (.:))
+import Data.Aeson (FromJSON (..), eitherDecodeStrict', withObject, (.:), (.:?))
 import Data.ByteString (ByteString)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -68,21 +69,35 @@ unCode (Code code) = code
 
 -- | One segment, as a reader sees it.
 --
--- Both renderings of the payload are taken, because the door promises two
--- different things about them: `entryPayload` is the exact bytes in hexadecimal
--- and is what a program reads, `entryText` is lossy and is for eyes. Parsing
--- only one of them would leave the other free to disappear unnoticed.
+-- | One segment as the door reports it: a height and what it carried.
+--
+-- Exactly one of @text@ and @payload@ is present, and which one is a fact about
+-- the bytes rather than a choice: a payload that is valid UTF-8 survives a JSON
+-- string intact, and one that is not cannot go in a string at all. Both absent
+-- or both present is a door this adversary cannot read, and it says so.
 data Entry = Entry
   { entryIndex :: Word64
-  , entryAddress :: Address
-  , entryPayload :: Text
-  , entryText :: Text
+  , entryCarried :: Carried
   }
   deriving stock (Eq, Show)
 
+-- | What a segment carried, in the one encoding that does not lose it.
+data Carried
+  = AsText Text
+  | -- | The exact bytes, in lowercase hexadecimal.
+    AsBytes Text
+  deriving stock (Eq, Show)
+
 instance FromJSON Entry where
-  parseJSON = withObject "Entry" $ \o ->
-    Entry <$> o .: "index" <*> o .: "address" <*> o .: "payload" <*> o .: "text"
+  parseJSON = withObject "Entry" $ \o -> do
+    index <- o .: "index"
+    text <- o .:? "text"
+    payload <- o .:? "payload"
+    carried <- case (text, payload) of
+      (Just said, Nothing) -> pure (AsText said)
+      (Nothing, Just bytes) -> pure (AsBytes bytes)
+      _ -> fail "a segment carried both renderings or neither; the door promises exactly one"
+    pure (Entry index carried)
 
 -- | One channel, as it is listed.
 data Summary = Summary
@@ -158,5 +173,8 @@ decodeComplaint = eitherDecodeStrict'
 
 -- | The texts of a read, in order. Anything else is not a read.
 heard :: Outcome -> Maybe [Text]
-heard (Read _ _ _ entries) = Just (map entryText entries)
+heard (Read _ _ _ entries) = Just (map (shown . entryCarried) entries)
+  where
+    shown (AsText said) = said
+    shown (AsBytes bytes) = bytes
 heard _ = Nothing

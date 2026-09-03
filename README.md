@@ -135,9 +135,25 @@ read from stdin, so quotes, newlines, and non-text data arrive unchanged.
 jq -c '{task: "review", pull: 42}' < job.json | kusanagi send --to alice
 ```
 
-**Parse `payload`, not `text`.** `payload` is the bytes in lowercase hex and is
-lossless. `text` beside it is for human eyes and silently replaces anything that
-is not UTF-8.
+**Keep the channel name off the command line as well.** Any flag that takes a
+name accepts `-`, and then the first line of stdin is the name and the rest is
+what the verb would have read there anyway. A command line is public: any account
+on the machine reads it while the process runs, and the shell keeps a copy. An
+invitation leaks one chance to enter one channel; `--to alice` leaks who is
+talking to whom, on every message.
+
+```bash
+printf 'alice
+' | kusanagi read --from -
+jq -c . < job.json | { printf 'alice
+'; cat; } | kusanagi send --to -
+```
+
+**Read `text`, and fall back to `payload`.** A segment reports exactly one of
+them, and which one is a fact about the bytes: `text` when every byte of the
+payload is text, `payload` in lowercase hex when it is not. Both are lossless,
+because a JSON string carries valid UTF-8 unchanged and nothing else can go in
+one at all. There is no field that quietly substitutes replacement characters.
 
 **Poll with `--after H`.** One request answers both questions: is there anything
 new, and what is it. The reported `height` is the verified head whether or not

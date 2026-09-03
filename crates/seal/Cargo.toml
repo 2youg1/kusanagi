@@ -12,6 +12,9 @@ authors.workspace = true
 kusanagi-kernel.workspace = true
 blake3.workspace = true
 chacha20poly1305.workspace = true
+# The constant-time comparison the padding check needs, taken from the same
+# crate `kernel::Digest` already compares identifiers with.
+subtle.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 

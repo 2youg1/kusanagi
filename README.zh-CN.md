@@ -113,7 +113,16 @@ kusanagi --root ~/.alice revoke --from bob
 jq -c '{task: "review", pull: 42}' < job.json | kusanagi send --to alice
 ```
 
-**解析 `payload`，不要解析 `text`。** `payload` 是小写十六进制的原始字节，无损。旁边的 `text` 是给人看的，遇到非 UTF-8 的内容会静默替换字符。
+**通道名也别留在命令行上。** 任何收名字的旗标都接受 `-`：这时标准输入的第一行是名字，其余仍是该动词本来就要从那里读的东西。命令行是公开的——同机器任何账户在进程运行期间都读得到，shell 事后还留一份。邀请泄漏的是一次入网机会，`--to alice` 泄漏的是「谁在跟谁说话」，而且每发一条消息泄漏一次。
+
+```bash
+printf 'alice
+' | kusanagi read --from -
+jq -c . < job.json | { printf 'alice
+'; cat; } | kusanagi send --to -
+```
+
+**先读 `text`，读不到再读 `payload`。** 一个段只报其中一个，而报哪一个是关于字节本身的事实：载荷每个字节都是文本时报 `text`，不是文本时报小写十六进制的 `payload`。两者都无损——合法 UTF-8 原样装得进 JSON 字符串，不合法的根本装不进去。**没有任何字段会静默替换字符。**
 
 **轮询用 `--after H`。** 一次请求同时回答两个问题：有没有新的，以及新的是什么。无论有没有返回消息，`height` 给出的都是已验证的链头。
 

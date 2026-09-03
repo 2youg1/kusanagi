@@ -55,10 +55,13 @@ fn a_payload_that_is_not_text_survives_the_round_trip() {
             .expect("alice could not read bob"),
     );
 
-    // The lossless field is exact.
+    // Bytes that are not text arrive as hexadecimal, exactly.
     assert_eq!(heard["segments"][0]["payload"], "ff00fe6869");
-    // The readable one is not, and says so by differing.
-    assert_ne!(heard["segments"][0]["text"], "\u{ff}\u{0}\u{fe}hi");
+    // And the readable field is absent rather than wrong. It used to be here
+    // carrying replacement characters, which nothing downstream could tell from
+    // the real thing — a lossy rendering that looks like a lossless one is worse
+    // than no rendering at all.
+    assert!(heard["segments"][0]["text"].is_null());
 }
 
 #[test]

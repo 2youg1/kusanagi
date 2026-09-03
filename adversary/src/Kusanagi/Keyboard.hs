@@ -44,6 +44,7 @@ import Test.QuickCheck (Arbitrary (..), chooseInt)
 
 import Kusanagi.Answer
   ( Answer (..)
+  , Carried (..)
   , Complaint (..)
   , Entry (..)
   , Invitation (..)
@@ -330,15 +331,21 @@ bytesSurviveTheTrip door site channel payload = do
         Right (Read _ _ _ entries) -> case reverse entries of
           [] -> Left "the segment was accepted and then not there"
           (latest : _)
-            | entryPayload latest == wire payload -> Right ()
+            | entryCarried latest == sent -> Right ()
             | otherwise ->
                 Left $
                   "what came back is not what went in:\n  in:  "
-                    <> show (wire payload)
+                    <> show sent
                     <> "\n  out: "
-                    <> show (entryPayload latest)
+                    <> show (entryCarried latest)
         Right other -> Left ("reading it back answered " <> show other)
   where
+    -- The door reports text when every byte of it is text and hexadecimal
+    -- when they are not. Which one appears is a fact about the bytes, so
+    -- what to expect is derived the same way rather than fixed to one.
+    sent = case Text.decodeUtf8' payload of
+      Right said -> AsText said
+      Left _ -> AsBytes (wire payload)
     wire = Text.concat . map hex . ByteString.unpack
     hex byte =
       let digits = "0123456789abcdef"

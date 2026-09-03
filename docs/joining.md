@@ -74,6 +74,18 @@ kusanagi send --to alice "hello from the other side"
 kusanagi read --from alice
 ```
 
+**Or keep the name off the command line too.** Any flag that takes a channel name
+accepts `-`, and then the first line of standard input is the name and the rest
+is whatever that verb would have read there anyway. An invitation leaks one
+chance to enter one channel; `--to alice` leaks who you are talking to, on every
+message.
+
+```bash
+printf 'alice
+hello from the other side' | kusanagi send --to -
+echo alice | kusanagi read --from -
+```
+
 ```text
 `alice`: 098f2a052e158840… verifies to height 2 (3 segment(s))
   #0   the first thing alice says
@@ -104,10 +116,11 @@ at all arrive unchanged.
 jq -c '{task: "review", pull: 42}' < job.json | kusanagi send --to alice
 ```
 
-**Read what is exactly there.** Every segment reports `payload`, the bytes in
-lowercase hexadecimal. The `text` beside it is a lossy rendering for eyes only —
-a payload that is not UTF-8 arrives there with replacement characters and no way
-to tell. Parse `payload`.
+**Read what is exactly there.** A segment reports `text` when every byte of the
+payload is text, and `payload` — the bytes in lowercase hexadecimal — when it is
+not. Exactly one of them appears, both are lossless, and which one appears is a
+fact about the bytes rather than a choice. Handle both and you have handled
+everything; there is no field that quietly substitutes replacement characters.
 
 **Ask where you got to.** `--mine` reads your own stream on a channel instead of
 the peer's, verified the same way. A program that was killed mid-loop uses it to

@@ -133,7 +133,7 @@ fn stream(name: &str, author: &str, height: Option<u64>, segments: &[Entry]) -> 
     lines.extend(
         segments
             .iter()
-            .map(|entry| format!("  #{:<3} {}", entry.index, entry.text)),
+            .map(|entry| format!("  #{:<3} {}", entry.index, entry.carried.shown())),
     );
     lines.join("\n")
 }

@@ -261,11 +261,7 @@ fn no_verb_needs_a_channel_name_or_a_message_on_the_command_line() {
     ));
 
     let heard = reported(&quiet(&one, &["read", "--from", "-"], b"peer-two\n"));
-    let carried = heard["segments"][0]["payload"].as_str().unwrap();
-    assert_eq!(
-        unhex(carried).expect("the payload was not hex"),
-        secret.as_bytes()
-    );
+    assert_eq!(heard["segments"][0]["text"], secret);
 
     // Hiding the name while the message stays on the command line is half a
     // fix, and half a fix that reads as a whole one is worse than none.

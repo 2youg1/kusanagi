@@ -25,7 +25,9 @@
 3. 同一通道内两个作者在每个高度都不碰撞（`the_two_lanes_of_one_channel_never_collide`，覆盖 0..64）。
 4. 封装后的字节不含明文（`the_sealed_form_does_not_contain_the_plain_form`）。
 4a. 任何长度的明文封出的密文都恰好 `DROP` 字节（`every_drop_is_the_same_size_whatever_it_carries`）；长度不对的字节一律不开（`bytes_that_are_not_one_drop_long_never_open`）。
-4b. 填充区任意一个非零字节使 `unpad` 返回 `Rejected`（`a_pad_that_carries_anything_is_refused`）。
+4b. 填充区任意一个非零字节使 `unpad` 返回 `Rejected`（`a_pad_that_carries_anything_is_refused`），
+    **且这次检查是常数时间的**：按位或折叠整片填充区，再用 `subtle` 比一次——与
+    `kernel::Digest` 比定宽标识符用的是同一套机制。
 5. 密文任意一位翻转后 `open` 返回 `OpenFailed::Rejected`（`every_flipped_byte_is_refused`，**抽样遍历**）。
 
    **从逐字节改为抽样，理由写在这里。** `DROP` 从 4 KiB 长到 128 KiB 后，逐字节版本要做 `DROP` 次解密，每次都跨过整个 `DROP`，代价是 `DROP²` —— debug 构建下实测超过三十分钟仍未结束。被断言的性质在密文上是均匀的：Poly1305 不区分位置，所以第 700 个字节与第 701 个字节不是两个独立的判例。抽样取两类位置：**结构边界**（密文开头、正文与 16 字节 tag 的接缝、末字节）与**一条步长为质数的步进**，后者保证不与任何块对齐。一个只在某一个未被采样字节上失效的 AEAD 不存在；一个没有人跑的测试存在。`kernel/tests/segment.rs` 已经因同一理由做过这个取舍。
@@ -36,14 +38,14 @@
 
 | 歧义 | 假设 | 何时失效 |
 |---|---|---|
-| 秘密怎么来 | v0.0.1 由邀请方随机生成并整份交给受邀方 | 阶段 4 上 Noise 握手后改为协商产生，本 crate 的接口不变 |
+| 秘密怎么来 | 由邀请方随机生成并整份交给受邀方，随邀请同行 | 若某天改为两端协商产生，本 crate 的接口不变——它只要一个 32 字节的共享秘密，不问它从哪来。**握手协议今天不存在，也没有条目在计划它** |
 | nonce 怎么定 | 与 key 一起从同一次派生里取，因此 `(key, nonce)` 对每个 drop 唯一 | 若将来一个 key 需覆盖多条消息，此处必须改为显式计数器 |
 | 是否需要 AAD | 不需要 | 地址已经通过密钥分离与密文绑定：把密文搬到另一个地址，那里派生出的是另一把钥匙 |
 | `derive` 的签名 | 比 `ARCHITECTURE` 早期草案多一层 `Stream` | 见 §7 的理由；少了这一层，共享同一 secret 的两方在每个高度都会抢同一个地址 |
 
 ## 4 现状分析
 
-阶段 0 的 `kernel::address::public_v0` 由 `(author, index)` 公开派生，**故意可链接**，用于让骨架跑通。本 crate 落地时该函数连同其全部调用方一并删除；全仓 grep 不到 `public_v0`。这是替换，不是并存——两条派生路径同时存在，就等于隐私主张有一个随时可以被绕过的后门。
+骨架期（v0.0.1 之前）的 `kernel::address::public_v0` 由 `(author, index)` 公开派生，**故意可链接**，用于让骨架跑通。本 crate 落地时该函数连同其全部调用方一并删除；全仓 grep 不到 `public_v0`。这是替换，不是并存——两条派生路径同时存在，就等于隐私主张有一个随时可以被绕过的后门。
 
 ## 5 权威信源
 
@@ -164,6 +166,7 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 | 依赖 | 理由 | 替代方案与代价 |
 |---|---|---|
 | `chacha20poly1305` 0.10 | RustCrypto 的 AEAD，纯 Rust、无 C 工具链、软件实现常数时间 | `aes-gcm` 在无 AES-NI 的设备上更慢且更难做到常数时间 |
+| `subtle` 2 | 填充区检查的常数时间比较。**不为它单独引一个依赖**——`kernel` 已经用它比定宽标识符，全仓因此只有一套常数时间比较 | 换掉它就要同时改 `kernel::Digest` |
 | `zeroize` 1 | 三个秘密类型出作用域即擦除。它原本在 `ed25519-dalek` 下面，那个依赖走后改为全仓直接依赖；`fips204` 只擦除它自己的密钥材料，够不到通道秘密与每-drop 密钥 | 手写擦除会被优化器删掉，除非用 volatile 写入或内存屏障，而那正是这个 crate 在做的事 |
 | `blake3`（已在全仓） | 自带 KDF 模式，全仓一个哈希原语 | 引入 `hkdf` 会多一套需要审计的构造，且多一个依赖 |
 
