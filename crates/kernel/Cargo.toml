@@ -15,5 +15,8 @@ zeroize.workspace = true
 thiserror.workspace = true
 fips204.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true

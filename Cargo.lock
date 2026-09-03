@@ -399,6 +399,7 @@ name = "kusanagi-chain"
 version = "0.0.1"
 dependencies = [
  "kusanagi-kernel",
+ "proptest",
  "thiserror",
 ]
 
@@ -433,6 +434,7 @@ version = "0.0.1"
 dependencies = [
  "blake3",
  "fips204",
+ "proptest",
  "subtle",
  "thiserror",
  "zeroize",
@@ -445,6 +447,7 @@ dependencies = [
  "blake3",
  "chacha20poly1305",
  "kusanagi-kernel",
+ "proptest",
  "subtle",
  "thiserror",
  "zeroize",
@@ -459,6 +462,7 @@ dependencies = [
  "kusanagi-grant",
  "kusanagi-kernel",
  "kusanagi-seal",
+ "proptest",
  "thiserror",
  "windows-sys 0.61.2",
 ]

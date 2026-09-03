@@ -90,11 +90,24 @@ impl Request {
         // for. The cap is the client's, taken from `kusanagi-waypoint` rather
         // than restated: what this host accepts and what a caller will read back
         // are one number, and two copies of it drift.
-        let declared = headers
+        //
+        // **Two of them is a refusal, not a choice.** A request that states its
+        // length twice is asking the reader to pick one, and picking is how one
+        // request becomes two for somebody downstream.
+        let mut lengths = headers
             .iter()
-            .find(|(name, _)| name == "content-length")
-            .map_or(Ok(0), |(_, value)| value.parse::<u64>())
-            .map_err(|_| Malformed)?;
+            .filter(|(name, _)| name == "content-length")
+            .map(|(_, value)| value.as_str());
+        let declared = match (lengths.next(), lengths.next()) {
+            (None, _) => 0,
+            // Two of them, or digits and nothing else. Rust's integer parser
+            // accepts a leading `+` and HTTP does not, and a length two readers
+            // disagree about is how one request becomes two.
+            (Some(only), None) if only.bytes().all(|byte| byte.is_ascii_digit()) => {
+                only.parse::<u64>().map_err(|_| Malformed)?
+            }
+            (Some(_), _) => return Err(Malformed),
+        };
         if declared > MAX_OBJECT {
             return Err(Malformed);
         }
