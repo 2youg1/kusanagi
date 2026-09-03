@@ -21,13 +21,11 @@ allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "MIT",
-    "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "CC0-1.0",
     "MPL-2.0",
     "Unicode-3.0",
-    "Zlib",
     # `webpki-roots` ships Mozilla's CA certificate set, which is data rather
     # than code and carries a permissive data licence. It reaches the binary
     # because an S3 bucket is HTTPS.
@@ -40,9 +38,19 @@ confidence-threshold = 0.9
 ignore = true
 
 [bans]
-# Two versions of one crate in one binary is usually an unnoticed duplicate.
-multiple-versions = "warn"
+# Two versions of one crate in one binary is usually an unnoticed duplicate, so
+# every one of them has to be named here with the dependency that wants it. A
+# warning nobody reads is not a gate; a list of three exceptions is.
+multiple-versions = "deny"
 wildcards = "deny"
+# Each of these is a major version this workspace does not choose and cannot
+# collapse: one dependency has moved and another has not. Deleting a line makes
+# the build red, which is what makes the list stay true.
+skip = [
+    { crate = "getrandom@0.2", reason = "ring 0.17 is still on 0.2; this workspace and ureq are on 0.3" },
+    { crate = "cpufeatures@0.2", reason = "chacha20 0.9 is still on 0.2; sha2 0.10 has moved to 0.3" },
+    { crate = "syn@2", reason = "zeroize_derive is still on syn 2; the other derive macros have moved to 3" },
+]
 # `unsafe_code = "forbid"` covers our own crates; these are the ones whose
 # absence keeps the binary small and the failure modes few.
 deny = [

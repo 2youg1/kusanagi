@@ -31,7 +31,19 @@ kusanagi-site = { path = "crates/site", version = "0.0.1" }
 kusanagi-door = { path = "crates/door", version = "0.0.1" }
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
 thiserror = "2"
-clap = { version = "4", features = ["derive"] }
+# Only the parts of clap this program uses. What the default set adds is
+# `color` (anstream, four anstyle crates, colorchoice, is_terminal_polyfill,
+# utf8parse, and a second `windows-sys`) and `suggestions` (strsim) — nine
+# crates for coloured help and "did you mean". **Every crate that reaches this
+# binary is somebody who can write code into it**, and that is the one part of
+# this design no cryptography defends.
+clap = { version = "4", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The signature scheme, ML-DSA-87 (FIPS 204). Pure Rust with no C toolchain,

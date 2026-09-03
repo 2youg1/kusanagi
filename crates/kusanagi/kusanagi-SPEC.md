@@ -243,7 +243,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 | 依赖 | 理由 |
 |---|---|
-| `clap` 4 | 只在 `main.rs`；派生宏换来的帮助文本与错误信息值这一个依赖 |
+| `clap` 4，`default-features = false` | 只在 `main.rs`；派生宏换来的帮助文本与错误信息值这一个依赖。**只开 `std`/`derive`/`help`/`usage`/`error-context`**：默认集合另外带来 `color`（anstream 等九个 crate，含一份 `windows-sys`）与 `suggestions`（strsim），换来的是彩色帮助与「你是不是想输入」。每一个 crate 都是一个能往这个二进制里写代码的人，`just deps` 报出这个数 |
 | `getrandom` 0.3 | 直接问操作系统要熵，中间不放生成器，就没有需要正确播种、重播种、fork 后重置的东西 |
 | `kusanagi-door` | 输出契约；`serde` / `serde_json` / `thiserror` 现在是它的依赖，不是本 crate 的 |
 

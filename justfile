@@ -56,6 +56,22 @@ test:
 deny:
     cargo deny check
 
+# How many distinct crates can put code into the shipped binary.
+#
+# `cargo deny` answers "is any of this forbidden"; this answers "how much of it
+# is there", which is the question a supply chain actually turns on. **Every
+# crate here is somebody who can write code into this program**, so the number
+# going up is a decision and the number going down needs no justification.
+#
+# Normal edges only: build scripts and dev-dependencies do not reach a user.
+# Recorded in `.process/Roadmap.md` §J3 at each change, so a jump is visible in
+# the diff rather than in somebody's memory.
+deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo tree --workspace --edges normal --prefix none | sort -u | grep -c .
+
+
 # Line counts against the budget in ARCHITECTURE.md. The budget is the mechanical
 # form of "one context window is enough to read all of it": each crate's
 # implementation must stay small enough to hold in mind, and the workspace as a
