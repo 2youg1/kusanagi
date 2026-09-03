@@ -95,6 +95,9 @@ properties door =
         , testCase "no two drops are the same bytes" (weighing door Veil.neverTheSameBytesTwice)
         , testCase "no two drops share structure" (weighing door Veil.noSharedStructure)
         , testCase
+            "no byte offset holds one value in every drop"
+            (weighing door Veil.noPositionIsFixed)
+        , testCase
             "the same sentence twice shares nothing"
             (weighing door Veil.theSameSentenceTwiceSharesNothing)
         ]

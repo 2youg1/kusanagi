@@ -12,7 +12,7 @@
 -- which is the attack a host gets for free: it never has to guess a key, break a
 -- cipher or forge a signature. It weighs the parcels.
 --
--- Four properties, each a relation between drops rather than an expected value:
+-- Five properties, each a relation between drops rather than an expected value:
 --
 -- * **One size.** Every drop is the same size, so the length of what somebody
 --   said is not a thing a host holds.
@@ -23,6 +23,10 @@
 --   a constant nonce, a keystream reused — and structure is what a detection
 --   rule is made of. See 'tolerance' for what that bound reaches and what it
 --   does not.
+-- * **No position is fixed.** Across many drops at once, no byte offset holds
+--   one value in all of them. This is the property 'tolerance' cannot have: a
+--   four-byte field at a constant offset lifts a pairwise count by four, far
+--   under a noise floor of 113, and is invisible to every property above.
 -- * **The pad is not a channel.** The same sentence sent twice leaves two drops
 --   with nothing in common. If the padding were ever left unchecked, or filled
 --   with anything but zeroes, the tails of those two drops would agree.
@@ -36,6 +40,7 @@ module Kusanagi.Veil
   , everyObjectIsOneSize
   , neverTheSameBytesTwice
   , noSharedStructure
+  , noPositionIsFixed
   , theSameSentenceTwiceSharesNothing
   ) where
 
@@ -72,9 +77,9 @@ import Kusanagi.Ground (Ground, stored, waypoint)
 -- the noise: a reused keystream, a constant nonce, a tail left in the clear.
 -- What it does not catch is a short fixed field — a four-byte tag at the same
 -- offset in every drop lifts the count by four, far under a noise floor of 113.
--- A leading header is caught by 'prefixTolerance'; a short one in the middle is
--- watched by nothing here today, and the property that would watch it compares
--- which /positions/ agree across many pairs rather than how many agree in one.
+-- A leading header is caught by 'prefixTolerance', and a short one in the middle
+-- by 'noPositionIsFixed', which compares which /positions/ agree across many
+-- drops at once rather than how many agree in one pair.
 tolerance :: Int -> Int
 tolerance n = expected + 5 * deviation
   where
@@ -174,6 +179,57 @@ noSharedStructure door ground writer reader =
     case [reason | (left, right) <- pairs bodies, Just reason <- [apart left right]] of
       [] -> Right ()
       reasons -> Left (unlines reasons)
+
+-- | No byte offset carries the same value in every drop.
+--
+-- __The property the pairwise bound cannot express.__ 'tolerance' asks how many
+-- positions two drops agree at, and a fixed field of four bytes lifts that count
+-- by four against a noise floor of 113 — invisible, at every drop size this
+-- protocol will ever use. Comparing /which/ positions agree, across many drops
+-- at once, turns the same field from a change of 4% of the noise into a
+-- certainty: a constant is constant in all of them, and chance is not.
+--
+-- The threshold is therefore zero rather than a margin. Eight drops agree at one
+-- offset by chance with probability @256 ^ -7@, so over a whole drop the expected
+-- number of such offsets is about @2 * 10 ^ -12@ — a test that fails once in
+-- 500 billion runs is a test that fails because something broke.
+--
+-- Any fixed offset is enough on its own: a version byte, a length outside the
+-- envelope, a nonce that stopped varying, a tag somebody added for debugging. One
+-- of them is the whole of what a censor needs, because a rule that matches a
+-- single constant at a single offset costs one pass over a store.
+noPositionIsFixed :: Door -> Ground -> FilePath -> FilePath -> IO (Either String ())
+noPositionIsFixed door ground writer reader =
+  written door ground writer reader (replicate 8 64) $ \bodies ->
+    case bodies of
+      [] -> Left "no drops were written, so nothing was compared"
+      (first : rest) ->
+        case fixedOffsets first rest of
+          [] -> Right ()
+          offsets ->
+            Left
+              ( show (length offsets)
+                  <> " byte offset(s) hold one value in all "
+                  <> show (length bodies)
+                  <> " drops, the first at "
+                  <> show (take 8 offsets)
+                  <> "; a constant at a constant offset is a detection rule"
+              )
+
+-- | Every offset where @first@ and all of @rest@ carry the same byte.
+--
+-- Compared against the first drop rather than pairwise, which is the same
+-- question asked once instead of @n choose 2@ times: all of them agree at an
+-- offset exactly when each of them agrees with the first one there.
+fixedOffsets :: ByteString.ByteString -> [ByteString.ByteString] -> [Int]
+fixedOffsets first rest =
+  [ offset
+  | offset <- [0 .. width - 1]
+  , let byte = ByteString.index first offset
+  , all (\body -> ByteString.index body offset == byte) rest
+  ]
+  where
+    width = minimum (map ByteString.length (first : rest))
 
 -- | The same sentence, sent twice, leaves nothing in common behind.
 --
