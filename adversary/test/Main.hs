@@ -37,7 +37,9 @@ import Test.Tasty.QuickCheck (testProperty)
 import Kusanagi.Answer (Address (..))
 import Kusanagi.Answer qualified as Answer
 import Kusanagi.Cairn qualified as Cairn
+import Kusanagi.Discriminator qualified as Discriminator
 import Kusanagi.Lying qualified as Lying
+import Kusanagi.Veil qualified as Veil
 import Kusanagi.Door (Door)
 import Kusanagi.Door qualified as Door
 import Kusanagi.Ground
@@ -76,7 +78,38 @@ properties door =
     , testProperty "a corrupted object is refused, not believed" (tampering door)
     , testProperty "genuine bytes at the wrong address are not a segment" (transplanting door)
     , testProperty "a host cannot talk a reader down from a height" (vanishing door)
+    , testGroup
+        "what a host measures without a key"
+        [ testCase "every drop is the same size" (weighing door Veil.sameSizeAlways)
+        , testCase "no two drops are the same bytes" (weighing door Veil.neverTheSameBytesTwice)
+        , testCase "no two drops share structure" (weighing door Veil.noSharedStructure)
+        , testCase
+            "the same sentence twice shares nothing"
+            (weighing door Veil.theSameSentenceTwiceSharesNothing)
+        ]
+    , testGroup
+        "what a classifier trained on this repository would find"
+        [ testCase
+            "how much was said does not separate two worlds"
+            (measured (Discriminator.volumeSaysNothing door))
+        , testCase
+            "whether anything was said separates them by exactly what is written down"
+            (measured (Discriminator.presenceSaysOnlyHowMany door))
+        ]
     ]
+
+-- | Runs one weighing against a throwaway world.
+weighing ::
+  Door ->
+  (Door -> Ground -> FilePath -> FilePath -> IO (Either String ())) ->
+  IO ()
+weighing door act =
+  measured (withGround (\ground -> act door ground (siteOf ground Alice) (siteOf ground Bob)))
+
+-- | Fails with what the measurement said, which is a sentence rather than a
+-- number.
+measured :: IO (Either String ()) -> IO ()
+measured act = act >>= either (`assertBool` False) pure
 
 -- | Somebody types the line from the README with one finger in the wrong place.
 --

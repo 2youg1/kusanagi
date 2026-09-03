@@ -16,6 +16,7 @@
 | U6 装配 | `assembly::run` | 九个动词；时钟每条命令采样一次 |
 | U7 输出 | `Outcome` / `Complaint` | 同一个值渲染成散文与 JSON，两者不可能不一致 |
 | U8 代理可用的门 | 载荷进得去也出得来，增量读得到，参数错误也带码 | 任意字节经 stdin 进、经 `payload` 出且逐字节相等；`--after H` 只报 H 之后的段；每一条失败都有稳定码与恢复命令 |
+| U12 邀请不进 argv | `join` 只从 stdin 读邀请，没有位置参数 | 四种粘贴形式（裸行、`\n`、`\r\n`、前后空白）都能加入；空管道与洪水管道各得一个带码的拒绝，不挂起、不无界缓冲 |
 | U9 退出一条通道 | `forget` | 忘掉后 `channels` 不再列出它；同名可以重新 join；撤销表不受影响 |
 | U10 看自己写过什么 | `read --mine` | 崩溃后不写入即可问出自己的链头；报告的 `author` 是自己 |
 | U11 通道的现时权限 | `channels` 报 `can` 与 `expires_at` | 过期或被撤销的通道在列表里就能看出来，不必先失败一次 |
@@ -195,7 +196,10 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 | 下一个地址已被占 | `kusanagi.drop_taken`，并给出重读后重发的命令 |
 | 通道文件版本不认识 | 拒绝而不是猜 |
 | `send` 未给文本且 stdin 是终端 | `kusanagi.argument`，告诉他两种给法。**不得阻塞等一个人打字** |
-| stdin 给了超过 64 KiB | `segment.payload_too_large`，由 kernel 判定，本层不重复那条规则 |
+| `join` 且 stdin 是终端 | 同上：`kusanagi.argument`，告诉他怎么管进去 |
+| `join` 的 stdin 为空或不是邀请 | `kusanagi.malformed`，且恢复命令**必须提到管道**——只说「拷贝整条邀请」会把人送去找一个不存在的参数 |
+| `join` 的 stdin 超过 16 KiB | 读到上限就停、拒绝并退出。父进程因此会拿到 EPIPE，**那正是上限生效的证据** |
+| stdin 给了超过 `MAX_PAYLOAD` | `segment.payload_too_large`，由 kernel 判定，本层不重复那条规则 |
 | stdin 给了零字节 | 照发。空载荷是合法的段，拒绝它需要一条没人写过的规则 |
 | `--after H` 中 H ≥ 链头 | `segments` 为空而 `height` 照报——这正是轮询者要的那一条回答 |
 | `--can` 里出现不认识的词 | `kusanagi.argument`，而不是静默地少授予一项 |
@@ -240,7 +244,8 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 | 通道名 `a-z0-9-`、≤32 | 路径、shell、URL 三处都安全 | 放宽须同时想清三处 |
 | 介绍流的高度 `0` | 引荐的约定位置 | 属线路格式 |
 | `kusanagi1:` 前缀、版本 1、套件 0 | 邀请串的识别与拒绝未来格式 | 换套件即换版本字节 |
-| **不设身份文件的 Unix 模式位** | Windows 上无对应语义，行为跨平台一致优先 | 已知短板：多用户机器上应把 site 放在仅本人可读的目录里，这一点写在 `docs/joining.md` |
+| 站点文件的权限已不在本层 | 现在由 `kusanagi_site::permissions` 一处决定：Unix 上文件 `0600`、目录 `0700` | 见 `site-SPEC.md` §14；Windows 仍是缺口 |
+| `join` 的 stdin 上限 16 KiB | 一条真邀请是几百字符；比这大很多的东西不是邀请，拒绝缓冲它比解析它便宜 | 邀请里的 grant 链大幅变深时要重算 |
 | `--after H` 是**严格大于** | 调用方手里持有 H，要的是 H 之后的 | 改成含 H 会让每次轮询重复一段 |
 | stdin 最多读 `MAX_PAYLOAD + 1` 字节 | 越限由 kernel 判，本层只负责不无界 | 跟随 `kernel::MAX_PAYLOAD`，不另写常量 |
 | `payload` 用小写十六进制 | 全仓只有一套十六进制编解码（`kernel::wire`），不为一个字段引入 base64 | 体积翻倍；64 KiB 载荷 → 128 KiB 文本，在可接受范围 |

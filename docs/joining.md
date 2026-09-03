@@ -38,9 +38,18 @@ site somewhere else.
 Somebody hands you a line starting with `kusanagi1:`. Give it a local name — that
 name is yours alone and nobody else ever sees it.
 
+**Pipe the line in.** It is not an argument and cannot be made one: it carries the
+channel secret, and a command line is readable by every account on the machine
+while the process runs and by anybody who opens the shell history afterwards.
+
 ```bash
-kusanagi join 'kusanagi1:0100098f2a05…' --name alice
+pbpaste | kusanagi join --name alice
+# or, from a file somebody sent you:
+kusanagi join --name alice < invitation.txt
 ```
+
+Leading and trailing whitespace is forgiven, including the `\r\n` a Windows
+clipboard adds, so a paste that picked up a newline still works.
 
 ```text
 joined `alice`

@@ -13,6 +13,8 @@
 
 mod envelope;
 mod secret;
+mod veil;
 
 pub use envelope::{Key, OpenFailed, open, seal};
 pub use secret::{Secret, Stream, derive};
+pub use veil::DROP;

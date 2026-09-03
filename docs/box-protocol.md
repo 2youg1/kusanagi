@@ -4,8 +4,13 @@ What `kusanagi host` answers, and what `HttpWaypoint` sends. Anybody can impleme
 either half; both halves in this repository are written against this page, and
 `waypoint::conformance::run` is what decides whether an implementation is correct.
 
-The protocol is HTTP/1.1 and has three requests. It is deliberately smaller than
+The protocol is HTTP/1.1 and has two requests. It is deliberately smaller than
 S3, because everything this network asks of a host is small.
+
+**Every header in it is one that ordinary web traffic already carries.** A header
+named after this project would announce it to the host, to every proxy on the
+route, and to every log either of them keeps — including the ones that see inside
+TLS. No amount of sealing further down takes that back, so there are none.
 
 ## What a host is not asked to do
 
@@ -16,6 +21,10 @@ S3, because everything this network asks of a host is small.
   anything.
 - **It is never asked who anybody is.** There are no accounts and no
   authentication, so a host has nothing to disclose and nothing to leak.
+- **It is never asked to describe itself.** There is no banner, no version and no
+  status path. A well-known path that answers with a product name turns an
+  internet-wide scan into a list of this network's hosts, and their users with
+  them, at one request per address.
 
 Access control, if a deployment wants it, belongs in front of the host — a
 reverse proxy, an allowlist, a VPN. It is not in this protocol because a host that
@@ -29,7 +38,14 @@ knew who its callers were would know something the design promises it cannot.
 |---|---|
 | `200` + body + `ETag` | the drop holds bytes |
 | `304`, no body | `If-None-Match` matched the current `ETag` |
-| `404` | nothing is there, or what was there has expired |
+| `404`, no body | nothing is there, or what was there has expired |
+
+A host answers `404` with an **empty body**, and answers the same `404` to a
+request that is not about a drop at all — a path outside `/d/`, a method it does
+not implement, an address that is not 40 lowercase hexadecimal characters. Three
+different answers would let a caller who holds no address recover the address
+grammar, and the grammar is enough to tell this host from any other server on the
+same port. Asserted by `crates/box/tests/unmarked.rs`.
 
 `ETag` must be **stable**: the same bytes must produce the same validator on every
 request. The reference host uses the BLAKE3 hash of the stored bytes, so
@@ -44,15 +60,19 @@ drop change the world.
 
 | Request header | |
 |---|---|
-| `If-None-Match: *` | **required** |
-| `X-Kusanagi-Ttl: <seconds>` | optional; `0` means "already expired" |
+| `If-None-Match: *` | **required**, and matched exactly; `"*"`, `W/*` and `**` are not it |
+| `Cache-Control: max-age=<seconds>` | optional; `0` means "already expired" |
 
 | Response | When |
 |---|---|
-| `201` | the address was empty and now holds these bytes |
-| `412` | the address was already claimed; the stored bytes are untouched |
-| `428` | `If-None-Match: *` was missing |
-| `400` | the lifetime was not a whole number of seconds |
+| `201`, no body | the address was empty and now holds these bytes |
+| `412`, no body | the address was already claimed; the stored bytes are untouched |
+| `428`, no body | `If-None-Match: *` was missing |
+
+A `Cache-Control` value a host cannot parse is **ignored**, not refused, which is
+what RFC 9111 §5.2 asks of a recipient and also what keeps a malformed value from
+being a way of telling this host apart from a cache. A lifetime too large to add
+to the clock saturates.
 
 `412` is not an error condition for a caller. A resend after a lost
 acknowledgement lands here, and the correct response is to carry on.
@@ -61,15 +81,17 @@ The `0` lifetime is what makes expiry testable without waiting: a host that
 honours lifetimes answers the next `GET` with `404`, and one that ignores them
 hands the bytes back. `kusanagi doctor` uses exactly that.
 
-## `GET /health`
+## There is no third request
 
-Returns a plain-text banner naming the implementation and what it offers:
+Earlier versions answered `GET /health` with `kusanagi-box/1 write-once=yes
+conditional-read=yes expiry=yes`. It is gone, and nothing replaced it.
 
-```text
-kusanagi-box/1 write-once=yes conditional-read=yes expiry=yes
-```
-
-The banner is a courtesy, **not evidence**. `doctor` ignores it and measures.
+The banner was never evidence — `kusanagi doctor` has always ignored it and
+measured the host instead, by writing twice and reading back. What it was, was a
+one-request test for "is this a kusanagi host", answerable by anybody, which is
+the single most useful thing a scanner could have been given. Removing it cost
+nothing that was in use: across the whole workspace the only caller was the test
+that asserted the banner's own text.
 
 ## Limits
 
@@ -80,8 +102,10 @@ The banner is a courtesy, **not evidence**. `doctor` ignores it and measures.
 | idle connection | 30 seconds |
 | connection reuse | none; every response carries `Connection: close` |
 
-A segment is capped at 64 KiB by the protocol above this one, so the body limit is
-margin rather than a constraint.
+Every sealed drop is exactly 4 096 bytes, and the reference host stores it behind
+an eight-byte expiry, so the body limit is margin by three orders of magnitude
+rather than a constraint. A body larger than the limit is refused with `400`
+before anything is allocated for it.
 
 ## Storage
 

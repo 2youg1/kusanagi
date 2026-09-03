@@ -12,11 +12,17 @@
 //! ```text
 //! GET /d/<address>     200 + body + ETag | 304 (If-None-Match) | 404
 //! PUT /d/<address>     201 | 412 when occupied | 428 without If-None-Match: *
-//! GET /health          200 + the host's capability banner
 //! ```
 //!
 //! An unconditional `PUT` is refused rather than accepted, so this host cannot
 //! lose write-once semantics by accident: there is no request that overwrites.
+//!
+//! **Every header here is one that ordinary web traffic already carries.**
+//! `If-None-Match` is how any cache asks a conditional question and how S3
+//! spells a write-once write; `Cache-Control: max-age` is how anything asks for
+//! a lifetime. A header named after this product would announce it to every
+//! proxy and every log between the two ends — including the ones that see inside
+//! TLS — and no amount of sealing further down would take that back.
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
@@ -25,8 +31,12 @@ use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 /// The header that asks for a write only if nothing is there.
 const IF_NONE_MATCH: &str = "If-None-Match";
 
-/// The header carrying a requested lifetime, in seconds.
-pub const TTL_HEADER: &str = "X-Kusanagi-Ttl";
+/// The header carrying a requested lifetime.
+///
+/// `Cache-Control: max-age=<seconds>`, which is what a browser, a CDN and a
+/// package manager all send. See the module note on why this is not a header of
+/// this project's own.
+pub const TTL_HEADER: &str = "Cache-Control";
 
 /// A waypoint that is somebody's HTTP box.
 #[derive(Debug, Clone)]
@@ -41,10 +51,20 @@ impl HttpWaypoint {
     /// Status codes are *not* treated as transport errors: 404, 412 and 304 are
     /// all normal answers in this protocol, and an adapter that could not tell
     /// them apart from a broken connection would have to guess.
+    ///
+    /// **No `User-Agent`.** The default would put the name and version of this
+    /// program's HTTP library into every request, where a host, a proxy and any
+    /// log along the path can read it — and a version number narrows the set of
+    /// people it could be. Sending none says less than sending anything, and it
+    /// is unremarkable: plenty of API traffic carries no agent string at all.
+    /// Sending a browser's instead was considered and rejected, because a
+    /// browser header above a TLS handshake that is plainly not a browser's is a
+    /// worse tell than silence.
     #[must_use]
     pub fn new(base: &str) -> Self {
         let agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
+            .user_agent(ureq::config::AutoHeaderValue::None)
             .build()
             .into();
         Self {
@@ -55,23 +75,6 @@ impl HttpWaypoint {
 
     fn url(&self, addr: &DropAddr) -> String {
         format!("{}/d/{addr}", self.base)
-    }
-
-    /// Asks the box what it can do. Used by `doctor` for its banner line.
-    ///
-    /// # Errors
-    ///
-    /// [`WaypointError::Io`] when the box cannot be reached.
-    pub fn health(&self) -> Result<String, WaypointError> {
-        let mut response = self
-            .agent
-            .get(format!("{}/health", self.base))
-            .call()
-            .map_err(|source| transport("asking a box for its health", &source))?;
-        response
-            .body_mut()
-            .read_to_string()
-            .map_err(|source| transport("reading a box's health banner", &source))
     }
 
     fn put_inner(
@@ -86,7 +89,7 @@ impl HttpWaypoint {
             .header(IF_NONE_MATCH, "*")
             .header("Content-Type", "application/octet-stream");
         if let Some(seconds) = ttl {
-            request = request.header(TTL_HEADER, seconds.to_string());
+            request = request.header(TTL_HEADER, format!("max-age={seconds}"));
         }
         let response = request
             .send(bytes)

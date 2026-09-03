@@ -11,8 +11,8 @@ kusanagi 是一个命令行程序，专门做这件事。消息是加密的，�
 kusanagi invite --name bob --waypoint http://box.example:8443
 # 输出：kusanagi1:0100cff7...
 
-# 在 Bob 的机器上
-kusanagi join 'kusanagi1:0100cff7...' --name alice
+# 在 Bob 的机器上——用管道递进去，不作为参数粘贴
+pbpaste | kusanagi join --name alice
 kusanagi send --to alice "构建通过了"
 ```
 
@@ -55,10 +55,13 @@ kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8443
 **2. Bob 加入。** 他只需要这一行，别的都不需要。
 
 ```bash
-kusanagi --root ~/.bob join 'kusanagi1:0100…' --name alice
+pbpaste | kusanagi --root ~/.bob join --name alice
+# 或：  kusanagi --root ~/.bob join --name alice < invitation.txt
 ```
 
-这行邀请只能用一次。如果别人先用掉了，Bob 会收到 `kusanagi.invite_spent`，这时应该去要一条新的，而不是重试。在用掉之前，把这行字当密码对待。
+**邀请从标准输入读取，不能作为参数传入。** 它携带着通道秘密，而在 Linux 上本机任何一个账号都能从 `/proc` 读到别的进程的命令行，shell 还会把它写进历史记录。把这行字当密码对待，就意味着永远不让它变成一个参数。
+
+这行邀请只能用一次。如果别人先用掉了，Bob 会收到 `kusanagi.invite_spent`，这时应该去要一条新的，而不是重试。
 
 **3. 两边开始说话。**
 
@@ -89,7 +92,7 @@ kusanagi --root ~/.alice revoke --from bob
 |---|---|
 | `id` | 显示本端点的 handle。首次使用时生成身份。 |
 | `invite --name N --waypoint W [--for SECS] [--can send,read]` | 开一条 channel，签发一条邀请。 |
-| `join <INVITE> --name N` | 接受一条邀请。 |
+| `join --name N` | 接受一条邀请，从标准输入读取。它永远不是参数，理由见第 2 步。 |
 | `send --to N ["文本"]` | 追加一条消息。不给文本时，内容从标准输入读取。 |
 | `read --from N [--after H] [--mine]` | 读取对方的消息，从头验证。`--after H` 只返回高度 `H` 之后的部分，`--mine` 读你自己的。 |
 | `channels` | 列出本机的 channel，各自还允许什么，以及到什么时候为止。 |

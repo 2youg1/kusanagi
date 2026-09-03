@@ -42,6 +42,13 @@ pub(crate) fn etag(bytes: &[u8]) -> String {
     format!("\"{}\"", Hex(blake3::hash(bytes).as_bytes()))
 }
 
+/// A request this host will not act on.
+///
+/// Carries no reason, because no reason is ever sent and a reason that is built
+/// but not sent is an invitation to send it. What went wrong is the caller's to
+/// know from the status.
+pub(crate) struct Malformed;
+
 /// One request, already bounded.
 pub(crate) struct Request {
     pub(crate) method: String,
@@ -58,12 +65,12 @@ impl Request {
             .map(|(_, value)| value.as_str())
     }
 
-    pub(crate) fn read(reader: &mut BufReader<TcpStream>) -> Result<Self, String> {
+    pub(crate) fn read(reader: &mut BufReader<TcpStream>) -> Result<Self, Malformed> {
         let mut line = String::new();
         take_line(reader, &mut line)?;
         let mut parts = line.split_whitespace();
-        let method = parts.next().ok_or("no method")?.to_owned();
-        let target = parts.next().ok_or("no request target")?.to_owned();
+        let method = parts.next().ok_or(Malformed)?.to_owned();
+        let target = parts.next().ok_or(Malformed)?.to_owned();
 
         let mut headers = Vec::new();
         let mut head_size = line.len();
@@ -76,7 +83,7 @@ impl Request {
             }
             head_size = head_size.saturating_add(header.len());
             if head_size > MAX_HEAD {
-                return Err("request head too large".to_owned());
+                return Err(Malformed);
             }
             if let Some((name, value)) = trimmed.split_once(':') {
                 headers.push((name.trim().to_lowercase(), value.trim().to_owned()));
@@ -87,14 +94,12 @@ impl Request {
             .iter()
             .find(|(name, _)| name == "content-length")
             .map_or(Ok(0), |(_, value)| value.parse::<usize>())
-            .map_err(|_| "content-length is not a number".to_owned())?;
+            .map_err(|_| Malformed)?;
         if declared > MAX_BODY {
-            return Err(format!("a body of {declared} bytes is too large"));
+            return Err(Malformed);
         }
         let mut body = vec![0_u8; declared];
-        reader
-            .read_exact(&mut body)
-            .map_err(|error| format!("the body ended early: {error}"))?;
+        reader.read_exact(&mut body).map_err(|_| Malformed)?;
 
         Ok(Self {
             method,
@@ -105,11 +110,15 @@ impl Request {
     }
 }
 
-fn take_line(reader: &mut BufReader<TcpStream>, into: &mut String) -> Result<(), String> {
+/// Reads one line, treating a closed connection as a request that never came.
+///
+/// An empty read and a broken socket are the same answer here, and the reason is
+/// the same one that makes every refusal an empty response: what this host knows
+/// about how a caller failed is not a caller's to learn.
+fn take_line(reader: &mut BufReader<TcpStream>, into: &mut String) -> Result<(), Malformed> {
     match reader.read_line(into) {
-        Ok(0) => Err("the connection closed before a request arrived".to_owned()),
-        Ok(_) => Ok(()),
-        Err(error) => Err(format!("could not read the request: {error}")),
+        Ok(read) if read > 0 => Ok(()),
+        _ => Err(Malformed),
     }
 }
 
@@ -121,11 +130,17 @@ pub(crate) struct Response {
 }
 
 impl Response {
-    pub(crate) fn text(status: u16, message: &str) -> Self {
+    /// An answer that is only a status.
+    ///
+    /// Every refusal this host makes uses it. A body explaining what went wrong
+    /// would describe this host's parser, its storage and its rules to whoever
+    /// asked — and whoever asked may be enumerating servers rather than reading
+    /// a drop.
+    pub(crate) const fn empty(status: u16) -> Self {
         Self {
             status,
             etag: None,
-            body: message.as_bytes().to_vec(),
+            body: Vec::new(),
         }
     }
 
@@ -136,7 +151,6 @@ impl Response {
             304 => "Not Modified",
             400 => "Bad Request",
             404 => "Not Found",
-            405 => "Method Not Allowed",
             412 => "Precondition Failed",
             428 => "Precondition Required",
             _ => "Internal Server Error",

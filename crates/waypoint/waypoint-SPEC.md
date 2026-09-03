@@ -175,8 +175,8 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 |---|---|
 | `MAX_HEAD = 8 KiB`、`MAX_BODY = 1 MiB`、`IDLE = 30s` | 让恶意调用者无法用一个请求耗尽宿主 |
 | `SHARD_WIDTH = 2` | 目录分片；地址本已均匀，直接取前缀比再哈希一次更省 |
-| `BANNER = "kusanagi-box/1 …"` | 一句自述，**不是证据**；`doctor` 无视它并实测 |
-| `TTL_HEADER = "X-Kusanagi-Ttl"` | 盒子协议的扩展头，见 `docs/box-protocol.md` |
+| `TTL_HEADER = "Cache-Control"`，值为 `max-age=<秒>` | **只用普通流量已经在带的头。** 原来是 `X-Kusanagi-Ttl`，它把本项目的名字明文放在每一个请求里，给宕主、给沿途每一个代理、给它们的每一份日志——包括能看到 TLS 内部的那些。见 `docs/box-protocol.md` |
+| 不发 `User-Agent` | 默认会把 HTTP 库的名字与版本送出去，而版本号会把「这可能是谁」的集合缩小。改发浏览器的 UA 被否决：一个浏览器头配上一个显然不是浏览器的 TLS 握手，比沉默更醒目。钉在 `tests/unannounced.rs` |
 
 ## 15 影响面
 

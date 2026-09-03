@@ -25,6 +25,10 @@
 //! Channel names are checked rather than escaped. A name is a path component
 //! here, and the set of characters that are safe in a path component on every
 //! system worth supporting is small enough to just say out loud.
+//!
+//! Nothing here calls `fs::write` or `fs::create_dir_all` directly. Every write
+//! goes through `permissions`, which is the one place that decides who else on
+//! this machine can read a channel secret.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +39,7 @@ use kusanagi_kernel::{Handle, Signer};
 
 use crate::channel::Channel;
 use crate::error::SiteError;
+use crate::permissions;
 
 /// The longest a channel name may be.
 const MAX_NAME: usize = 32;
@@ -96,7 +101,7 @@ impl Site {
             return Ok(existing);
         }
         self.make_root()?;
-        write_new(&self.root.join("identity"), seed, "write an identity")?;
+        permissions::write_new(&self.root.join("identity"), seed, "write an identity")?;
         Ok(Signer::from_seed(seed))
     }
 
@@ -138,15 +143,9 @@ impl Site {
     pub fn keep(&self, name: &str, channel: &Channel) -> Result<(), SiteError> {
         let path = self.channel_path(name)?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| SiteError::Local {
-                action: "create the channel directory",
-                source,
-            })?;
+            permissions::create_dir(parent, "create the channel directory")?;
         }
-        fs::write(&path, channel.to_bytes()).map_err(|source| SiteError::Local {
-            action: "write a channel",
-            source,
-        })
+        permissions::write(&path, &channel.to_bytes(), "write a channel")
     }
 
     /// How far one author's stream on one channel has been verified.
@@ -192,15 +191,9 @@ impl Site {
     pub fn mark(&self, name: &str, cairn: &Cairn) -> Result<(), SiteError> {
         let path = self.cairn_path(name, &cairn.author())?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| SiteError::Local {
-                action: "create the cairn directory",
-                source,
-            })?;
+            permissions::create_dir(parent, "create the cairn directory")?;
         }
-        fs::write(&path, cairn.to_bytes()).map_err(|source| SiteError::Local {
-            action: "write a cairn",
-            source,
-        })
+        permissions::write(&path, &cairn.to_bytes(), "write a cairn")
     }
 
     /// Deletes one channel record.
@@ -264,7 +257,13 @@ impl Site {
                 action: "list the channels",
                 source,
             })?;
-            if let Some(name) = entry.file_name().to_str() {
+            // A name a channel can have never starts with a dot — `check_name`
+            // allows only `a-z`, `0-9` and `-`. So anything that does is not a
+            // channel, and the one thing that produces one is a staged record
+            // left behind by a write this process did not live to finish.
+            if let Some(name) = entry.file_name().to_str()
+                && !name.starts_with('.')
+            {
                 names.push(name.to_owned());
             }
         }
@@ -309,17 +308,15 @@ impl Site {
         let revoked = self.revocations()?.revoking(step);
         let lines: Vec<String> = revoked.iter().map(ToString::to_string).collect();
         self.make_root()?;
-        fs::write(self.root.join("revoked"), lines.join("\n")).map_err(|source| SiteError::Local {
-            action: "write the revocation list",
-            source,
-        })
+        permissions::write(
+            &self.root.join("revoked"),
+            lines.join("\n").as_bytes(),
+            "write the revocation list",
+        )
     }
 
     fn make_root(&self) -> Result<(), SiteError> {
-        fs::create_dir_all(&self.root).map_err(|source| SiteError::Local {
-            action: "create the site directory",
-            source,
-        })
+        permissions::create_dir(&self.root, "create the site directory")
     }
 
     fn channel_path(&self, name: &str) -> Result<PathBuf, SiteError> {
@@ -355,18 +352,4 @@ fn check_name(name: &str) -> Result<(), SiteError> {
         name: name.to_owned(),
         reason: format!("a name is 1 to {MAX_NAME} characters of a-z, 0-9 and -"),
     })
-}
-
-/// Writes a file that must not already exist.
-fn write_new(path: &Path, bytes: &[u8], action: &'static str) -> Result<(), SiteError> {
-    use std::io::Write as _;
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|source| SiteError::Local { action, source })?;
-    file.write_all(bytes)
-        .map_err(|source| SiteError::Local { action, source })?;
-    file.sync_all()
-        .map_err(|source| SiteError::Local { action, source })
 }

@@ -86,8 +86,10 @@ demo:
     invite=$($alice --json invite --name bob --waypoint "$ground/host" | grep -o 'kusanagi1:[0-9a-f]*')
     echo "${invite:0:72}…"
     echo
-    echo '--- bob joins with nothing but that line ---'
-    $bob join "$invite" --name alice
+    echo '--- bob joins with nothing but that line, piped in ---'
+    # Piped, not passed: the line carries the channel secret, and an argument is
+    # readable by every account on the machine and kept by the shell afterwards.
+    echo "$invite" | $bob join --name alice
     echo
     for line in "the first thing alice says" "the second" "the third"; do
         $alice send --to bob "$line" > /dev/null

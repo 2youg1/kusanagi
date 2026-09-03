@@ -18,6 +18,18 @@
 //!   learns nothing, which is what makes address unlinkability worth anything.
 //! - **There is no account.** The server never learns who anybody is, so it has
 //!   nothing to disclose.
+//! - **There is no self-description.** No response names this program, its
+//!   version, or what it is for. A caller who does not already hold an address
+//!   gets one answer — `404`, empty — to every question, which is what an
+//!   ordinary static file server gives them.
+//!
+//! That last one is the difference between a host somebody runs and a host
+//! somebody can be found running. A banner at a well-known path turns an
+//! internet-wide scan into a list of this network's users, and the scan costs
+//! one request per address. The capability banner that used to live at
+//! `/health` had exactly one caller in this workspace — its own test — because
+//! `kusanagi doctor` measures a host rather than believing it (`ARCHITECTURE.md`
+//! §8), so removing it cost nothing that was being used.
 //!
 //! Objects carry an expiry in front of the bytes, so a swept object and an object
 //! that was never written are the same answer, `404`, with no bookkeeping to
@@ -31,9 +43,6 @@ use kusanagi_kernel::{Clock, DropAddr, Instant, PutOutcome, Waypoint as _};
 
 use crate::exchange::{IDLE, Request, Response, address_of, etag};
 use kusanagi_waypoint::DirWaypoint;
-
-/// What this server says it can do, for `doctor` and for people.
-const BANNER: &str = "kusanagi-box/1 write-once=yes conditional-read=yes expiry=yes";
 
 /// A host: a directory, an HTTP door, and no opinions.
 #[derive(Debug)]
@@ -94,33 +103,35 @@ impl<C: Clock> Server<C> {
         let mut reader = BufReader::new(stream);
         let response = match Request::read(&mut reader) {
             Ok(request) => self.route(&request),
-            Err(reason) => Response::text(400, &reason),
+            Err(_) => Response::empty(400),
         };
         response.write(reader.get_mut())
     }
 
+    /// Routes one request, telling a stranger nothing.
+    ///
+    /// Every answer that is not about a drop somebody already knows the address
+    /// of is the same answer: `404` with an empty body. A method this host does
+    /// not implement, a path that is not a drop, and a drop that is not there are
+    /// deliberately one response rather than three — three would let a scanner
+    /// recover the address grammar, and the grammar is enough to tell this host
+    /// apart from any other server on the same port.
     fn route(&self, request: &Request) -> Response {
-        match (request.method.as_str(), request.target.as_str()) {
-            ("GET", "/health") => Response::text(200, BANNER),
-            ("GET", target) => match address_of(target) {
-                Some(addr) => self.read(&addr, request),
-                None => Response::text(404, "no such resource"),
-            },
-            ("PUT", target) => match address_of(target) {
-                Some(addr) => self.write(&addr, request),
-                None => Response::text(404, "no such resource"),
-            },
-            _ => Response::text(405, "this host answers GET and PUT"),
+        match (request.method.as_str(), address_of(&request.target)) {
+            ("GET", Some(addr)) => self.read(&addr, request),
+            ("PUT", Some(addr)) => self.write(&addr, request),
+            _ => Response::empty(404),
         }
     }
 
     fn read(&self, addr: &DropAddr, request: &Request) -> Response {
-        let stored = match self.drops.get(addr) {
-            Ok(stored) => stored,
-            Err(error) => return Response::text(500, &error.to_string()),
+        // The reason stays on this machine. A message describing what failed on
+        // the host's own disk is a description of the host's software.
+        let Ok(stored) = self.drops.get(addr) else {
+            return Response::empty(500);
         };
         let Some(bytes) = stored.and_then(|envelope| self.unwrap_envelope(&envelope)) else {
-            return Response::text(404, "nothing is here");
+            return Response::empty(404);
         };
 
         let tag = etag(&bytes);
@@ -143,27 +154,19 @@ impl<C: Clock> Server<C> {
 
     fn write(&self, addr: &DropAddr, request: &Request) -> Response {
         if request.header("if-none-match") != Some("*") {
-            return Response::text(
-                428,
-                "this host has no unconditional write; send If-None-Match: *",
-            );
+            return Response::empty(428);
         }
-        let expires_at = match request.header("x-kusanagi-ttl") {
+        let expires_at = match request.header("cache-control").and_then(max_age) {
             None => Instant::NEVER,
-            Some(value) => match value.trim().parse::<u64>() {
-                Ok(seconds) => self.clock.now().plus_seconds(seconds),
-                Err(_) => return Response::text(400, "a lifetime is a whole number of seconds"),
-            },
+            Some(seconds) => self.clock.now().plus_seconds(seconds),
         };
 
         let mut envelope = expires_at.as_unix_seconds().to_be_bytes().to_vec();
         envelope.extend_from_slice(&request.body);
         match self.drops.put_if_absent(addr, &envelope) {
-            Ok(PutOutcome::Stored) => Response::text(201, "stored"),
-            Ok(PutOutcome::AlreadyPresent) => {
-                Response::text(412, "this drop has already been claimed")
-            }
-            Err(error) => Response::text(500, &error.to_string()),
+            Ok(PutOutcome::Stored) => Response::empty(201),
+            Ok(PutOutcome::AlreadyPresent) => Response::empty(412),
+            Err(_) => Response::empty(500),
         }
     }
 
@@ -174,6 +177,23 @@ impl<C: Clock> Server<C> {
             Instant::from_unix_seconds(u64::from_be_bytes(<[u8; 8]>::try_from(stamp).ok()?));
         (self.clock.now() < expires_at).then(|| bytes.to_vec())
     }
+}
+
+/// The lifetime a `Cache-Control` value asks for, if it asks for one.
+///
+/// A standard header rather than one of ours. `X-Kusanagi-Ttl` named the product
+/// in every request, in the clear, to every proxy and every log on the path —
+/// which is a fingerprint that survives TLS termination anywhere. `max-age` is
+/// the header a browser, a CDN and a package manager all send anyway.
+///
+/// An unparsable directive is ignored rather than refused, which is what
+/// RFC 9111 §5.2 asks of a recipient and also what keeps a malformed value from
+/// being a way to tell this host apart from a cache.
+fn max_age(value: &str) -> Option<u64> {
+    value
+        .split(',')
+        .filter_map(|directive| directive.trim().strip_prefix("max-age="))
+        .find_map(|seconds| seconds.trim().parse::<u64>().ok())
 }
 
 #[cfg(test)]
@@ -216,6 +236,29 @@ mod tests {
     }
 
     #[test]
+    fn a_lifetime_is_read_out_of_an_ordinary_cache_header() {
+        // Every one of these is something a real cache sends. Getting any of
+        // them wrong is either an object that never expires when it should, or
+        // one that expires immediately when it should not.
+        assert_eq!(super::max_age("max-age=60"), Some(60));
+        assert_eq!(super::max_age("no-cache, max-age=60"), Some(60));
+        assert_eq!(super::max_age(" max-age = 60 "), None);
+        assert_eq!(super::max_age("max-age=0"), Some(0));
+        assert_eq!(
+            super::max_age("public, max-age=3600, immutable"),
+            Some(3_600)
+        );
+        // Not a lifetime, and ignored rather than refused: RFC 9111 §5.2 asks a
+        // recipient to skip what it does not understand, and refusing would make
+        // a malformed value into a way of telling this host apart from a cache.
+        assert_eq!(super::max_age("max-age="), None);
+        assert_eq!(super::max_age("max-age=soon"), None);
+        assert_eq!(super::max_age("max-age=-1"), None);
+        assert_eq!(super::max_age("s-maxage=60"), None);
+        assert_eq!(super::max_age(""), None);
+    }
+
+    #[test]
     fn a_segment_crosses_a_tcp_connection_and_comes_back_whole() {
         let (client, root) = box_on(
             "roundtrip",
@@ -229,7 +272,6 @@ mod tests {
             PutOutcome::Stored
         );
         assert_eq!(client.get(&addr).unwrap(), Some(b"a segment".to_vec()));
-        assert!(client.health().unwrap().starts_with("kusanagi-box/1"));
 
         std::fs::remove_dir_all(&root).ok();
     }

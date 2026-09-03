@@ -30,6 +30,6 @@ pub use clock::{Clock, FixedClock, Instant};
 pub use digest::{Digest, DigestParseError};
 pub use identity::{Handle, NotAuthentic, Signature, Signer};
 pub use link::{ChainHead, Link};
-pub use segment::{MAX_PAYLOAD, Segment, SegmentError, SegmentId};
+pub use segment::{MAX_PAYLOAD, MAX_SEGMENT, Segment, SegmentError, SegmentId};
 pub use waypoint::{PutOutcome, Waypoint, WaypointError};
 pub use wire::{Hex, HexError, Incomplete, Reader, unhex};

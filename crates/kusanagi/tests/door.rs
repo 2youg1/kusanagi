@@ -38,12 +38,19 @@ fn door(root: &Path, arguments: &[&str], fed: &[u8]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("the binary would not start");
-    child
+    let written = child
         .stdin
         .take()
         .expect("stdin was not piped")
-        .write_all(fed)
-        .expect("could not write to the child");
+        .write_all(fed);
+    match written {
+        Ok(()) => {}
+        // A reader that has read its limit and exited closes the pipe under us.
+        // That is the bound working, not the harness failing: `join` reads at
+        // most 16 KiB and refuses rather than buffering whatever arrives.
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {}
+        Err(error) => panic!("could not write to the child: {error}"),
+    }
     child.wait_with_output().expect("the child did not finish")
 }
 
@@ -86,7 +93,9 @@ fn bytes_piped_in_come_back_out_exactly() {
         b"",
     ));
     let line = invited["invite"].as_str().unwrap().to_owned();
-    reported(&door(&bob, &["join", &line, "--name", "alice"], b""));
+    // The invitation goes in on stdin, never as an argument: it is a bearer
+    // token, and arguments are readable by every account on the machine.
+    reported(&door(&bob, &["join", "--name", "alice"], line.as_bytes()));
 
     // A payload no shell would carry: a NUL, a byte that is not UTF-8, and a
     // newline in the middle of it.
@@ -152,6 +161,90 @@ fn a_mistyped_flag_is_a_complaint_like_any_other() {
     let asked = raw(&["--help"]);
     assert_eq!(asked.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&asked.stdout).contains("forget"));
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+/// The ways an invitation actually arrives on stdin, and the ways it does not.
+///
+/// The invitation stopped being an argument because an argument is public: on
+/// Linux any account can read another process's command line out of `/proc`, and
+/// the shell keeps it afterwards. Moving it to stdin closes that, and creates a
+/// new set of edges — a paste with a trailing newline, a paste with none, a paste
+/// from a Windows clipboard carrying `\r\n`, an empty pipe, and a pipe carrying
+/// something that is not an invitation at all.
+#[test]
+fn an_invitation_arrives_on_stdin_however_it_was_pasted() {
+    let ground = scratch("door-stdin");
+    let host = ground.join("host").display().to_string();
+    let alice = ground.join("alice");
+
+    // One invitation admits exactly one endpoint, so each clipboard gets its
+    // own. That rule is asserted elsewhere; here it is a constraint on the test.
+    let clipboards: [fn(&str) -> String; 4] = [
+        |line| line.to_owned(),
+        |line| format!("{line}\n"),
+        // What a Windows clipboard hands over.
+        |line| format!("{line}\r\n"),
+        // What a chat window hands over.
+        |line| format!("  {line}  \n\n"),
+    ];
+
+    for (round, paste) in clipboards.iter().enumerate() {
+        let channel = format!("bob-{round}");
+        let invited = reported(&door(
+            &alice,
+            &["invite", "--name", &channel, "--waypoint", &host],
+            b"",
+        ));
+        let line = invited["invite"].as_str().unwrap();
+
+        let bob = ground.join(format!("bob-{round}"));
+        let joined = reported(&door(
+            &bob,
+            &["join", "--name", "alice"],
+            paste(line).as_bytes(),
+        ));
+        assert_eq!(joined["command"], "joined", "paste {round} did not join");
+    }
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+#[test]
+fn a_pipe_with_nothing_in_it_is_a_complaint_and_not_a_hang() {
+    let ground = scratch("door-empty-stdin");
+    let bob = ground.join("bob");
+
+    // Somebody typed the command and forgot the pipe. The answer has to be the
+    // ordinary shape — a stable code and a way out — rather than a wait.
+    let said = complained(&door(&bob, &["join", "--name", "alice"], b""));
+    assert_eq!(said["code"], "kusanagi.malformed");
+    // And the way out names the pipe, because there is no other way in. Advice
+    // that says "copy the invitation" without saying where to put it sends a
+    // person looking for a flag this program does not have.
+    let recover = said["recover"].as_str().unwrap();
+    assert!(
+        recover.contains("pipe") && recover.contains("join"),
+        "the way out of an empty pipe does not mention the pipe: {recover}"
+    );
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+#[test]
+fn a_pipe_carrying_something_else_is_refused_rather_than_buffered() {
+    let ground = scratch("door-junk-stdin");
+    let bob = ground.join("bob");
+
+    // Far more than an invitation can be, so the bound in `invitation` decides
+    // this rather than the parser. What matters is that it ends, with an answer.
+    let flood = vec![b'x'; 1_000_000];
+    let said = complained(&door(&bob, &["join", "--name", "alice"], &flood));
+    assert!(
+        !said["code"].as_str().unwrap().is_empty(),
+        "a flood on stdin was not answered with a code: {said}"
+    );
 
     std::fs::remove_dir_all(&ground).ok();
 }

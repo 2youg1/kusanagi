@@ -34,6 +34,7 @@ import Data.ByteString qualified as ByteString
 import Data.List (intercalate)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import Data.Word (Word64)
 import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
@@ -129,7 +130,7 @@ discover =
 -- against a program it can no longer read.
 ask :: Door -> FilePath -> Verb -> IO Answer
 ask (Door binary) site verb = do
-  (status, out, err) <- capture binary (argv site verb) Nothing
+  (status, out, err) <- capture binary (argv site verb) (fed verb)
   case status of
     ExitSuccess -> either (unreadable out) (pure . Accepted) (decodeOutcome out)
     ExitFailure _ -> either (unreadable err) (pure . Refused) (decodeComplaint err)
@@ -168,6 +169,16 @@ typed (Door binary) arguments input = do
 argv :: FilePath -> Verb -> [String]
 argv site verb = ["--root", site, "--json"] <> spoken verb
 
+-- | What a verb needs on stdin, if it needs anything.
+--
+-- Only @join@ does. The invitation carries the channel secret and a signing
+-- key, so the product refuses to take it as an argument: arguments are readable
+-- by every account on the machine while the process runs, and the shell keeps
+-- them afterwards. This adversary types what a person types, so it pipes.
+fed :: Verb -> Maybe ByteString.ByteString
+fed (Join (Invitation line) _) = Just (Text.encodeUtf8 line)
+fed _ = Nothing
+
 spoken :: Verb -> [String]
 spoken = \case
   Identity -> ["id"]
@@ -183,8 +194,8 @@ spoken = \case
     , "--can"
     , listed abilities
     ]
-  Join (Invitation line) (ChannelName name) ->
-    ["join", Text.unpack line, "--name", Text.unpack name]
+  -- The invitation itself goes in on stdin; see `fed`.
+  Join _ (ChannelName name) -> ["join", "--name", Text.unpack name]
   Send (ChannelName name) text ->
     ["send", "--to", Text.unpack name, Text.unpack text]
   Read (ChannelName name) -> ["read", "--from", Text.unpack name]

@@ -164,7 +164,7 @@ signature   64   作者对以上全部（前缀域分隔后）的签名
 | tag = 1 但 index 为 0 | `FollowsIndexZero` |
 | payload_len 声明 1000 实际 5 | `Truncated` |
 | 完整段之后多 1 字节 | `TrailingBytes { count: 1 }` |
-| payload 超过 64 KiB | 构造时 `PayloadTooLarge` |
+| payload 超过 `MAX_PAYLOAD` | 构造时 `PayloadTooLarge` |
 | 前驱高度为 `u64::MAX` | `ChainExhausted` |
 | 任意一位被翻转 | 解码失败（`Truncated`/`UnknownTag`/`NotAuthentic` 之一） |
 | `Digest::from_str` 收到大写 | `Hex(Charset)`——**不做大小写归一化** |
@@ -200,7 +200,9 @@ kernel 内部不做恢复——一切失败都是调用方的输入问题，一�
 |---|---|---|
 | `b"kusanagi.segment.v2"` | 段 id 的域分隔前缀 | 布局变更须同步升版，否则两种格式的 id 相撞 |
 | `b"kusanagi.segment.v2.sign"` | 签名域 | 同上 |
-| `MAX_PAYLOAD = 65_536` | 单段上限；更大的负载属于尚不存在的分块机制 | 超限一律拒绝而非静默切分 |
+| `MAX_SEGMENT = 4_076` | 一个段的规范字节最长多长。**这才是被选定的那个数**：`kusanagi_seal::veil` 把每个密封 drop 固定在 4 096 字节，减去 16 字节认证 tag 与 4 字节长度前缀，剩下的就是它 | 两边一旦错开，`veil.rs` 里的 `const _: () = assert!(…)` 使整个 workspace 编译不过 |
+| `MAX_PAYLOAD = 3_935` | 单段载荷上限，**是减出来的不是选出来的**：`MAX_SEGMENT` 减去 141 字节固定开销。更大的负载属于尚不存在的分块机制 | 超限一律拒绝而非静默切分。从 65 536 降到这里是一次破坏性变更，代价写在 `ARCHITECTURE.md` §8 |
+| `OVERHEAD = 141` | tag 1 + index 8 + previous 32 + author 32 + `payload_len` 4 + signature 64。genesis 段短 32 字节，这个差别同样被信封盖住 | 布局变了这三个数要一起算 |
 | `DropAddr` 宽 20 字节 | 160 位，抗生日碰撞，且文本键长 40 字符 | 改宽度则全部既存地址失效 |
 
 ## 15 影响面

@@ -23,6 +23,7 @@
 mod channel;
 mod error;
 mod invite;
+mod permissions;
 mod site;
 
 pub use channel::{Channel, Peer, Standing};

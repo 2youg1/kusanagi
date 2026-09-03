@@ -24,12 +24,14 @@ library
   exposed-modules:
     Kusanagi.Answer
     Kusanagi.Cairn
+    Kusanagi.Discriminator
     Kusanagi.Door
     Kusanagi.Ground
     Kusanagi.Keyboard
     Kusanagi.Lying
     Kusanagi.Model
     Kusanagi.Regression
+    Kusanagi.Veil
 
   build-depends:
     , aeson               >=2.1  && <2.3

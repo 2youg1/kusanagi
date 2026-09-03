@@ -13,6 +13,8 @@
 | U1 通道秘密 | `Secret`，以及由它派生的 `Stream` | 同一 `(secret, author)` 得同一 `Stream`；不同 author 得不同 `Stream` |
 | U2 地址与密钥派生 | `derive(stream, index) -> (DropAddr, Key)` | 一千个高度得一千个互不相同的地址；换一个 secret 则整张地址表不相交 |
 | U3 封装 | `seal` / `open` | 往返恒等；任意一位翻转被拒；换一个高度的密钥打不开 |
+| U4 定长信封（`Veil`） | `veil::pad` / `veil::unpad`，以及常量 `DROP` | 任何长度的明文封出来都是 4 096 字节；非零填充被拒 |
+| U5 秘密不残留 | `Secret` / `Stream` / `Key` 的 `ZeroizeOnDrop` | 三个类型都满足 `ZeroizeOnDrop` 约束；`Secret` 与 `Stream` 不可比较 |
 
 **不负责**：谁被允许写（属 `grant`）、字节存在哪里（属 `waypoint`）、段的结构（属 `kernel`）。
 
@@ -22,6 +24,8 @@
 2. 一千次派生得到一千个不同的 `DropAddr`（`secret.rs` 的 `a_thousand_addresses_are_a_thousand_addresses`）。
 3. 同一通道内两个作者在每个高度都不碰撞（`the_two_lanes_of_one_channel_never_collide`，覆盖 0..64）。
 4. 封装后的字节不含明文（`the_sealed_form_does_not_contain_the_plain_form`）。
+4a. 任何长度的明文封出的密文都恰好 `DROP = 4 096` 字节（`every_drop_is_the_same_size_whatever_it_carries`）；长度不对的字节一律不开（`bytes_that_are_not_one_drop_long_never_open`）。
+4b. 填充区任意一个非零字节使 `unpad` 返回 `Rejected`（`a_pad_that_carries_anything_is_refused`）。
 5. 密文任意一位翻转后 `open` 返回 `OpenFailed::Rejected`（`every_flipped_byte_is_refused`，逐字节遍历）。
 6. `Secret`、`Stream`、`Key` 的 `Debug` 不打印字节。
 7. 端到端：`crates/kusanagi/tests/unlinkable.rs` 从宿主视角断言一百段之间无可关联特征。
@@ -66,9 +70,10 @@ envelope.rs   Key / seal / open —— 标准件的装配
 ## 8 接口先行
 
 ```rust
-pub struct Secret([u8; 32]);              // 私有字段；Debug 为 "Secret(redacted)"
+pub const DROP: usize = 4_096;            // 每个密封 drop 在线上的字节数
+pub struct Secret([u8; 32]);              // 私有字段；Debug 为 "Secret(redacted)"；ZeroizeOnDrop；不可比较
 pub struct Stream([u8; 32]);              // 同上
-pub struct Key { bytes: [u8; 32], nonce: [u8; 12] }   // 无 Clone，无公开构造器
+pub struct Key { bytes: [u8; 32], nonce: [u8; 12] }   // 无 Clone，无公开构造器，ZeroizeOnDrop
 
 impl Secret {
     pub const fn from_bytes(bytes: [u8; 32]) -> Self;
@@ -81,7 +86,7 @@ pub fn seal(key: &Key, plain: &[u8]) -> Result<Vec<u8>, OpenFailed>;
 pub fn open(key: &Key, sealed: &[u8]) -> Result<Vec<u8>, OpenFailed>;
 ```
 
-**用类型消灭的非法状态**：`Key` 没有公开构造器，因此一把钥匙只能来自一次 `derive`，「同一把钥匙加密两条消息」在调用方写不出来；`Key` 不实现 `Clone`，因此它也不能被复制到第二处使用。
+**用类型消灭的非法状态**：`Key` 没有公开构造器，因此一把钥匙只能来自一次 `derive`，「同一把钥匙加密两条消息」在调用方写不出来；`Key` 不实现 `Clone`，因此它也不能被复制到第二处使用。**`Secret` 与 `Stream` 删掉了 `PartialEq`**：全仓没有任何一处比较两个秘密，而 derive 出来的比较耗时取决于前缀匹配了多少字节——把 trait 拿掉是让这个错误写不出来，而不是写下来不要犯。
 
 ## 9 工作流程
 
@@ -108,15 +113,26 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 
 **步骤 3：nonce 也是派生量。** 每个 drop 一把新钥匙，所以 nonce 取什么都安全；派生它只多两行，却让「零 nonce」这个需要读者停下来验算的写法从代码里消失。
 
+**步骤 5：一个尺寸，没有梯子。** 密文长度是宕主不需要任何密码分析就能拿到的一个事实，而一份记录的长度剖面在加密之后原封不动地存活。`veil::pad` 把「4 字节长度前缀 + 段的规范字节 + 零填充」凑成固定的 `DROP - 16` 字节。
+
+**为什么不用分档梯子。** 梯子仍然告诉宕主落在哪一档；更重要的是，梯子上每一个边界都是一个**有人选的参数**，而两个选得不一样的构建会把各自的用户分成两个可区分的人群——可配置性就是匿名集分割。PADMÉ（Nikitin et al., PETS 2019）是尺寸跨越数量级时的已发表答案，在这里是错的：段本来就被封顶在一个 drop 内，整个取值范围装得下一个桶。
+
+**步骤 6：填充必须校验为零。** 不校验的填充是一条完美的隐蔽信道：它在认证信封**内部**（因此 tag 与签名都看不见它），它恰好在消息短时最长，而下游永远不会去看它一眼。一个被改过的构建可以每条消息带几 KB 地把身份种子运出去，而全仓测试照绿。校验一次比较，关掉它。
+
+**步骤 7：尺寸的权威在 `kernel`，且由编译期断言钉住。** `veil.rs` 里一句 `const _: () = assert!(ROOM == MAX_SEGMENT, …)`：信封尺寸与 `kernel` 允许的最大段一旦错开，整个 workspace 编译不过——而不是等到运行时 `seal` 拒绝一条已经签好名的段。
+
 **步骤 4：封装整个段，而不是段的 payload。** 段的规范字节里明文携带作者 `Handle`。若只封 payload，宿主可以按作者把 drop 分组，上面所有的地址不可链接性一文不值。这条是 `ARCHITECTURE.md` §8 记录在案的决定。
 
 ## 11 边界枚举
 
 | 输入 | 期望 |
 |---|---|
-| 空明文 | 正常往返，密文 16 字节（纯 tag） |
-| 密文短于 16 字节 | `OpenFailed::Rejected` |
-| 空密文 | `OpenFailed::Rejected` |
+| 空明文 | 正常往返，密文仍为 `DROP` 字节 |
+| 任何长度不等于 `DROP` 的密文 | `OpenFailed::Rejected`，在解密之前 |
+| 恰好 `DROP` 字节的随机字节 | `OpenFailed::Rejected` |
+| 填充区非零 | `OpenFailed::Rejected` |
+| 长度前缀超过信封本身 | `OpenFailed::Rejected` |
+| 明文大于 `MAX_SEGMENT` | `OpenFailed::Oversize`；由编译期断言保证对一个段不可达 |
 | 用另一个 index 的 key 打开 | `OpenFailed::Rejected` |
 | 用另一个 secret 派生的 key 打开 | `OpenFailed::Rejected` |
 | `index = u64::MAX` | 正常派生；本 crate 不定义链高上限 |
@@ -129,8 +145,9 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 
 | 变体 | 何时 | 稳定码 |
 |---|---|---|
-| `Rejected` | 字节不是在这把钥匙下封装的——无论是钥匙错、位翻转、截断，还是从别的地址搬过来的 | `seal.rejected` |
+| `Rejected` | 字节不是在这把钥匙下封装的——无论是钥匙错、位翻转、长度不对、填充带了东西，还是从别的地址搬过来的 | `seal.rejected` |
 | `Unusable` | 密码套件拒绝这把钥匙（在本 crate 的构造下不可达，但不 panic） | `seal.unusable` |
+| `Oversize` | 明文装不进一个 drop。与 `Rejected` 分开是安全的：它不是伪造，而是本端调用方越了本端 `kernel` 已经在执行的上限，对端永远触不到 | `seal.oversize` |
 
 **四种失败合并成一个答案是刻意的**：告诉攻击者伪造在哪一步失败，等于送他一个判定预言机。
 
@@ -139,9 +156,12 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 | 依赖 | 理由 | 替代方案与代价 |
 |---|---|---|
 | `chacha20poly1305` 0.10 | RustCrypto 的 AEAD，纯 Rust、无 C 工具链、软件实现常数时间 | `aes-gcm` 在无 AES-NI 的设备上更慢且更难做到常数时间 |
+| `zeroize` 1 | 三个秘密类型出作用域即擦除。**它本来就在依赖树里**（`ed25519-dalek` 用它擦签名私钥），直接依赖它不增加任何需要审计的代码 | 手写擦除会被优化器删掉，除非用 volatile 写入或内存屏障，而那正是这个 crate 在做的事 |
 | `blake3`（已在全仓） | 自带 KDF 模式，全仓一个哈希原语 | 引入 `hkdf` 会多一套需要审计的构造，且多一个依赖 |
 
 ## 14 硬编码声明
+
+**`DROP = 4 096`。** 它是线路格式的一部分，不是可调参数：改它的构建与没改的构建不能互相读写，而两个尺寸不同的人群是宕主分得开的两个人群。选 4 KiB 的理由是文件系统、对象存储与 TLS 记录都已经在用这个量级，且它把 `MAX_PAYLOAD` 留在 3 935 字节——对代理之间的一条消息绰绰有余。代价是一条 11 字节的消息也占 4 KiB，这是为属性 4a 付的带宽，已计入。
 
 三个 context 字符串（见 §10 步骤 1）。它们**是线路格式的一部分**：改动其中任何一个，之后派生出的全部地址与密钥都会改变，两个 context 不一致的端点连对方的信箱在哪都算不出来。日期部分按 BLAKE3 的约定保留，用于将来需要换代时给出一个新的、明确不同的 context。
 

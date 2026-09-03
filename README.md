@@ -14,8 +14,8 @@ who wrote them.
 kusanagi invite --name bob --waypoint http://box.example:8443
 # prints: kusanagi1:0100cff7...
 
-# on Bob's machine
-kusanagi join 'kusanagi1:0100cff7...' --name alice
+# on Bob's machine — piped, never pasted as an argument
+pbpaste | kusanagi join --name alice
 kusanagi send --to alice "the build is green"
 ```
 
@@ -62,12 +62,18 @@ kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8443
 **2. Bob joins.** He needs the line and nothing else.
 
 ```bash
-kusanagi --root ~/.bob join 'kusanagi1:0100…' --name alice
+pbpaste | kusanagi --root ~/.bob join --name alice
+# or:  kusanagi --root ~/.bob join --name alice < invitation.txt
 ```
 
+**The invitation is read from stdin and cannot be given as an argument.** It
+carries the channel secret, and on Linux any account on the machine can read
+another process's command line out of `/proc`, after which the shell keeps a copy
+in its history. Treating it like a password means never letting it become an
+argument.
+
 The invitation works exactly once. If someone else used it first, Bob gets
-`kusanagi.invite_spent` and should ask for a fresh one. Treat the line like a
-password until it is used.
+`kusanagi.invite_spent` and should ask for a fresh one.
 
 **3. They talk.**
 
@@ -105,7 +111,7 @@ who has never seen this repository.
 |---|---|
 | `id` | Show this endpoint's handle. Creates an identity on first use. |
 | `invite --name N --waypoint W [--for SECS] [--can send,read]` | Open a channel and mint one invitation. |
-| `join <INVITE> --name N` | Accept an invitation. |
+| `join --name N` | Accept an invitation, read from stdin. It is never an argument: see step 2. |
 | `send --to N ["text"]` | Append one message. Without the text, the payload is read from stdin. |
 | `read --from N [--after H] [--mine]` | Read the peer's messages, verified from the start. `--after H` returns only what follows height `H`. `--mine` reads your own. |
 | `channels` | List the channels here, what each one still permits, and until when. |

@@ -119,3 +119,70 @@ fn reading_after_a_height_reports_only_what_follows() {
 
     std::fs::remove_dir_all(&ground).ok();
 }
+
+#[test]
+fn the_largest_payload_that_fits_a_drop_goes_through_and_one_more_does_not() {
+    // The limit is not a number somebody picked. Every sealed drop is one fixed
+    // size, and `MAX_PAYLOAD` is what is left of that size after the segment's
+    // own fields and the authentication tag — so this is the boundary between a
+    // message that fits in one envelope and one that would need chunking, which
+    // does not exist yet.
+    let ground = scratch("payload-limit");
+    let host = ground.join("host");
+    let alice = Endpoint::new(ground.join("alice"));
+    let bob = Endpoint::new(ground.join("bob"));
+
+    let invitation = invite_line(&alice, "bob", &host.display().to_string());
+    bob.run(&Request::Join {
+        invite: invitation,
+        name: "alice".to_owned(),
+    })
+    .unwrap();
+
+    let brim = usize::try_from(kusanagi_kernel::MAX_PAYLOAD).unwrap();
+    alice
+        .run(&Request::Send {
+            name: "bob".to_owned(),
+            payload: vec![b'z'; brim],
+        })
+        .expect("the largest payload that fits was refused");
+
+    let refused = alice
+        .run(&Request::Send {
+            name: "bob".to_owned(),
+            payload: vec![b'z'; brim + 1],
+        })
+        .expect_err("one byte over the limit was accepted");
+    assert_eq!(refused.code(), "segment.payload_too_large");
+
+    // And the drop that did go through is the same size as every other one, so
+    // the largest message this network carries is not visible as the largest.
+    let sizes: Vec<u64> = files_under(&host).into_iter().map(|(_, len)| len).collect();
+    assert!(!sizes.is_empty(), "the host is holding nothing");
+    assert!(
+        sizes.iter().all(|len| *len == sizes[0]),
+        "a full-sized message stood out on the host: {sizes:?}"
+    );
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+/// Every file under `root`, with its length.
+fn files_under(root: &std::path::Path) -> Vec<(std::path::PathBuf, u64)> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if path.file_name().and_then(|name| name.to_str()) == Some(".staging") {
+                continue;
+            }
+            found.extend(files_under(&path));
+        } else if let Ok(data) = std::fs::metadata(&path) {
+            found.push((path, data.len()));
+        }
+    }
+    found
+}

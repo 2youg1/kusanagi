@@ -30,6 +30,7 @@
 //! to audit and buy nothing.
 
 use kusanagi_kernel::{DropAddr, Handle};
+use zeroize::{Zeroize as _, ZeroizeOnDrop};
 
 use crate::envelope::Key;
 
@@ -49,7 +50,15 @@ const KEY_CONTEXT: &str = "kusanagi 2026-01-01 drop key and nonce";
 /// Everything either of them can address or read follows from these 32 bytes, so
 /// this is the whole of what an invitation hands over and the whole of what a
 /// compromised endpoint gives away.
-#[derive(Clone, PartialEq, Eq)]
+///
+/// **Deliberately not comparable.** Two secrets are never compared anywhere in
+/// this workspace, and a derived `PartialEq` would compare them in a time that
+/// depends on how many leading bytes match — the shape of an oracle. Removing
+/// the trait makes the mistake unwritable instead of documenting it.
+///
+/// It erases itself on the way out, so a secret does not outlive the value that
+/// held it in freed memory, a core dump or a swap file.
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Secret([u8; 32]);
 
 impl Secret {
@@ -71,7 +80,10 @@ impl Secret {
         let mut hasher = blake3::Hasher::new_derive_key(STREAM_CONTEXT);
         hasher.update(&self.0);
         hasher.update(author.as_bytes());
-        Stream(*hasher.finalize().as_bytes())
+        let mut derived = *hasher.finalize().as_bytes();
+        let stream = Stream(derived);
+        derived.zeroize();
+        stream
     }
 }
 
@@ -88,7 +100,9 @@ impl core::fmt::Debug for Secret {
 /// Derived rather than agreed: both endpoints compute both lanes from the shared
 /// secret and the two public handles, so no negotiation is needed to know where
 /// the other side writes.
-#[derive(Clone, PartialEq, Eq)]
+///
+/// Not comparable and self-erasing, for the reasons [`Secret`] is not and is.
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Stream([u8; 32]);
 
 impl core::fmt::Debug for Stream {
@@ -121,7 +135,10 @@ pub fn derive(stream: &Stream, index: u64) -> (DropAddr, Key) {
     output.fill(&mut cipher_key);
     output.fill(&mut nonce);
 
-    (DropAddr::from_bytes(address), Key::new(cipher_key, nonce))
+    let key = Key::new(cipher_key, nonce);
+    cipher_key.zeroize();
+    nonce.zeroize();
+    (DropAddr::from_bytes(address), key)
 }
 
 #[cfg(test)]
@@ -193,5 +210,20 @@ mod tests {
             format!("{:?}", secret().stream(&alice().handle())),
             "Stream(redacted)"
         );
+    }
+
+    /// Compiles only while every type that holds key material erases itself.
+    ///
+    /// A `Drop` implementation cannot be observed from safe Rust — reading the
+    /// bytes after the value is gone is exactly the undefined behaviour this
+    /// workspace forbids — so what is asserted is the bound. Losing the derive is
+    /// then a compile error rather than a silent change in what a core dump
+    /// contains.
+    #[test]
+    fn every_secret_erases_itself() {
+        const fn erases<T: zeroize::ZeroizeOnDrop>() {}
+        erases::<Secret>();
+        erases::<super::Stream>();
+        erases::<crate::Key>();
     }
 }

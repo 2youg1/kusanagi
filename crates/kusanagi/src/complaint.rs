@@ -241,9 +241,13 @@ impl Complaint {
             Self::BadName { .. } => "pick a name of 1 to 32 characters from a-z, 0-9 and -, \
                  and run the command again"
                 .to_owned(),
-            Self::BadInvitation { .. } => {
-                "copy the whole invitation, including the `kusanagi1:` prefix".to_owned()
-            }
+            // The advice names the pipe because there is no other way in. An
+            // invitation carries the channel secret, so it is not an argument,
+            // and telling somebody to "copy the invitation" without saying where
+            // to put it sends them looking for a flag that does not exist.
+            Self::BadInvitation { .. } => "pipe the whole invitation in, including the \
+                 `kusanagi1:` prefix: pbpaste | kusanagi join --name NAME"
+                .to_owned(),
             Self::BadRecord { .. } => "this file is not one this build can read; keep it and \
                  report it, because a record written here should not fail to parse"
                 .to_owned(),

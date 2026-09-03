@@ -40,6 +40,10 @@ ed25519-dalek = { version = "2.1", default-features = false, features = [
 chacha20poly1305 = { version = "0.10", default-features = false, features = [
     "alloc",
 ] }
+# Already in the tree beneath `ed25519-dalek`, which zeroizes its signing key.
+# Taking it directly adds no crate to audit and extends the same guarantee to the
+# channel secret, the stream and the per-drop key.
+zeroize = { version = "1", features = ["derive"] }
 getrandom = "0.3"
 hmac = "0.12"
 sha2 = "0.10"

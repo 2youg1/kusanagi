@@ -38,6 +38,7 @@ import Data.ByteString qualified as ByteString
 import Data.Char (isUpper)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import System.Exit (ExitCode (..))
 import Test.QuickCheck (Arbitrary (..), chooseInt)
 
@@ -162,7 +163,10 @@ lines_ bench =
   , ["--root", benchSite bench, "revoke", "--from", benchChannel bench]
   , ["--root", benchSite bench, "forget", "--channel", benchChannel bench]
   , ["--root", benchSite bench, "doctor", benchWaypoint bench]
-  , ["--root", benchOther bench, "join", benchInvitation bench, "--name", "someone"]
+  -- No invitation on the line: the product takes it on stdin, and this bench
+  -- gives it none, so the refusal that follows is the one a person gets when
+  -- they forget to pipe.
+  , ["--root", benchOther bench, "join", "--name", "someone"]
   , ["--root", benchOther bench, "invite", "--name", "carol", "--waypoint", benchWaypoint bench]
   , ["--root", benchOther bench, "invite", "--name", "carol", "--waypoint", benchWaypoint bench, "--can", "read"]
   ]
@@ -178,7 +182,11 @@ prepare door alice bob host = do
   invitation <- case decodeOutcome (typedOut minted) of
     Right (Invited _ (Invitation line) _) -> pure (Text.unpack line)
     other -> fail ("the bench could not be built: " <> show other)
-  _ <- Door.typed door (root bob <> ["join", invitation, "--name", "alice"]) Nothing
+  _ <-
+    Door.typed
+      door
+      (root bob <> ["join", "--name", "alice"])
+      (Just (Text.encodeUtf8 (Text.pack invitation)))
   _ <- Door.typed door (root alice <> ["send", "--to", "bob", "a first thing"]) Nothing
   _ <- Door.typed door (root alice <> ["read", "--from", "bob"]) Nothing
   pure

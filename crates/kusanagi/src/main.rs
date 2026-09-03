@@ -60,10 +60,13 @@ enum Verb {
         #[arg(long = "can", default_value = "send,read", value_name = "ABILITIES")]
         can: String,
     },
-    /// Accept an invitation.
+    /// Accept an invitation, read from stdin.
+    ///
+    /// The invitation is not an argument. It carries the channel secret and a
+    /// signing key, and a command line is public: on Linux any account on the
+    /// machine can read another process's arguments out of `/proc`, and the
+    /// shell writes them to a history file that outlives the channel.
     Join {
-        /// The invitation, as one line.
-        invite: String,
         /// What to call the channel here.
         #[arg(long, value_name = "NAME")]
         name: String,
@@ -147,6 +150,40 @@ fn abilities(text: &str) -> Result<Abilities, Complaint> {
     Ok(abilities)
 }
 
+/// The invitation, which arrives only on stdin.
+///
+/// There is no argument form, and that is the fix for a leak rather than a
+/// preference about interfaces. An invitation is a bearer token: whoever reads
+/// it holds the channel secret and can compute every address on the channel
+/// forever. Arguments are readable by every account on the machine while the
+/// process runs, and by anybody who opens the shell history afterwards.
+///
+/// The read is bounded. A real invitation is a few hundred characters; anything
+/// much larger is not one, and refusing to buffer it is cheaper than parsing it.
+fn invitation() -> Result<String, Complaint> {
+    /// Room for an invitation carrying a long locator and a deep grant chain.
+    const MOST: u64 = 16_384;
+
+    let input = std::io::stdin();
+    if input.is_terminal() {
+        return Err(Complaint::Argument {
+            what: "the invitation",
+            reason: "is read from stdin, and stdin is a terminal".to_owned(),
+            instead: "pipe it in: pbpaste | kusanagi join --name NAME, \
+                      or kusanagi join --name NAME < invitation.txt",
+        });
+    }
+    let mut text = String::new();
+    input
+        .take(MOST)
+        .read_to_string(&mut text)
+        .map_err(|source| Complaint::Local {
+            action: "read the invitation from stdin",
+            source,
+        })?;
+    Ok(text)
+}
+
 /// The bytes a segment will carry: what was typed, or what was piped in.
 ///
 /// Reading stdin when no text is given is what lets a caller send a payload with
@@ -193,7 +230,10 @@ fn request(verb: Verb) -> Result<Request, Complaint> {
             lifetime,
             abilities: abilities(&can)?,
         },
-        Verb::Join { invite, name } => Request::Join { invite, name },
+        Verb::Join { name } => Request::Join {
+            invite: invitation()?,
+            name,
+        },
         Verb::Send { name, text } => Request::Send {
             name,
             payload: payload(text)?,
