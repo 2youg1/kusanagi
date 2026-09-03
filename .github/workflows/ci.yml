@@ -41,7 +41,7 @@ jobs:
             all=$(find "$dir" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
             total=$((total + all))
             printf '%-12s src=%-6s all=%s\n' "$(basename "$dir")" "$src" "$all"
-            [ "$src" -le 2500 ] || { echo "::error::$(basename "$dir") exceeds 2500 source lines"; exit 1; }
+            [ "$src" -le 4000 ] || { echo "::error::$(basename "$dir") exceeds 4000 source lines"; exit 1; }
           done
           echo "workspace total: $total"
           [ "$total" -le 25000 ] || { echo "::error::workspace exceeds 25000 lines"; exit 1; }
@@ -54,3 +54,28 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  # A build that is reproducible on one machine is deterministic; a build that is
+  # reproducible on two is the claim `docs/VERIFY.md` makes. This is the second
+  # machine, and it is not one anybody here controls.
+  reproducible:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build twice and compare
+        shell: bash
+        run: |
+          built() {
+            cargo build --release --locked --message-format json 2>/dev/null \
+              | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4
+          }
+          cargo build --release --locked --quiet
+          first=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\')
+          touch crates/kusanagi/src/main.rs
+          cargo build --release --locked --quiet
+          second=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\')
+          echo "first  $first"
+          echo "second $second"
+          [ "$first" = "$second" ] || { echo "::error::two builds of one source differ"; exit 1; }

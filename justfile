@@ -182,6 +182,77 @@ adversary:
     cd adversary
     KUSANAGI_BIN="$built" cabal test --test-show-details=direct
 
+# Let this program reach the proxy and nothing else. Needs an administrator.
+#
+# **A sandbox has to be imposed from outside the thing being sandboxed.** A
+# process cannot credibly shut itself in, so this is a Windows Firewall rule
+# about a path, applied by somebody who is not that path. What it buys: a
+# compromised kusanagi cannot reach a host directly, cannot send a plaintext DNS
+# query, and cannot exfiltrate anywhere except through the proxy — which is the
+# one destination its own design already assumes is watching.
+#
+# What it does not buy is written in `docs/confine.md`, and it is the important
+# half: the allowed channel is enough to carry a site away, and the host was
+# never trusted with anything in the first place.
+#
+# Idempotent: the rules are deleted before they are added.
+confine port="9050":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    binary=$(cd "$(dirname "$0")" && pwd)/target/release/kusanagi.exe
+    [ -f "$binary" ] || { echo "build it first: just dist"; exit 1; }
+    just unconfine
+    # Windows evaluates block rules before allow rules, so the block cannot be
+    # `remoteip=any` or it would swallow the allow. The complement of loopback is
+    # spelled out instead.
+    powershell -NoProfile -Command "\
+      New-NetFirewallRule -DisplayName 'kusanagi-proxy-only-allow' -Direction Outbound \
+        -Program '$binary' -RemoteAddress 127.0.0.1 -RemotePort {{ port }} \
+        -Protocol TCP -Action Allow | Out-Null; \
+      New-NetFirewallRule -DisplayName 'kusanagi-proxy-only-block' -Direction Outbound \
+        -Program '$binary' -RemoteAddress 0.0.0.0-126.255.255.255,128.0.0.0-255.255.255.255 \
+        -Action Block | Out-Null"
+    echo "kusanagi.exe may now reach 127.0.0.1:{{ port }} and nothing else."
+    echo "Check it: \`kusanagi doctor http://example.com:80\` must fail with waypoint.timeout."
+
+# Take the confinement off.
+unconfine:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    powershell -NoProfile -Command "\
+      Get-NetFirewallRule -DisplayName 'kusanagi-proxy-only-*' -ErrorAction SilentlyContinue \
+        | Remove-NetFirewallRule"
+    echo "the confinement is off."
+
+# Whether this machine builds the same bytes twice.
+#
+# A checksum on a release page says "this file is this file". It only says
+# anything worth having if the source produces that file again, so this builds
+# twice from a forced rebuild and compares. What it cannot prove alone is that
+# *another* machine gets the same answer; CI runs the same recipe, and two
+# independent machines agreeing is the claim `docs/VERIFY.md` actually makes.
+repro:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    built() {
+        cargo build --release --locked --message-format json 2>/dev/null \
+            | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4
+    }
+    cargo build --release --locked --quiet
+    # GNU coreutils prefixes the line with a backslash when the file name holds
+    # one, which every Windows path does.
+    first=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\\')
+    # A rebuild of the leaf crate relinks the binary, which is where a timestamp
+    # or an absolute path would show up if one had got in.
+    touch crates/kusanagi/src/main.rs
+    cargo build --release --locked --quiet
+    second=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\\')
+    if [ "$first" != "$second" ]; then
+        printf 'two builds of the same source differ:\n  %s\n  %s\n' "$first" "$second"
+        exit 1
+    fi
+    printf 'reproducible: %s\n' "$first"
+
 # What a release ships: a stripped release binary and its checksum.
 dist:
     #!/usr/bin/env bash
@@ -201,3 +272,7 @@ dist:
     (cd dist && sha256sum "$name" > "$name.sha256")
     echo "dist/$name"
     cat "dist/$name.sha256"
+    # The binary's own answer to the same question. Whoever receives this file
+    # can check it without installing anything: run it. See `docs/VERIFY.md`.
+    "dist/$name" doctor --here --json | grep '"binary"'
+    rustc -vV | sed -n 's/^release: /rustc /p'

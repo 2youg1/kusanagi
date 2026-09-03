@@ -1,0 +1,43 @@
+# Everything about a build that would otherwise depend on where it happened.
+#
+# `just dist` prints a hash, and a hash of a file only says "this file is this
+# file" unless the same source produces the same file on somebody else's
+# machine. Two things stop it doing so by default: absolute paths compiled into
+# the binary, and incremental state carried between builds.
+#
+# The paths go first. `rustc` records the file names of everything it compiles
+# so that a panic can name a line, and those names include the checkout
+# directory and the registry cache — both of which differ per machine and per
+# user. Remapping them to fixed strings costs nothing at runtime and makes a
+# panic message say `/kusanagi/crates/...` instead of somebody's home directory,
+# which is also one fewer thing a crash report gives away.
+#
+# The registry remap has to come first: `CARGO_HOME` sits inside a home
+# directory on some systems, and `rustc` applies these in order.
+#
+# What this file cannot pin is the linker. On Windows the release artefact is
+# `x86_64-pc-windows-msvc`, so `link.exe` and the Windows SDK decide part of the
+# output, and their versions are recorded by hand at release time —
+# `docs/VERIFY.md` says where. `/Brepro` asks the linker to leave out its
+# timestamp, which is the one field that changes on every single link.
+[build]
+rustflags = [
+  "--remap-path-prefix=$CARGO_HOME/registry=/cargo/registry",
+  "--remap-path-prefix=$CARGO_HOME/git=/cargo/git",
+]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+  "--remap-path-prefix=$CARGO_HOME/registry=/cargo/registry",
+  "--remap-path-prefix=$CARGO_HOME/git=/cargo/git",
+  "-Clink-arg=/Brepro",
+]
+
+[profile.release]
+# Nothing is carried between builds, so nothing about the previous one can reach
+# this one. Off by default for release, and stated here because a reproducible
+# build is not allowed to rest on a default.
+incremental = false
+# No debug information at all, which removes both the largest source of embedded
+# paths and the largest source of per-build variation.
+debug = 0

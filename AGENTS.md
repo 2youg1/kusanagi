@@ -23,7 +23,9 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 | `just deny` | licences, advisories and banned crates, against `deny.toml` |
 | `just demo` | two identities, one host, one verifiable exchange, in a throwaway directory |
 | `just budget` | line counts against the budget in `ARCHITECTURE.md` §5 |
-| `just dist` | a stripped release binary and its SHA-256 |
+| `just dist` | a stripped release binary, its SHA-256, and the hash the binary reports about itself |
+| `just repro` | builds twice and refuses if the two differ; `docs/VERIFY.md` says what that does and does not establish |
+| `just confine` / `just unconfine` | a Windows Firewall rule letting this binary reach the proxy and nothing else. Needs an administrator; `docs/confine.md` says what it buys |
 | `just adversary` | the Haskell counterexample hunter in `adversary/`. **Not part of `just check`**, needs GHC, and skips itself when GHC is absent |
 
 ## Read before you write
