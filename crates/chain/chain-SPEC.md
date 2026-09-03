@@ -135,7 +135,9 @@ pub fn fork(left: &Segment, right: &Segment) -> Option<Fork>;
 
 ## 附：v0.0.1 的两处变化
 
-**一、作者身份现在是可证的。** `kernel::Handle` 由「名字的哈希」变成 Ed25519 公钥，段带签名，`Segment::from_canonical_bytes` 解码即验签。对本 crate 的影响只有一处，而且是收紧：`Verifier::accept` 判定的 `AuthorChanged`，此前意为「有人在这条链上声称了另一个名字」，现在意为「有人在这条链上出示了另一把钥匙签的段」——**声称变成了证明**。测试改为用 `Signer::from_seed` 构造作者，逻辑一行未动。
+**一、0 号以上的段不再带签名，认证由 Trail 承担。** `Verifier::accept` 多一道检查：段出示的 `reveal` 哈希后必须等于前一段发布的 `commit`，不等则 `ProofRefused`。这是 0 号以上的段唯一一处变成「可信」的地方——解码器只解析它们。`Cairn` 因此多带 32 字节承诺，`WIDTH` 73 → 105：从 cairn 续读的人手里已经没有下面那一段了，承诺是它接受下一段所需的全部。可否认性的验收在 `tests/deniable.rs`，那里真的伪造一份通得过的抄本。
+
+**二、作者身份现在是可证的。** `kernel::Handle` 由「名字的哈希」变成 Ed25519 公钥，段带签名，`Segment::from_canonical_bytes` 解码即验签。对本 crate 的影响只有一处，而且是收紧：`Verifier::accept` 判定的 `AuthorChanged`，此前意为「有人在这条链上声称了另一个名字」，现在意为「有人在这条链上出示了另一把钥匙签的段」——**声称变成了证明**。测试改为用 `Signer::from_seed` 构造作者，逻辑一行未动。
 
 **二、`walk` 没有放进本 crate。** 从 waypoint 上取回一条流并逐段验证，需要同时用到 `waypoint`（取）、`seal`(解封) 与 `chain`(验序)，它是三者的组合而不是任何一个的内部逻辑，因此留在 `kusanagi::walk`。把它搬进来会迫使本 crate 依赖 `seal` 与 `waypoint`，并复制一份几乎与 `Complaint` 相同的错误枚举——为省下一百行而多写五十行，且给「读一条流出了什么错」制造第二个权威。
 

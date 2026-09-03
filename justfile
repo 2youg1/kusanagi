@@ -3,6 +3,42 @@ default: check
 
 check: fmt lint test budget deny
 
+# The inner loop, for while a change is still being written.
+#
+# **Not a substitute for `check`, and it is not allowed to become one.** It skips
+# the two gates whose cost does not depend on what was edited: `cargo deny` walks
+# the whole dependency tree whatever changed, and `budget` walks every tracked
+# file. Both are seconds, and both belong to the closing run rather than to a
+# loop somebody runs forty times an hour.
+#
+# Pass the crates you touched, and their dependents will come with them because
+# cargo rebuilds what it must:
+#
+#     just quick kusanagi-kernel
+#     just quick "kusanagi-seal kusanagi-chain"
+#
+# With no argument it holds to the crates whose files git reports as changed,
+# which is the common case and needs no thought at the keyboard.
+quick crates="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    picked="{{ crates }}"
+    if [ -z "$picked" ]; then
+        picked=$(git status --porcelain | awk '{print $NF}' | grep -o '^crates/[^/]*' \
+            | sort -u | sed 's|crates/|kusanagi-|' | tr '\n' ' ')
+        # `crates/kusanagi` is the one whose package name is not prefixed.
+        picked=${picked//kusanagi-kusanagi/kusanagi}
+    fi
+    if [ -z "$picked" ]; then
+        echo "nothing under crates/ has changed; run \`just check\`"
+        exit 0
+    fi
+    selected=$(for crate in $picked; do printf -- '-p %s ' "$crate"; done)
+    echo "quick: $picked"
+    cargo fmt --all
+    cargo clippy $selected --all-targets --all-features -- -D warnings
+    cargo test $selected --all-features
+
 fmt:
     cargo fmt --all
 
