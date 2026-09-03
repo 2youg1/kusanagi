@@ -22,7 +22,8 @@
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
-use crate::access::Proxy;
+use crate::access::Access;
+use crate::client::Client;
 use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 use crate::sigv4::{Credentials, Signing};
 
@@ -36,7 +37,7 @@ pub struct S3Waypoint {
     region: String,
     credentials: Credentials,
     now: u64,
-    agent: ureq::Agent,
+    client: Client,
 }
 
 impl S3Waypoint {
@@ -53,7 +54,7 @@ impl S3Waypoint {
         prefix: &str,
         region: &str,
         credentials: Credentials,
-        proxy: Option<&Proxy>,
+        access: &Access,
         now: u64,
     ) -> Self {
         let endpoint = endpoint.trim_end_matches('/').to_owned();
@@ -70,12 +71,7 @@ impl S3Waypoint {
             region: region.to_owned(),
             credentials,
             now,
-            agent: Proxy::applied(
-                proxy,
-                ureq::Agent::config_builder().http_status_as_error(false),
-            )
-            .build()
-            .into(),
+            client: Client::new(access),
         }
     }
 
@@ -109,21 +105,18 @@ impl S3Waypoint {
             .headers(method, &self.key(addr), payload, extra)?;
         let url = self.url(addr);
         let sent = match method {
-            "PUT" => carrying(self.agent.put(&url), &headers).send(payload),
-            _ => carrying(self.agent.get(&url), &headers).call(),
+            "PUT" => carrying(self.client.agent().put(&url), &headers).send(payload),
+            _ => carrying(self.client.agent().get(&url), &headers).call(),
         };
         let mut response =
-            sent.map_err(|source| transport("talking to an object store", &source))?;
-        let status = response.status().as_u16();
+            sent.map_err(|source| self.client.failed("talking to an object store", &source))?;
+        let status = Client::actionable("talking to an object store", &response)?;
         let validator = response
             .headers()
             .get("etag")
             .and_then(|value| value.to_str().ok())
             .map(Validator::new);
-        let body = response
-            .body_mut()
-            .read_to_vec()
-            .map_err(|source| transport("reading an object", &source))?;
+        let body = Client::body("reading an object", &mut response)?;
         Ok(Answer {
             status,
             validator,
@@ -151,13 +144,6 @@ struct Answer {
     status: u16,
     validator: Option<Validator>,
     body: Vec<u8>,
-}
-
-fn transport(action: &'static str, source: &dyn core::fmt::Display) -> WaypointError {
-    WaypointError::Io {
-        action,
-        source: std::io::Error::other(source.to_string()),
-    }
 }
 
 impl Waypoint for S3Waypoint {
@@ -229,7 +215,7 @@ impl Conditional for S3Waypoint {
     reason = "test code"
 )]
 mod tests {
-    use super::{Credentials, S3Waypoint};
+    use super::{Access, Credentials, S3Waypoint};
     use kusanagi_kernel::DropAddr;
 
     #[test]
@@ -240,7 +226,7 @@ mod tests {
             "kusanagi/",
             "auto",
             Credentials::new("id", "secret"),
-            None,
+            &Access::default(),
             0,
         );
         let addr = DropAddr::from_bytes([0xab; 20]);

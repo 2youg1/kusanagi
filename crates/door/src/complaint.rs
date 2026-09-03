@@ -242,6 +242,19 @@ impl Complaint {
     /// The command that would move the caller forward from here.
     fn recover(&self) -> String {
         match self {
+            // Two of the waypoint's failures have a way out of their own, and
+            // both are about the host rather than the network: one sent this
+            // endpoint somewhere it did not choose, the other said nothing at
+            // all. Telling somebody to run `doctor` against a host that is not
+            // answering wastes the one thing they have, which is a guess.
+            Self::Waypoint(WaypointError::Redirected { .. }) => {
+                "this host is not a box: it answered with somewhere else to go, and that was \
+                 refused rather than followed. Check the waypoint url"
+                    .to_owned()
+            }
+            Self::Waypoint(WaypointError::Unanswered { .. }) => {
+                "retry; if it persists the host is down".to_owned()
+            }
             Self::Waypoint(_) => {
                 "run `kusanagi doctor <waypoint>` to see what the host actually does".to_owned()
             }

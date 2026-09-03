@@ -72,6 +72,27 @@ pub enum WaypointError {
         /// Why the store rejected the key.
         reason: String,
     },
+    /// The host answered with somewhere else to go, and was not followed.
+    ///
+    /// Following it would open a connection this endpoint did not choose,
+    /// handing a third party the endpoint's address and the drop it asked for.
+    /// A host that stores bytes has no reason to redirect, so this is a refusal
+    /// rather than a step.
+    #[error("waypoint sent {action} somewhere else, to {to}")]
+    Redirected {
+        /// What was being attempted.
+        action: &'static str,
+        /// Where the host wanted the request to go instead.
+        to: String,
+    },
+    /// The host took longer than a one-shot command can wait.
+    #[error("waypoint did not answer while {action}, after {after:?}")]
+    Unanswered {
+        /// What was being attempted.
+        action: &'static str,
+        /// How long it was given.
+        after: std::time::Duration,
+    },
 }
 
 impl WaypointError {
@@ -82,6 +103,8 @@ impl WaypointError {
             Self::Io { .. } => "waypoint.io",
             Self::OverwriteNotRefused => "waypoint.overwrite_not_refused",
             Self::UnusableAddress { .. } => "waypoint.unusable_address",
+            Self::Redirected { .. } => "waypoint.redirected",
+            Self::Unanswered { .. } => "waypoint.timeout",
         }
     }
 }

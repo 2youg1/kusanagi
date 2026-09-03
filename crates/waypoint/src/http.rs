@@ -25,7 +25,8 @@
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
-use crate::access::Proxy;
+use crate::access::Access;
+use crate::client::Client;
 use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 
 /// The header that asks for a write only if nothing is there.
@@ -41,35 +42,20 @@ pub const TTL_HEADER: &str = "Cache-Control";
 #[derive(Debug, Clone)]
 pub struct HttpWaypoint {
     base: String,
-    agent: ureq::Agent,
+    client: Client,
 }
 
 impl HttpWaypoint {
     /// Points at `base`, which is the root URL of a box.
     ///
-    /// Status codes are *not* treated as transport errors: 404, 412 and 304 are
-    /// all normal answers in this protocol, and an adapter that could not tell
-    /// them apart from a broken connection would have to guess.
-    ///
-    /// **No `User-Agent`.** An agent string puts a library name and version into
-    /// every request, where a host, a proxy and any log on the path can read it,
-    /// and a version narrows the set of people it could be. Sending none says
-    /// less than sending anything, and is unremarkable: plenty of API traffic
-    /// carries no agent string. A borrowed browser header above a handshake that
-    /// is plainly not a browser's would be a worse tell than silence.
+    /// What this endpoint will let the host do to it — redirect it, keep it
+    /// waiting, hand it an unbounded body — is decided once, in
+    /// [`Client`](crate::client::Client), and not restated here.
     #[must_use]
-    pub fn new(base: &str, proxy: Option<&Proxy>) -> Self {
-        let agent = Proxy::applied(
-            proxy,
-            ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .user_agent(ureq::config::AutoHeaderValue::None),
-        )
-        .build()
-        .into();
+    pub fn new(base: &str, access: &Access) -> Self {
         Self {
             base: base.trim_end_matches('/').to_owned(),
-            agent,
+            client: Client::new(access),
         }
     }
 
@@ -84,7 +70,8 @@ impl HttpWaypoint {
         ttl: Option<u64>,
     ) -> Result<PutOutcome, WaypointError> {
         let mut request = self
-            .agent
+            .client
+            .agent()
             .put(self.url(addr))
             .header(IF_NONE_MATCH, "*")
             .header("Content-Type", "application/octet-stream");
@@ -93,9 +80,9 @@ impl HttpWaypoint {
         }
         let response = request
             .send(bytes)
-            .map_err(|source| transport("writing to a box", &source))?;
+            .map_err(|source| self.client.failed("writing to a box", &source))?;
 
-        match response.status().as_u16() {
+        match Client::actionable("writing to a box", &response)? {
             200 | 201 | 204 => Ok(PutOutcome::Stored),
             412 => Ok(PutOutcome::AlreadyPresent),
             428 => Err(WaypointError::OverwriteNotRefused),
@@ -103,15 +90,6 @@ impl HttpWaypoint {
                 reason: format!("the box answered {other} to a conditional write"),
             }),
         }
-    }
-}
-
-/// Every transport failure arrives here, so that the action being attempted is
-/// attached in one place rather than at a dozen call sites.
-fn transport(action: &'static str, source: &dyn core::fmt::Display) -> WaypointError {
-    WaypointError::Io {
-        action,
-        source: std::io::Error::other(source.to_string()),
     }
 }
 
@@ -134,13 +112,13 @@ impl Conditional for HttpWaypoint {
         addr: &DropAddr,
         known: Option<&Validator>,
     ) -> Result<Fetched, WaypointError> {
-        let mut request = self.agent.get(self.url(addr));
+        let mut request = self.client.agent().get(self.url(addr));
         if let Some(validator) = known {
             request = request.header(IF_NONE_MATCH, validator.as_str());
         }
         let mut response = request
             .call()
-            .map_err(|source| transport("reading from a box", &source))?;
+            .map_err(|source| self.client.failed("reading from a box", &source))?;
 
         let validator = response
             .headers()
@@ -148,14 +126,11 @@ impl Conditional for HttpWaypoint {
             .and_then(|value| value.to_str().ok())
             .map(Validator::new);
 
-        match response.status().as_u16() {
+        match Client::actionable("reading from a box", &response)? {
             304 => Ok(Fetched::Unchanged),
             404 => Ok(Fetched::Absent),
             200 => {
-                let bytes = response
-                    .body_mut()
-                    .read_to_vec()
-                    .map_err(|source| transport("reading a segment from a box", &source))?;
+                let bytes = Client::body("reading a segment from a box", &mut response)?;
                 Ok(Fetched::Fresh { bytes, validator })
             }
             other => Err(WaypointError::UnusableAddress {

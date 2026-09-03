@@ -32,7 +32,7 @@ use std::net::TcpListener;
 use std::sync::mpsc;
 
 use kusanagi_kernel::{DropAddr, Waypoint as _};
-use kusanagi_waypoint::{Conditional as _, HttpWaypoint};
+use kusanagi_waypoint::{Access, Conditional as _, HttpWaypoint};
 
 /// Words no request may contain, in the case a reader would match on.
 const TELLS: [&str; 4] = ["kusanagi", "ureq", "rust", "drop"];
@@ -96,7 +96,9 @@ fn address() -> DropAddr {
 #[test]
 fn a_read_names_nothing_about_the_program_making_it() {
     let head = overhear(|base| {
-        HttpWaypoint::new(base, None).get(&address()).ok();
+        HttpWaypoint::new(base, &Access::default())
+            .get(&address())
+            .ok();
     });
     judge(&head);
 }
@@ -104,7 +106,7 @@ fn a_read_names_nothing_about_the_program_making_it() {
 #[test]
 fn a_write_names_nothing_about_the_program_making_it() {
     let head = overhear(|base| {
-        HttpWaypoint::new(base, None)
+        HttpWaypoint::new(base, &Access::default())
             .put_if_absent(&address(), &[0_u8; 64])
             .ok();
     });
@@ -117,7 +119,7 @@ fn asking_for_a_lifetime_does_not_name_this_project() {
     // name in front of every proxy on the route. What replaced it is the header
     // a CDN sends.
     let head = overhear(|base| {
-        HttpWaypoint::new(base, None)
+        HttpWaypoint::new(base, &Access::default())
             .put_with_ttl(&address(), &[0_u8; 64], 3_600)
             .ok();
     });
@@ -158,7 +160,9 @@ fn what_a_request_actually_carries_is_written_down() {
     // Not an assertion about a list — a record of the whole head, so that a
     // dependency that starts sending something new is seen rather than inferred.
     let head = overhear(|base| {
-        HttpWaypoint::new(base, None).get(&address()).ok();
+        HttpWaypoint::new(base, &Access::default())
+            .get(&address())
+            .ok();
     });
     let names: Vec<String> = head
         .iter()

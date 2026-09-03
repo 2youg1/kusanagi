@@ -61,6 +61,7 @@
 lib.rs          模块索引
 conformance.rs  契约：一个函数，不是一组 #[test]
 conditional.rs  Conditional seam：Validator / Fetched / TtlOutcome
+client.rs       Client —— 客户端允许宙主对自己做什么；重定向、超时、正文上限一处定
 dir.rs          目录适配器
 memory.rs       内存适配器
 http.rs         盒子的客户端一半
@@ -150,6 +151,10 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 | locator 写成不认识的 scheme（`ftp://…`） | `LocatorError::UnknownScheme`，码 `locator.unknown_scheme`。**不得当成相对目录**：那会让 `doctor` 去实测一个文件名，给出四条与问题无关的 BROKEN |
 | 盒子返回 428 | `WaypointError::OverwriteNotRefused` |
 | 盒子返回未知状态码 | `UnusableAddress`，把状态码写进 reason |
+| 宙主回 3xx | `Redirected`，码 `waypoint.redirected`。**不跟随**：跟随就是把本端 IP 与想要的地址交给一个本端没选过的第三方 |
+| 宙主接了连接却不说话 | `Unanswered`，码 `waypoint.timeout`，`patience` 到点即退——法则 1 要求动词会退出 |
+| 宙主回超过 `MAX_OBJECT` 的正文 | `waypoint.io`，在读完之前停；内存不随宙主的说法增长 |
+| 代理写成 `socks5://` | 改写为 `socks5h://` 再交给 ureq——否则客户端先在本机解析域名，明文 DNS 恰好泄给这个设置要避开的那个观察者 |
 | 请求头超过 8 KiB / body 超过 1 MiB | `400` |
 | 空 payload | 正常往返；**空与缺席是两件事** |
 | S3 返回 403 | 视同 `Absent`（多数桶对不存在的 key 返回 403 而非 404） |
@@ -159,6 +164,8 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 ## 12 错误处理
 
 传输失败一律 `WaypointError`，带 `action` 说明当时在做什么。**状态码不当作传输错误**（`http_status_as_error(false)`）：404、412、304 都是本协议的正常回答，分不清它们与断线的适配器只能靠猜。
+
+**超时与重定向各自成码，因为恢复动作不同**：`waypoint.timeout` 该重试，`waypoint.redirected` 说的是「这个地址不是一个盒子」。两者的翻译只在 `client.rs` 一处发生，两个适配器共用——否则 s3 与 http 会对同一种失败各说一套。
 
 `probe::examine` **从不返回 `Err`**：宿主行为不端是结果而不是中断，因此不可达的宿主会让四项都成为 `Broken` 并附上 io 消息。
 
@@ -179,7 +186,10 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 | `SHARD_WIDTH = 2` | 目录分片；地址本已均匀，直接取前缀比再哈希一次更省 |
 | `TTL_HEADER = "Cache-Control"`，值为 `max-age=<秒>` | **只用普通流量已经在带的头。** 一个以本项目命名的头会把它明文放进每一个请求，交给宿主、沿途每一个代理与它们的每一份日志——包括能看到 TLS 内部的那些。见 `docs/box-protocol.md` |
 | 代理从 `KUSANAGI_PROXY` 读，且只在 `kusanagi::assembly` 读一次 | 与 S3 凭据同一条规矩：读环境变量的地方全仓只有一处。**读不懂的值当场拒绝，不静默忽略**——一个失效时默默放行的隐私开关，比没有这个开关更坏 |
-| 不发 `User-Agent` | 默认会把 HTTP 库的名字与版本送出去，而版本号会把「这可能是谁」的集合缩小。改发浏览器的 UA 被否决：一个浏览器头配上一个显然不是浏览器的 TLS 握手，比沉默更醒目。钉在 `tests/unannounced.rs` |
+| 不发 `User-Agent` | 默认会把 HTTP 库的名字与版本送出去，而版本号会把「这可能是谁」的集合缩小。改发浏览器的 UA 被否决：一个浏览器头配上一个显然不是浏览器的 TLS 握手，比沉默更醒目。钉在 `tests/unannounced.rs`。**现在对桶也一样**：同一个 tell，没有理由只对盒子关掉 |
+| `MAX_OBJECT = 1 MiB` | 一个 drop 是 131 072 字节，这是它的八倍。**它同时是客户端愿意读回的上限与 `kusanagi-box` 愿意接受的上限**，box 引用它而不重写 —— 一个数写两遍就会漂 |
+| `PATIENCE = 60s` | 一次请求的**总**时限；按次计的空闲超时拦不住每分钟发一字节的宙主。测试传 1s，它是参数不是接缝 |
+| 重定向上限 0 | 盒子没有理由重定向；能重定向的宙主就能把本端送到任何地方 |
 
 ## 15 影响面
 
@@ -191,7 +201,8 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 
 - `the_whole_contract_holds_over_tcp`——契约经真实 socket 全过；
 - `a_host_that_overwrites_is_reported_broken_not_ignored`——假宿主静默覆写被判 `Broken`；
-- `signing_reproduces_the_published_aws_vector`——无凭据也能证伪 SigV4。
+- `signing_reproduces_the_published_aws_vector`——无凭据也能证伪 SigV4；
+- `tests/hostile_host.rs` 四条——不跟随重定向（并且被点名的那台机器**一次都没被连过**）、不等不说话的宙主、不按宙主的说法分配内存、把域名而不是解析结果交给 SOCKS 代理（ATYP=3）。四条在实现之前先跑过一次，三条红、第四条**永不返回**——后者恰好就是它要拓的缺陷。
 
 **真实桶测试无凭据时不算通过**：它打印 `skipped: …` 并说明需要哪三个环境变量。一个静默略过了唯一验证核心假设的测试的绿色套件，比没有测试更糟。
 

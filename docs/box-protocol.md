@@ -95,7 +95,7 @@ back, which is evidence, while a self-description is not.
 | | |
 |---|---|
 | request head | 8 KiB |
-| body | 1 MiB |
+| body | 1 MiB (`kusanagi_waypoint::MAX_OBJECT`, which is also what a client will read back) |
 | idle connection | 30 seconds |
 | connection reuse | none; every response carries `Connection: close` |
 

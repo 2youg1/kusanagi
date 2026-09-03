@@ -18,6 +18,7 @@
 
 mod access;
 mod certificate;
+mod client;
 mod conditional;
 pub mod conformance;
 mod dir;
@@ -30,6 +31,7 @@ mod sigv4;
 
 pub use access::{Access, Proxy};
 pub use certificate::{Capability, Certificate, Finding, Tier, Verdict};
+pub use client::{MAX_OBJECT, PATIENCE};
 pub use conditional::{Conditional, Fetched, TtlOutcome, Validator};
 pub use dir::DirWaypoint;
 pub use http::{HttpWaypoint, TTL_HEADER};

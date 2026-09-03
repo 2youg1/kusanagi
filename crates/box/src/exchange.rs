@@ -15,15 +15,10 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use kusanagi_kernel::{DropAddr, Hex};
+use kusanagi_waypoint::MAX_OBJECT;
 
 /// How long a connection may stay silent before it is dropped.
 pub(crate) const IDLE: Duration = Duration::from_secs(30);
-
-/// The largest body this server will accept, in bytes.
-///
-/// A segment is capped well below this; the margin is for the envelope and for a
-/// client that pads.
-pub(crate) const MAX_BODY: usize = 1_048_576;
 
 /// The largest request head this server will read, in bytes.
 pub(crate) const MAX_HEAD: usize = 8_192;
@@ -90,14 +85,20 @@ impl Request {
             }
         }
 
+        // Declared in `u64` and compared before it is turned into a length, so
+        // that a caller who announces 2^63 bytes is refused rather than sized
+        // for. The cap is the client's, taken from `kusanagi-waypoint` rather
+        // than restated: what this host accepts and what a caller will read back
+        // are one number, and two copies of it drift.
         let declared = headers
             .iter()
             .find(|(name, _)| name == "content-length")
-            .map_or(Ok(0), |(_, value)| value.parse::<usize>())
+            .map_or(Ok(0), |(_, value)| value.parse::<u64>())
             .map_err(|_| Malformed)?;
-        if declared > MAX_BODY {
+        if declared > MAX_OBJECT {
             return Err(Malformed);
         }
+        let declared = usize::try_from(declared).map_err(|_| Malformed)?;
         let mut body = vec![0_u8; declared];
         reader.read_exact(&mut body).map_err(|_| Malformed)?;
 

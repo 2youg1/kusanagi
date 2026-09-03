@@ -205,7 +205,7 @@ mod tests {
     use super::Server;
     use kusanagi_kernel::{FixedClock, Instant, PutOutcome, Signer, Waypoint as _};
     use kusanagi_seal::{Secret, Stream, derive};
-    use kusanagi_waypoint::{Conditional as _, Fetched, HttpWaypoint, TtlOutcome};
+    use kusanagi_waypoint::{Access, Conditional as _, Fetched, HttpWaypoint, TtlOutcome};
     use std::net::TcpListener;
 
     fn namespace(tag: u8) -> Stream {
@@ -231,7 +231,7 @@ mod tests {
             }
         });
         (
-            HttpWaypoint::new(&format!("http://127.0.0.1:{port}"), None),
+            HttpWaypoint::new(&format!("http://127.0.0.1:{port}"), &Access::default()),
             root,
         )
     }

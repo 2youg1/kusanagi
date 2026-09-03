@@ -132,7 +132,11 @@ pub(crate) fn open(locator: &str, now: Instant) -> Result<Place, Complaint> {
         Ok(text) if !text.trim().is_empty() => Some(Proxy::parse(text.trim())?),
         _ => None,
     };
-    let access = Access { credentials, proxy };
+    let access = Access {
+        credentials,
+        proxy,
+        ..Access::default()
+    };
     Ok(Place::open(&locator, &access, now.as_unix_seconds())?)
 }
 

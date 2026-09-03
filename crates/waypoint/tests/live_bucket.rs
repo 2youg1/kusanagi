@@ -58,7 +58,7 @@ fn bucket() -> Option<Place> {
             &locator,
             &Access {
                 credentials: Some(Credentials::new(&access, &secret)),
-                proxy: None,
+                ..Access::default()
             },
             now,
         )

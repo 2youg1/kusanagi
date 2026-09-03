@@ -29,7 +29,7 @@ use std::net::TcpListener;
 
 use common::host;
 use kusanagi_kernel::{DropAddr, Waypoint as _};
-use kusanagi_waypoint::{HttpWaypoint, Proxy};
+use kusanagi_waypoint::{Access, HttpWaypoint, Proxy};
 
 /// A port nothing is listening on, obtained by listening and then stopping.
 ///
@@ -51,7 +51,7 @@ fn a_configured_proxy_is_the_only_way_out() {
     let addr = DropAddr::from_bytes([0x5c; 20]);
 
     // Straight at the host: the drop is not there, which is an answer.
-    let direct = HttpWaypoint::new(&base, None);
+    let direct = HttpWaypoint::new(&base, &Access::default());
     assert!(
         direct
             .get(&addr)
@@ -65,7 +65,13 @@ fn a_configured_proxy_is_the_only_way_out() {
     // not there.
     let nowhere = Proxy::parse(&format!("socks5://127.0.0.1:{}", closed_port()))
         .expect("that is a proxy locator");
-    let proxied = HttpWaypoint::new(&base, Some(&nowhere));
+    let proxied = HttpWaypoint::new(
+        &base,
+        &Access {
+            proxy: Some(nowhere),
+            ..Access::default()
+        },
+    );
     assert!(
         proxied.get(&addr).is_err(),
         "the request reached the host without the proxy it was given"

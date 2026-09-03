@@ -191,10 +191,9 @@ impl Place {
     ///
     /// [`LocatorError::CredentialsMissing`] when a bucket is named without them.
     pub fn open(locator: &Locator, access: &Access, now: u64) -> Result<Self, LocatorError> {
-        let proxy = access.proxy.as_ref();
         match locator {
             Locator::Directory(path) => Ok(Self::Directory(DirWaypoint::new(path))),
-            Locator::Box { base } => Ok(Self::Box(HttpWaypoint::new(base, proxy))),
+            Locator::Box { base } => Ok(Self::Box(HttpWaypoint::new(base, access))),
             Locator::Bucket {
                 endpoint,
                 bucket,
@@ -211,7 +210,7 @@ impl Place {
                     prefix,
                     region,
                     credentials,
-                    proxy,
+                    access,
                     now,
                 )))
             }

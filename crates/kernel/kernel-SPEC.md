@@ -199,7 +199,7 @@ follows:  tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32 + pa
 | `DigestParseError` | `Digest::from_str` | `digest.length` / `digest.width` / 转发 `hex.*` |
 | `NotAuthentic` | `VerifyingKey::verify` | `identity.not_authentic` |
 | `SegmentError` | 构造与解码 | `segment.*`（十个） |
-| `WaypointError` | 适配器实现 | `waypoint.io` / `waypoint.overwrite_not_refused` / `waypoint.unusable_address` |
+| `WaypointError` | 适配器实现 | `waypoint.io` / `waypoint.overwrite_not_refused` / `waypoint.unusable_address` / `waypoint.redirected` / `waypoint.timeout` |
 
 kernel 内部不做恢复——一切失败都是调用方的输入问题，一律 `Result` 上抛。恢复命令由 CLI 层附加，因为只有那一层知道用户敲了什么。
 
