@@ -2,9 +2,6 @@
 /dist
 /adversary/dist-newstyle
 **/*.rs.bk
-/.kusanagi-scratch
-/.kusanagi
-/.kusanagi-host
 
 # The isolation zone: session handoffs, superseded proposals, and anything else
 # that records how the work was done rather than what the work is. Nothing in

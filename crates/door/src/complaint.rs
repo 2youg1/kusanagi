@@ -75,6 +75,17 @@ pub enum Complaint {
         /// What was wrong with it.
         reason: String,
     },
+    /// The operating system does not say where this user's data lives.
+    ///
+    /// The default site is under the profile directory, which is named by one
+    /// environment variable per platform. When that variable is absent there is
+    /// nothing left to guess with, and guessing would put an identity somewhere
+    /// nobody meant — which is the failure this default exists to prevent.
+    #[error("there is no {variable} in this environment, so there is no default place for a site")]
+    NoRoot {
+        /// The variable that would have named the profile directory.
+        variable: &'static str,
+    },
     /// A channel was to be written before this endpoint had an identity.
     ///
     /// Every verb that writes one creates the identity first, so this is a
@@ -225,6 +236,7 @@ impl Complaint {
                 "kusanagi.malformed"
             }
             Self::NoIdentity => "kusanagi.no_identity",
+            Self::NoRoot { .. } => "kusanagi.no_root",
             Self::UnknownChannel { .. } => "kusanagi.unknown_channel",
             Self::ChannelExists { .. } => "kusanagi.channel_exists",
             Self::NoPeerYet { .. } => "kusanagi.no_peer_yet",
@@ -309,6 +321,10 @@ impl Complaint {
             }
             Self::NoIdentity => {
                 "run `kusanagi id` to create this endpoint's identity, then try again".to_owned()
+            }
+            Self::NoRoot { .. } => {
+                "pass --root to say where this endpoint should keep its identity and channels"
+                    .to_owned()
             }
             Self::HistoryChanged { .. } => "run `kusanagi doctor <waypoint>`: only a write-once \
                  host can promise this cannot happen, and this one just did it"

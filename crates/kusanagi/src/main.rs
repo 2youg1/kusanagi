@@ -28,8 +28,15 @@ use kusanagi_grant::{Abilities, Ability};
 #[command(name = "kusanagi", bin_name = "kusanagi", version, about, long_about = None)]
 struct Cli {
     /// Where this endpoint keeps its identity and channels.
-    #[arg(long, global = true, default_value = ".kusanagi")]
-    root: PathBuf,
+    ///
+    /// Defaults to `%LOCALAPPDATA%\kusanagi` on Windows,
+    /// `$XDG_DATA_HOME/kusanagi` elsewhere.
+    //
+    // No clap default: clap's defaults are static strings, and this one is a
+    // question for the operating system that only `kusanagi::assembly` is
+    // allowed to ask.
+    #[arg(long, global = true)]
+    root: Option<PathBuf>,
 
     /// Emit JSON instead of prose.
     #[arg(long, global = true)]
@@ -120,8 +127,10 @@ enum Verb {
         #[arg(long, default_value = "127.0.0.1:8443", value_name = "ADDRESS")]
         bind: String,
         /// The directory to keep drops in.
-        #[arg(long = "dir", default_value = ".kusanagi-host", value_name = "PATH")]
-        directory: PathBuf,
+        ///
+        /// Defaults to the site directory with `-host` after it.
+        #[arg(long = "dir", value_name = "PATH")]
+        directory: Option<PathBuf>,
     },
 }
 
@@ -189,7 +198,13 @@ fn request(verb: Verb) -> Result<Request, Complaint> {
             name: intake::channel(name)?,
         },
         Verb::Doctor { waypoint } => Request::Doctor { waypoint },
-        Verb::Host { bind, directory } => Request::Host { bind, directory },
+        Verb::Host { bind, directory } => Request::Host {
+            bind,
+            directory: match directory {
+                Some(named) => named,
+                None => kusanagi::default_host_dir()?,
+            },
+        },
     })
 }
 
@@ -290,6 +305,13 @@ fn run() -> ExitCode {
         print!("{}", Cli::command().render_help());
         return ExitCode::SUCCESS;
     };
+    let root = match cli.root.map_or_else(kusanagi::default_root, Ok) {
+        Ok(root) => root,
+        Err(complaint) => {
+            eprintln!("{}", complaint.render(cli.json));
+            return ExitCode::FAILURE;
+        }
+    };
     let request = match request(command) {
         Ok(request) => request,
         // An argument this program cannot act on is a failure like any other, so
@@ -301,7 +323,7 @@ fn run() -> ExitCode {
         }
     };
 
-    match kusanagi::run(&Site::at(&cli.root), &request) {
+    match kusanagi::run(&Site::at(&root), &request) {
         Ok(outcome) => {
             println!("{}", outcome.render(cli.json));
             ExitCode::SUCCESS

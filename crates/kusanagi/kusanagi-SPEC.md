@@ -251,7 +251,8 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 | 硬编码 | 意图 | 后续影响 |
 |---|---|---|
-| 默认 `--root .kusanagi` | 无参数即可用 | —— |
+| 默认 `--root` 在用户资料目录下 | 相对路径的默认值会落在 agent 恰好启动的那个目录：正在编辑的仓库、同步客户端上传的文件夹、共享出去的目录。**Windows 上这还是文件权限最便宜的一半**——`%LOCALAPPDATA%` 继承的 DACL 只有本用户、SYSTEM 与 Administrators | 每平台一个环境变量，在 `assembly.rs` 里各一个 `#[cfg]` 函数（不是函数内的 `if cfg!`）：`LOCALAPPDATA` / `HOME` + `Library/Application Support` / `XDG_DATA_HOME` 否则 `HOME` + `.local/share`。变量缺失 → `kusanagi.no_root`，恢复是「传 `--root`」；**不猜** |
+| `host --dir` 默认是 site 目录加 `-host` | 宿主替别人保管的字节不是本端点的状态，`forget` 与备份不该把它们卷进去 | 跟着 `default_root` 走 |
 | 默认 `--for 604800`（一周） | 邀请有效期 | —— |
 | 通道名 `a-z0-9-`、≤32 | 路径、shell、URL 三处都安全 | 放宽须同时想清三处 |
 | 介绍流的高度 `0` | 引荐的约定位置 | 属线路格式 |

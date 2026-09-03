@@ -25,11 +25,11 @@ kusanagi id
 
 ```text
 this endpoint is 3573c49d9948c61e4057e3570c643f25bc5cc4752a0394467545e7fc502c4fcb
-  site  .kusanagi
+  site  C:\Users\you\AppData\Local\kusanagi
 ```
 
 That long number is your handle: the name your key answers to, made on first use.
-The key itself is in `.kusanagi/identity`, it is 32 bytes, and **it is you**. Back
+The key itself is in `<site>/identity`, it is 32 bytes, and **it is you**. Back
 it up or accept that losing it means losing every channel you are in. Use `--root`
 to keep your site somewhere else.
 

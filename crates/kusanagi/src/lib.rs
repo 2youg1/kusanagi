@@ -18,7 +18,7 @@ mod traffic;
 mod walk;
 mod world;
 
-pub use assembly::run;
+pub use assembly::{default_host_dir, default_root, run};
 pub use request::{Request, Whose};
 pub use walk::{Held, Reach, Walked, peek, track, walk};
 pub use world::{SystemClock, fresh_seed};
