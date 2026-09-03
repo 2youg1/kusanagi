@@ -26,7 +26,7 @@ use std::net::TcpListener;
 use kusanagi_box::Server;
 use kusanagi_kernel::{Clock as _, Instant, Signer};
 use kusanagi_seal::Secret;
-use kusanagi_waypoint::{Locator, Place, probe};
+use kusanagi_waypoint::{Access, Locator, Place, Proxy, probe};
 
 use kusanagi_site::Site;
 
@@ -108,11 +108,17 @@ fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
     Ok(Outcome::Channels { channels })
 }
 
-/// Opens what a locator names, supplying credentials from the environment.
+/// Opens what a locator names, with what the environment supplies to reach it.
 ///
 /// The environment is read here and nowhere else, for the same reason the clock
 /// is: a program that picks up configuration in the middle of a call graph is a
 /// program whose behaviour cannot be reproduced from its arguments.
+///
+/// `KUSANAGI_PROXY` sends every request through a SOCKS5 or HTTP CONNECT proxy.
+/// kusanagi does not hide an endpoint's IP address and does not claim to
+/// (`ARCHITECTURE.md` §3); this is the plug for a network that does, and a
+/// mistyped one is refused here rather than silently ignored — a privacy setting
+/// that fails open is worse than one that was never offered.
 pub(crate) fn open(locator: &str, now: Instant) -> Result<Place, Complaint> {
     let locator: Locator = locator.parse()?;
     let credentials = match (
@@ -122,7 +128,12 @@ pub(crate) fn open(locator: &str, now: Instant) -> Result<Place, Complaint> {
         (Ok(access), Ok(secret)) => Some(kusanagi_waypoint::Credentials::new(&access, &secret)),
         _ => None,
     };
-    Ok(Place::open(&locator, credentials, now.as_unix_seconds())?)
+    let proxy = match std::env::var("KUSANAGI_PROXY") {
+        Ok(text) if !text.trim().is_empty() => Some(Proxy::parse(text.trim())?),
+        _ => None,
+    };
+    let access = Access { credentials, proxy };
+    Ok(Place::open(&locator, &access, now.as_unix_seconds())?)
 }
 
 fn doctor(waypoint: &str, now: Instant) -> Result<Outcome, Complaint> {

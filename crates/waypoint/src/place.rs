@@ -27,11 +27,11 @@ use std::str::FromStr;
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
+use crate::access::Access;
 use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 use crate::dir::DirWaypoint;
 use crate::http::HttpWaypoint;
 use crate::s3::S3Waypoint;
-use crate::sigv4::Credentials;
 
 /// Where an endpoint keeps its drops, before anything has been opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,6 +144,12 @@ pub enum LocatorError {
         /// The scheme as it was written.
         scheme: String,
     },
+    /// A proxy was configured and is not one.
+    #[error("that is not a proxy: {reason}")]
+    BadProxy {
+        /// What the client library said was wrong with it.
+        reason: String,
+    },
 }
 
 impl LocatorError {
@@ -155,6 +161,7 @@ impl LocatorError {
             Self::BucketIncomplete => "locator.bucket_incomplete",
             Self::CredentialsMissing => "locator.credentials_missing",
             Self::UnknownScheme { .. } => "locator.unknown_scheme",
+            Self::BadProxy { .. } => "locator.bad_proxy",
         }
     }
 }
@@ -173,34 +180,38 @@ pub enum Place {
 impl Place {
     /// Opens what `locator` names.
     ///
-    /// `credentials` and `now` arrive from the assembly rather than being read
-    /// here, because reading the environment and reading the clock are both
-    /// things exactly one module in this program is allowed to do.
+    /// `access` and `now` arrive from the assembly rather than being read here,
+    /// because reading the environment and reading the clock are both things
+    /// exactly one module in this program is allowed to do.
+    ///
+    /// A directory ignores both halves of `access`: nothing leaves the machine,
+    /// so there is no socket to route and nothing to sign.
     ///
     /// # Errors
     ///
     /// [`LocatorError::CredentialsMissing`] when a bucket is named without them.
-    pub fn open(
-        locator: &Locator,
-        credentials: Option<Credentials>,
-        now: u64,
-    ) -> Result<Self, LocatorError> {
+    pub fn open(locator: &Locator, access: &Access, now: u64) -> Result<Self, LocatorError> {
+        let proxy = access.proxy.as_ref();
         match locator {
             Locator::Directory(path) => Ok(Self::Directory(DirWaypoint::new(path))),
-            Locator::Box { base } => Ok(Self::Box(HttpWaypoint::new(base))),
+            Locator::Box { base } => Ok(Self::Box(HttpWaypoint::new(base, proxy))),
             Locator::Bucket {
                 endpoint,
                 bucket,
                 prefix,
                 region,
             } => {
-                let credentials = credentials.ok_or(LocatorError::CredentialsMissing)?;
+                let credentials = access
+                    .credentials
+                    .clone()
+                    .ok_or(LocatorError::CredentialsMissing)?;
                 Ok(Self::Bucket(S3Waypoint::new(
                     endpoint,
                     bucket,
                     prefix,
                     region,
                     credentials,
+                    proxy,
                     now,
                 )))
             }
@@ -301,6 +312,7 @@ mod tests {
     }
 
     use super::{Locator, LocatorError, Place};
+    use crate::access::Access;
     use std::path::PathBuf;
     use std::str::FromStr as _;
 
@@ -353,16 +365,26 @@ mod tests {
     fn a_bucket_without_credentials_does_not_open() {
         let locator = Locator::from_str("s3://host/bucket").unwrap();
         assert_eq!(
-            Place::open(&locator, None, 0).unwrap_err(),
+            Place::open(&locator, &Access::default(), 0).unwrap_err(),
             LocatorError::CredentialsMissing
         );
     }
 
     #[test]
     fn every_kind_names_itself() {
-        let directory = Place::open(&Locator::from_str("./drops").unwrap(), None, 0).unwrap();
+        let directory = Place::open(
+            &Locator::from_str("./drops").unwrap(),
+            &Access::default(),
+            0,
+        )
+        .unwrap();
         assert_eq!(directory.kind(), "directory");
-        let boxed = Place::open(&Locator::from_str("http://host").unwrap(), None, 0).unwrap();
+        let boxed = Place::open(
+            &Locator::from_str("http://host").unwrap(),
+            &Access::default(),
+            0,
+        )
+        .unwrap();
         assert_eq!(boxed.kind(), "http box");
     }
 }

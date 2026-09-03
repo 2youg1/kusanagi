@@ -16,6 +16,7 @@
 //! one thing a host is asked to be honest about is refusing a second write to an
 //! occupied address, and [`probe::examine`] measures that rather than assuming it.
 
+mod access;
 mod certificate;
 mod conditional;
 pub mod conformance;
@@ -27,6 +28,7 @@ pub mod probe;
 mod s3;
 mod sigv4;
 
+pub use access::{Access, Proxy};
 pub use certificate::{Capability, Certificate, Finding, Tier, Verdict};
 pub use conditional::{Conditional, Fetched, TtlOutcome, Validator};
 pub use dir::DirWaypoint;

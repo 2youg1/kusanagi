@@ -15,6 +15,7 @@
 | U5 对象存储 | `S3Waypoint`（SigV4） | 签名复现 AWS 公开向量；有凭据时对真实桶跑通，无凭据时跳过而非假通过 |
 | U6 路由 | `Locator` / `Place` | 一个字符串决定用哪个适配器；四种写法各得正确的 `kind()` |
 | U7 体检 | `probe::examine` → `Certificate` | 四项能力各得 held / not offered / BROKEN；只有 write-once 决定 tier |
+| U8 出口插口 | `Proxy` / `Access` | 同一个请求对同一台活着的宿主：不带代理成功，带一个通向死端口的代理失败。**这两种结果能区分开，才证明设置真的生效**（`box/tests/through_a_proxy.rs`） |
 
 ## 2 验收标准
 
@@ -65,7 +66,8 @@ memory.rs       内存适配器
 http.rs         盒子的客户端一半
 s3.rs           对象存储适配器
 sigv4.rs        Signature Version 4：凭据、日期、签名
-place.rs        Locator / Place —— 唯一知道存在多个适配器的地方
+place.rs        Locator / Place / Access —— 唯一知道存在多个适配器的地方
+proxy.rs        Proxy —— 请求从哪个套接字出去；是插口，不是机制
 probe.rs        examine —— 唯一实测宿主的地方
 certificate.rs  Capability / Verdict / Tier / Certificate —— 实测结果的公开词汇
 ```
@@ -164,7 +166,7 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 
 | 依赖 | 理由 | 替代方案与代价 |
 |---|---|---|
-| `ureq` 3（rustls） | 阻塞式 HTTP + TLS，纯 Rust；每个 verb 都是一次性命令，异步运行时在这里无事可做 | `reqwest` 带 tokio；裸 TCP 无法访问真实 HTTPS 桶 |
+| `ureq` 3（rustls, socks-proxy） | 阻塞式 HTTP + TLS，纯 Rust；每个 verb 都是一次性命令，异步运行时在这里无事可做。`socks-proxy` 带进 sfackler 的 `socks` 0.3，换来 `socks5://`——**Tor 与桌面 VPN 就是以这个形状对外暴露的**，而 `ARCHITECTURE.md` §8 裁定端点 IP 由为它而生的网络负责，我们只提供插口 | `reqwest` 带 tokio；裸 TCP 无法访问真实 HTTPS 桶。只做 HTTP CONNECT 可以不加依赖，但那样最常见的那一种代理反而用不了 |
 | `hmac` + `sha2` | SigV4 规定 HMAC-SHA256，不是我们能选的 | 无 |
 | `blake3` | ETag，与全仓同源，且让稳定性成为构造性质 | 用 mtime 或计数器会让 ETag 不稳定 |
 | 服务端不引入 HTTP 框架 | 三个请求、两百行、零依赖 | 一个框架的表面积比它要服务的协议大一个数量级 |
@@ -176,6 +178,7 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 | `MAX_HEAD = 8 KiB`、`MAX_BODY = 1 MiB`、`IDLE = 30s` | 让恶意调用者无法用一个请求耗尽宿主 |
 | `SHARD_WIDTH = 2` | 目录分片；地址本已均匀，直接取前缀比再哈希一次更省 |
 | `TTL_HEADER = "Cache-Control"`，值为 `max-age=<秒>` | **只用普通流量已经在带的头。** 一个以本项目命名的头会把它明文放进每一个请求，交给宿主、沿途每一个代理与它们的每一份日志——包括能看到 TLS 内部的那些。见 `docs/box-protocol.md` |
+| 代理从 `KUSANAGI_PROXY` 读，且只在 `kusanagi::assembly` 读一次 | 与 S3 凭据同一条规矩：读环境变量的地方全仓只有一处。**读不懂的值当场拒绝，不静默忽略**——一个失效时默默放行的隐私开关，比没有这个开关更坏 |
 | 不发 `User-Agent` | 默认会把 HTTP 库的名字与版本送出去，而版本号会把「这可能是谁」的集合缩小。改发浏览器的 UA 被否决：一个浏览器头配上一个显然不是浏览器的 TLS 握手，比沉默更醒目。钉在 `tests/unannounced.rs` |
 
 ## 15 影响面

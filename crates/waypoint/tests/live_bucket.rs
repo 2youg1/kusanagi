@@ -32,7 +32,7 @@
 use kusanagi_kernel::{Signer, Waypoint as _};
 use kusanagi_seal::{Secret, Stream, derive};
 use kusanagi_waypoint::{
-    Capability, Credentials, Locator, Place, Tier, Verdict, conformance, probe,
+    Access, Capability, Credentials, Locator, Place, Tier, Verdict, conformance, probe,
 };
 
 /// A namespace nothing else can be using, so this is safe to point at a real
@@ -54,8 +54,15 @@ fn bucket() -> Option<Place> {
         .parse()
         .expect("KUSANAGI_TEST_BUCKET is not a locator");
     Some(
-        Place::open(&locator, Some(Credentials::new(&access, &secret)), now)
-            .expect("could not open the bucket"),
+        Place::open(
+            &locator,
+            &Access {
+                credentials: Some(Credentials::new(&access, &secret)),
+                proxy: None,
+            },
+            now,
+        )
+        .expect("could not open the bucket"),
     )
 }
 

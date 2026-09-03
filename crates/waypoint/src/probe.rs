@@ -189,7 +189,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("kusanagi-probe-{}", std::process::id()));
         let place = Place::open(
             &Locator::from_str(&root.display().to_string()).unwrap(),
-            None,
+            &crate::access::Access::default(),
             0,
         )
         .unwrap();

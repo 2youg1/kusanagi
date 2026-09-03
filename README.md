@@ -181,6 +181,16 @@ s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 Buckets read credentials from `KUSANAGI_S3_ACCESS_KEY` and
 `KUSANAGI_S3_SECRET_KEY`.
 
+**kusanagi does not hide your IP address**, and nothing above claims to: the host
+learns it, and whoever carries your packets reads the DNS query and the TLS server
+name before the connection. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy
+— a Tor client, a VPN, a corporate egress — and every request goes through it. A
+value that is not a proxy is refused rather than ignored.
+
+```bash
+export KUSANAGI_PROXY=socks5://127.0.0.1:9050
+```
+
 **Run `kusanagi doctor` against a host before you trust it.** S3-compatible
 stores disagree about conditional writes, and they disagree in the dangerous
 direction: the condition is ignored, the write succeeds, and a protocol that

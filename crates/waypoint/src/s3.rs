@@ -22,6 +22,7 @@
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
+use crate::access::Proxy;
 use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 use crate::sigv4::{Credentials, Signing};
 
@@ -52,6 +53,7 @@ impl S3Waypoint {
         prefix: &str,
         region: &str,
         credentials: Credentials,
+        proxy: Option<&Proxy>,
         now: u64,
     ) -> Self {
         let endpoint = endpoint.trim_end_matches('/').to_owned();
@@ -68,10 +70,12 @@ impl S3Waypoint {
             region: region.to_owned(),
             credentials,
             now,
-            agent: ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .build()
-                .into(),
+            agent: Proxy::applied(
+                proxy,
+                ureq::Agent::config_builder().http_status_as_error(false),
+            )
+            .build()
+            .into(),
         }
     }
 
@@ -236,6 +240,7 @@ mod tests {
             "kusanagi/",
             "auto",
             Credentials::new("id", "secret"),
+            None,
             0,
         );
         let addr = DropAddr::from_bytes([0xab; 20]);

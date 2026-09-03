@@ -230,7 +230,10 @@ mod tests {
                 Err(error) => eprintln!("test host stopped: {error}"),
             }
         });
-        (HttpWaypoint::new(&format!("http://127.0.0.1:{port}")), root)
+        (
+            HttpWaypoint::new(&format!("http://127.0.0.1:{port}"), None),
+            root,
+        )
     }
 
     #[test]

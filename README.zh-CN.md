@@ -144,6 +144,12 @@ s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 
 对象存储从 `KUSANAGI_S3_ACCESS_KEY` 和 `KUSANAGI_S3_SECRET_KEY` 读取凭据。
 
+**kusanagi 不隐藏你的 IP 地址**，上面也没有一句话这样声称：宿主知道它，而替你搬运数据包的人在连接建立之前就读到了 DNS 查询与 TLS 服务器名。把 `KUSANAGI_PROXY` 指向一个 SOCKS5 或 HTTP CONNECT 代理——Tor 客户端、VPN、公司出口都行——所有请求就都从那里出去。**读不懂的值当场被拒，不会被忽略。**
+
+```bash
+export KUSANAGI_PROXY=socks5://127.0.0.1:9050
+```
+
 **信任一台主机之前，先用 `kusanagi doctor` 测它。** 各家 S3 兼容存储对条件写的支持并不一致，而且不一致的方向很危险：条件被忽略、写入照样成功，于是「一个地址写过就不能被覆盖」这个前提悄悄失效。`doctor` 会写两次再读回来，告诉你这台主机够得上哪一档。
 
 ## 主机能看到什么

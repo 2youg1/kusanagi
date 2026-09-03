@@ -25,6 +25,7 @@
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
+use crate::access::Proxy;
 use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 
 /// The header that asks for a write only if nothing is there.
@@ -57,12 +58,15 @@ impl HttpWaypoint {
     /// carries no agent string. A borrowed browser header above a handshake that
     /// is plainly not a browser's would be a worse tell than silence.
     #[must_use]
-    pub fn new(base: &str) -> Self {
-        let agent = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .user_agent(ureq::config::AutoHeaderValue::None)
-            .build()
-            .into();
+    pub fn new(base: &str, proxy: Option<&Proxy>) -> Self {
+        let agent = Proxy::applied(
+            proxy,
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .user_agent(ureq::config::AutoHeaderValue::None),
+        )
+        .build()
+        .into();
         Self {
             base: base.trim_end_matches('/').to_owned(),
             agent,

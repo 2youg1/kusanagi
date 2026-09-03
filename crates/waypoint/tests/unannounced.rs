@@ -96,7 +96,7 @@ fn address() -> DropAddr {
 #[test]
 fn a_read_names_nothing_about_the_program_making_it() {
     let head = overhear(|base| {
-        HttpWaypoint::new(base).get(&address()).ok();
+        HttpWaypoint::new(base, None).get(&address()).ok();
     });
     judge(&head);
 }
@@ -104,7 +104,7 @@ fn a_read_names_nothing_about_the_program_making_it() {
 #[test]
 fn a_write_names_nothing_about_the_program_making_it() {
     let head = overhear(|base| {
-        HttpWaypoint::new(base)
+        HttpWaypoint::new(base, None)
             .put_if_absent(&address(), &[0_u8; 64])
             .ok();
     });
@@ -117,7 +117,7 @@ fn asking_for_a_lifetime_does_not_name_this_project() {
     // name in front of every proxy on the route. What replaced it is the header
     // a CDN sends.
     let head = overhear(|base| {
-        HttpWaypoint::new(base)
+        HttpWaypoint::new(base, None)
             .put_with_ttl(&address(), &[0_u8; 64], 3_600)
             .ok();
     });
@@ -158,7 +158,7 @@ fn what_a_request_actually_carries_is_written_down() {
     // Not an assertion about a list — a record of the whole head, so that a
     // dependency that starts sending something new is seen rather than inferred.
     let head = overhear(|base| {
-        HttpWaypoint::new(base).get(&address()).ok();
+        HttpWaypoint::new(base, None).get(&address()).ok();
     });
     let names: Vec<String> = head
         .iter()
