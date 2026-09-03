@@ -80,7 +80,19 @@ fn an_unknown_channel_is_named_as_such() {
 #[test]
 fn a_name_that_could_escape_the_directory_is_refused() {
     let site = scratch("names");
-    for bad in ["../escape", "with/slash", "Upper", "", "with space"] {
+    // `-` and anything starting with it are refused for a second reason: every
+    // command line reads a leading hyphen as a flag, and this program reads a
+    // bare `-` as "the name arrives on stdin". A name nobody can type is a name
+    // nobody should be allowed to take.
+    for bad in [
+        "../escape",
+        "with/slash",
+        "Upper",
+        "",
+        "with space",
+        "-",
+        "-lead",
+    ] {
         assert!(
             matches!(site.channel(bad), Err(SiteError::BadName { .. })),
             "`{bad}` was accepted as a channel name"

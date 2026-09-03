@@ -339,17 +339,22 @@ impl Site {
 /// in a path, safe in a shell, and safe in a URL is safe everywhere this network
 /// might carry it, and the ways of getting escaping wrong all start with allowing
 /// something interesting.
+///
+/// A name may not begin with `-`. Every command line ever written reads a
+/// leading hyphen as a flag, and this one reads a bare `-` as "the name arrives
+/// on stdin" — so a name that starts with one is a name somebody cannot type.
 fn check_name(name: &str) -> Result<(), SiteError> {
-    let usable = !name.is_empty()
-        && name.len() <= MAX_NAME
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+    let plain = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-';
+    let usable = name.len() <= MAX_NAME
+        && name.bytes().all(plain)
+        && name.bytes().next().is_some_and(|first| first != b'-');
     if usable {
         return Ok(());
     }
     Err(SiteError::BadName {
         name: name.to_owned(),
-        reason: format!("a name is 1 to {MAX_NAME} characters of a-z, 0-9 and -"),
+        reason: format!(
+            "a name is 1 to {MAX_NAME} characters of a-z, 0-9 and -, and does not start with -"
+        ),
     })
 }

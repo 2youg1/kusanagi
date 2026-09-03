@@ -258,7 +258,7 @@ impl Complaint {
                     .to_owned()
             }
             Self::BadName { .. } => "pick a name of 1 to 32 characters from a-z, 0-9 and -, \
-                 and run the command again"
+                 not starting with -, and run the command again"
                 .to_owned(),
             // The advice names the pipe because there is no other way in. An
             // invitation carries the channel secret, so it is not an argument,

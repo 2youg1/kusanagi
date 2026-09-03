@@ -56,6 +56,7 @@ import Kusanagi.Keyboard
   )
 import Kusanagi.Model
 import Kusanagi.Naming qualified as Naming
+import Kusanagi.Overheard qualified as Overheard
 import Kusanagi.Regression (coherent, render, sequenced)
 
 main :: IO ()
@@ -71,6 +72,9 @@ properties door =
   testGroup
     "adversary"
     [ testCase "the committed Rust test is what this adversary renders" deliverable
+    , testProperty
+        "nothing that identifies anybody reaches the command line"
+        Overheard.nothingIdentifyingReachesTheCommandLine
     , testProperty "a mistyped line is answerable, and its advice can be taken" (keyboard door)
     , testProperty "what an agent pipes in comes back byte for byte" (piping door)
     , testProperty "a reader that remembers is still told everything" (remembering door)

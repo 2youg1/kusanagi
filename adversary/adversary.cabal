@@ -31,6 +31,7 @@ library
     Kusanagi.Lying
     Kusanagi.Model
     Kusanagi.Naming
+    Kusanagi.Overheard
     Kusanagi.Regression
     Kusanagi.Veil
 

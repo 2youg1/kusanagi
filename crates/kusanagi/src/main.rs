@@ -10,7 +10,8 @@
 //! library, so the program a test drives and the program a person runs are the
 //! same program.
 
-use std::io::{IsTerminal, Read};
+mod intake;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -18,7 +19,6 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory as _, Parser, Subcommand};
 use kusanagi::{Complaint, Request, Site, Whose};
 use kusanagi_grant::{Abilities, Ability};
-use kusanagi_kernel::MAX_PAYLOAD;
 
 /// A decentralised collaboration network for agents.
 #[derive(Parser, Debug)]
@@ -47,7 +47,7 @@ enum Verb {
     Channels,
     /// Open a channel and mint the one line that invites somebody to it.
     Invite {
-        /// What to call the channel here.
+        /// What to call the channel here, or `-` to read it from stdin.
         #[arg(long, value_name = "NAME")]
         name: String,
         /// Where the drops will live: a path, an http:// url, or s3://…
@@ -67,13 +67,15 @@ enum Verb {
     /// machine can read another process's arguments out of `/proc`, and the
     /// shell writes them to a history file that outlives the channel.
     Join {
-        /// What to call the channel here.
+        /// What to call the channel here, or `-` to read it from the first
+        /// line of stdin, ahead of the invitation.
         #[arg(long, value_name = "NAME")]
         name: String,
     },
     /// Append one segment to your stream on a channel.
     Send {
-        /// Which channel.
+        /// Which channel, or `-` to read the name from the first line of stdin
+        /// and the text from the rest of it.
         #[arg(long = "to", value_name = "NAME")]
         name: String,
         /// What the segment carries. Omit it to read the payload from stdin.
@@ -81,7 +83,7 @@ enum Verb {
     },
     /// Read the peer's stream on a channel, verifying it end to end.
     Read {
-        /// Which channel.
+        /// Which channel, or `-` to read the name from stdin.
         #[arg(long = "from", value_name = "NAME")]
         name: String,
         /// Report only what follows this height. The stream is verified in full
@@ -97,13 +99,13 @@ enum Verb {
     },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
-        /// Which channel.
+        /// Which channel, or `-` to read the name from stdin.
         #[arg(long = "from", value_name = "NAME")]
         name: String,
     },
     /// Delete a channel from this endpoint. It cannot be re-entered afterwards.
     Forget {
-        /// Which channel.
+        /// Which channel, or `-` to read the name from stdin.
         #[arg(long = "channel", value_name = "NAME")]
         name: String,
     },
@@ -150,81 +152,6 @@ fn abilities(text: &str) -> Result<Abilities, Complaint> {
     Ok(abilities)
 }
 
-/// The invitation, which arrives only on stdin.
-///
-/// There is no argument form, and that is the fix for a leak rather than a
-/// preference about interfaces. An invitation is a bearer token: whoever reads
-/// it holds the channel secret and can compute every address on the channel
-/// forever. Arguments are readable by every account on the machine while the
-/// process runs, and by anybody who opens the shell history afterwards.
-///
-/// The read is bounded. A real invitation is a few hundred characters; anything
-/// much larger is not one, and refusing to buffer it is cheaper than parsing it.
-fn invitation() -> Result<String, Complaint> {
-    /// Room for an invitation carrying a long locator and a deep grant chain.
-    ///
-    /// Derived from the widest one that can exist rather than picked: a
-    /// verifying key is 2 592 bytes, the channel secret and the bearer seed 32
-    /// each, and an eight-hop ML-DSA-87 grant 58 345 — about 61 000 bytes, and
-    /// twice that as hexadecimal. 256 KiB leaves room for a long locator and
-    /// still refuses to buffer anything that is not an invitation.
-    ///
-    /// **An invitation is no longer a line somebody pastes.** At this size it is
-    /// a file or a QR code, which is the price of a post-quantum signature and
-    /// is recorded in `ARCHITECTURE.md` §8.
-    const MOST: u64 = 262_144;
-
-    let input = std::io::stdin();
-    if input.is_terminal() {
-        return Err(Complaint::Argument {
-            what: "the invitation",
-            reason: "is read from stdin, and stdin is a terminal".to_owned(),
-            instead: "pipe it in: pbpaste | kusanagi join --name NAME, \
-                      or kusanagi join --name NAME < invitation.txt",
-        });
-    }
-    let mut text = String::new();
-    input
-        .take(MOST)
-        .read_to_string(&mut text)
-        .map_err(|source| Complaint::Local {
-            action: "read the invitation from stdin",
-            source,
-        })?;
-    Ok(text)
-}
-
-/// The bytes a segment will carry: what was typed, or what was piped in.
-///
-/// Reading stdin when no text is given is what lets a caller send a payload with
-/// quotes, newlines, or bytes that are not text at all — none of which survive a
-/// command line intact. The read is bounded at one byte past the limit a segment
-/// accepts, so an oversized payload is refused by the rule that owns that limit
-/// instead of being buffered here first.
-fn payload(text: Option<String>) -> Result<Vec<u8>, Complaint> {
-    if let Some(text) = text {
-        return Ok(text.into_bytes());
-    }
-    let input = std::io::stdin();
-    if input.is_terminal() {
-        return Err(Complaint::Argument {
-            what: "the text to send",
-            reason: "was not given, and stdin is a terminal".to_owned(),
-            instead: "pass it as an argument, or pipe it in: \
-                      echo hello | kusanagi send --to NAME",
-        });
-    }
-    let mut bytes = Vec::new();
-    input
-        .take(u64::from(MAX_PAYLOAD).saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(|source| Complaint::Local {
-            action: "read the payload from stdin",
-            source,
-        })?;
-    Ok(bytes)
-}
-
 fn request(verb: Verb) -> Result<Request, Complaint> {
     Ok(match verb {
         Verb::Id => Request::Identity,
@@ -235,28 +162,32 @@ fn request(verb: Verb) -> Result<Request, Complaint> {
             lifetime,
             can,
         } => Request::Invite {
-            name,
+            name: intake::channel(name)?,
             waypoint,
             lifetime,
             abilities: abilities(&can)?,
         },
-        Verb::Join { name } => Request::Join {
-            invite: invitation()?,
-            name,
-        },
-        Verb::Send { name, text } => Request::Send {
-            name,
-            payload: payload(text)?,
-        },
+        Verb::Join { name } => {
+            let (name, invite) = intake::invited(name)?;
+            Request::Join { invite, name }
+        }
+        Verb::Send { name, text } => {
+            let (name, payload) = intake::addressed(name, text)?;
+            Request::Send { name, payload }
+        }
         Verb::Read { name, after, mine } => Request::Read {
-            name,
+            name: intake::channel(name)?,
             after,
             // The flag is a flag because that is what a command line has; the
             // enum starts here so that nothing below carries an unnamed bool.
             whose: if mine { Whose::Mine } else { Whose::Peer },
         },
-        Verb::Revoke { name } => Request::Revoke { name },
-        Verb::Forget { name } => Request::Forget { name },
+        Verb::Revoke { name } => Request::Revoke {
+            name: intake::channel(name)?,
+        },
+        Verb::Forget { name } => Request::Forget {
+            name: intake::channel(name)?,
+        },
         Verb::Doctor { waypoint } => Request::Doctor { waypoint },
         Verb::Host { bind, directory } => Request::Host { bind, directory },
     })

@@ -28,12 +28,12 @@ module Kusanagi.Door
   , ask
   , typed
   , spoken
+  , piped
   ) where
 
 import Data.ByteString qualified as ByteString
 import Data.List (intercalate)
 import Data.Text (Text)
-import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Data.Word (Word64)
 import System.Directory (doesFileExist)
@@ -130,7 +130,7 @@ discover =
 -- against a program it can no longer read.
 ask :: Door -> FilePath -> Verb -> IO Answer
 ask (Door binary) site verb = do
-  (status, out, err) <- capture binary (argv site verb) (fed verb)
+  (status, out, err) <- capture binary (argv site verb) (piped verb)
   case status of
     ExitSuccess -> either (unreadable out) (pure . Accepted) (decodeOutcome out)
     ExitFailure _ -> either (unreadable err) (pure . Refused) (decodeComplaint err)
@@ -169,24 +169,39 @@ typed (Door binary) arguments input = do
 argv :: FilePath -> Verb -> [String]
 argv site verb = ["--root", site, "--json"] <> spoken verb
 
--- | What a verb needs on stdin, if it needs anything.
+-- | What a verb needs on stdin, which is everything that identifies anybody.
 --
--- Only @join@ does. The invitation carries the channel secret and a signing
--- key, so the product refuses to take it as an argument: arguments are readable
--- by every account on the machine while the process runs, and the shell keeps
--- them afterwards. This adversary types what a person types, so it pipes.
-fed :: Verb -> Maybe ByteString.ByteString
-fed (Join (Invitation line) _) = Just (Text.encodeUtf8 line)
-fed _ = Nothing
+-- A command line is public: every account on the machine reads another
+-- process's arguments while it runs, and the shell keeps them afterwards. The
+-- product answered that for the invitation first, and then for its own kind — a
+-- channel name leaks who is talking to whom on every single message, which is
+-- the relationship graph the derived addresses exist to hide.
+--
+-- So @-@ stands in for every name here, and the first line of stdin carries it.
+-- **Every property in this suite runs through that path**, which is what makes
+-- a regression in it fail a test rather than pass unnoticed.
+piped :: Verb -> Maybe ByteString.ByteString
+piped = \case
+  Identity -> Nothing
+  Channels -> Nothing
+  Invite name _ _ _ -> Just (line name)
+  Join (Invitation invitation) name -> Just (line name <> Text.encodeUtf8 invitation)
+  Send name text -> Just (line name <> Text.encodeUtf8 text)
+  Read name -> Just (line name)
+  ReadAfter name _ -> Just (line name)
+  Revoke name -> Just (line name)
+  where
+    line (ChannelName name) = Text.encodeUtf8 (name <> "\n")
 
+-- | The command line, which now names nobody and quotes nothing.
 spoken :: Verb -> [String]
 spoken = \case
   Identity -> ["id"]
   Channels -> ["channels"]
-  Invite (ChannelName name) waypoint lifetime abilities ->
+  Invite _ waypoint lifetime abilities ->
     [ "invite"
     , "--name"
-    , Text.unpack name
+    , onStdin
     , "--waypoint"
     , waypoint
     , "--for"
@@ -194,14 +209,15 @@ spoken = \case
     , "--can"
     , listed abilities
     ]
-  -- The invitation itself goes in on stdin; see `fed`.
-  Join _ (ChannelName name) -> ["join", "--name", Text.unpack name]
-  Send (ChannelName name) text ->
-    ["send", "--to", Text.unpack name, Text.unpack text]
-  Read (ChannelName name) -> ["read", "--from", Text.unpack name]
-  ReadAfter (ChannelName name) floor' ->
-    ["read", "--from", Text.unpack name, "--after", show floor']
-  Revoke (ChannelName name) -> ["revoke", "--from", Text.unpack name]
+  Join _ _ -> ["join", "--name", onStdin]
+  Send _ _ -> ["send", "--to", onStdin]
+  Read _ -> ["read", "--from", onStdin]
+  ReadAfter _ floor' -> ["read", "--from", onStdin, "--after", show floor']
+  Revoke _ -> ["revoke", "--from", onStdin]
+
+-- | What a name argument says when the name itself arrives on stdin.
+onStdin :: String
+onStdin = "-"
 
 listed :: Abilities -> String
 listed abilities =

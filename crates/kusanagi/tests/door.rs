@@ -211,6 +211,70 @@ fn an_invitation_arrives_on_stdin_however_it_was_pasted() {
     std::fs::remove_dir_all(&ground).ok();
 }
 
+/// A whole channel, used from end to end, with no name and no text on argv.
+///
+/// `ARCHITECTURE.md` §8 took the invitation off the command line because a
+/// command line is public. A channel name is worse: an invitation leaks one
+/// chance to enter one channel, while `send --to bob` leaks who is talking to
+/// whom on every single message — which is the relationship graph the derived
+/// addresses of §3 exist to hide. So the same fix has to cover its own kind.
+#[test]
+fn no_verb_needs_a_channel_name_or_a_message_on_the_command_line() {
+    let ground = scratch("door-off-argv");
+    let host = ground.join("host").display().to_string();
+    // The two roots are not named after the channels, so that the assertion
+    // below can look at the whole command line and not just part of it.
+    let one = ground.join("one");
+    let two = ground.join("two");
+    let secret = "a message no shell will ever see";
+
+    // Every command in this test goes through here, and every one of them is
+    // checked: nothing on the command line names a channel or carries the text.
+    let quiet = |root: &Path, arguments: &[&str], fed: &[u8]| {
+        for argument in arguments {
+            assert!(
+                !argument.contains("peer") && !argument.contains(secret),
+                "`{argument}` puts what has to stay off the command line on it"
+            );
+        }
+        door(root, arguments, fed)
+    };
+
+    let invited = reported(&quiet(
+        &one,
+        &["invite", "--name", "-", "--waypoint", &host],
+        b"peer-two\n",
+    ));
+    let line = invited["invite"].as_str().unwrap().to_owned();
+
+    let joined = reported(&quiet(
+        &two,
+        &["join", "--name", "-"],
+        format!("peer-one\n{line}").as_bytes(),
+    ));
+    assert_eq!(joined["command"], "joined");
+
+    reported(&quiet(
+        &two,
+        &["send", "--to", "-"],
+        format!("peer-one\n{secret}").as_bytes(),
+    ));
+
+    let heard = reported(&quiet(&one, &["read", "--from", "-"], b"peer-two\n"));
+    let carried = heard["segments"][0]["payload"].as_str().unwrap();
+    assert_eq!(
+        unhex(carried).expect("the payload was not hex"),
+        secret.as_bytes()
+    );
+
+    // Hiding the name while the message stays on the command line is half a
+    // fix, and half a fix that reads as a whole one is worse than none.
+    let refused = complained(&door(&two, &["send", "--to", "-", "hello"], b"peer-one\n"));
+    assert_eq!(refused["code"], "kusanagi.argument");
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
 #[test]
 fn a_pipe_with_nothing_in_it_is_a_complaint_and_not_a_hang() {
     let ground = scratch("door-empty-stdin");

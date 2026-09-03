@@ -114,24 +114,27 @@ demo:
     alice="$bin --root $ground/alice"
     bob="$bin --root $ground/bob"
 
+    # Every name and every message goes in on stdin, and `-` is what says so.
+    # A command line is public: any account on the machine reads another
+    # process's arguments while it runs, and the shell keeps them afterwards.
+    # An invitation leaks one chance to enter one channel; `--to bob` leaks who
+    # is talking to whom, on every message. So neither is an argument here.
     echo '--- alice opens a channel and mints one line ---'
-    invite=$($alice --json invite --name bob --waypoint "$ground/host" | grep -o 'kusanagi1:[0-9a-f]*')
+    invite=$(printf 'bob\n' | $alice --json invite --name - --waypoint "$ground/host" | grep -o 'kusanagi1:[0-9a-f]*')
     echo "${invite:0:72}…"
     echo
     echo '--- bob joins with nothing but that line, piped in ---'
-    # Piped, not passed: the line carries the channel secret, and an argument is
-    # readable by every account on the machine and kept by the shell afterwards.
-    echo "$invite" | $bob join --name alice
+    printf 'alice\n%s' "$invite" | $bob join --name -
     echo
     for line in "the first thing alice says" "the second" "the third"; do
-        $alice send --to bob "$line" > /dev/null
+        printf 'bob\n%s' "$line" | $alice send --to - > /dev/null
     done
-    $bob send --to alice "bob heard you" > /dev/null
+    printf 'alice\nbob heard you' | $bob send --to - > /dev/null
     echo '--- bob reads alice, verified from genesis ---'
-    $bob read --from alice
+    printf 'alice\n' | $bob read --from -
     echo
     echo '--- alice reads bob ---'
-    $alice --json read --from bob
+    printf 'bob\n' | $alice --json read --from -
     echo
     echo '--- and this is everything the host can see ---'
     ls "$ground/host"/*/* | head -4
@@ -144,6 +147,12 @@ demo:
 # so this skips itself, successfully, when cabal is not there. The binary it
 # drives is built here and passed in, which is why nothing inside `adversary/`
 # has to know where a target directory lives.
+#
+# **Release, not debug.** Every property here spawns the binary tens of times,
+# and ML-DSA-87 is a lattice scheme: unoptimised it is several times slower at
+# the one thing every spawn does. Measured on this machine, `send` costs 149ms
+# in debug and 43ms in release. The suite is not testing the optimiser, so the
+# slow build buys nothing and costs minutes on every run.
 adversary:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -151,7 +160,7 @@ adversary:
         echo "skipped: cabal is not installed. See adversary/adversary-SPEC.md §2."
         exit 0
     fi
-    built=$(cargo build --message-format json 2>/dev/null \
+    built=$(cargo build --release --message-format json 2>/dev/null \
         | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's|\\\\|/|g')
     [ -n "$built" ] || { echo "cargo did not report an executable"; exit 1; }
     cd adversary
