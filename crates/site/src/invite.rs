@@ -271,7 +271,7 @@ mod tests {
         Invite {
             secret: Secret::from_bytes([3; 32]),
             bearer_seed: [2_u8; 32],
-            locator: "http://box.example:8443".to_owned(),
+            locator: "http://box.example:8963".to_owned(),
         }
     }
 
@@ -331,7 +331,7 @@ mod tests {
     fn the_check_code_follows_the_secret_and_nothing_else() {
         let one = invite();
         let mut other = invite();
-        other.locator = "http://elsewhere:8443".to_owned();
+        other.locator = "http://elsewhere:8963".to_owned();
         assert_eq!(one.check(), other.check());
         assert_eq!(one.check().len(), 4);
 

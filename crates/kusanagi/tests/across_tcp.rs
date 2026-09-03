@@ -23,7 +23,7 @@
 mod common;
 
 use common::{Endpoint, invite_line, json, scratch};
-use kusanagi::{Request, SystemClock, Whose};
+use kusanagi::{HOST_ADDRESS, Request, SystemClock, Whose};
 use kusanagi_box::Server;
 use std::net::TcpListener;
 
@@ -116,6 +116,52 @@ fn doctor_measures_a_running_host_and_certifies_it() {
     }
 
     std::fs::remove_dir_all(&ground).ok();
+}
+
+/// The address a host is told to take is one another program can already hold,
+/// and what comes back has to say so.
+///
+/// Before this, a taken port produced `kusanagi.local`, whose recovery reads
+/// "check that --root names a writable directory" — advice about a flag that has
+/// nothing to do with the failure. An agent that follows it changes the wrong
+/// thing and tries again.
+#[test]
+fn an_address_somebody_else_holds_is_refused_by_name() {
+    let ground = scratch("bind-taken");
+    let held = TcpListener::bind("127.0.0.1:0").expect("could not bind a port");
+    let port = held.local_addr().expect("no local address").port();
+    let endpoint = Endpoint::new(ground.join("who"));
+
+    let refused = endpoint
+        .run(&Request::Host {
+            bind: port.to_string(),
+            directory: ground.join("host"),
+            capacity: 1_024,
+        })
+        .expect_err("a host took an address another listener already holds");
+
+    assert_eq!(refused.code(), "kusanagi.address_unavailable");
+    let recovery = refused.render(true);
+    assert!(
+        recovery.contains("--bind"),
+        "the way out of a taken address is another address: {recovery}"
+    );
+    assert!(
+        !recovery.contains("--root"),
+        "a taken port is not a question about --root: {recovery}"
+    );
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+/// The default is a port IANA lists as unassigned, not the registered one.
+///
+/// 8443 is `pcsync-https` in the registry and is taken in practice by Tomcat,
+/// ingress controllers and development proxies, so the first command in the
+/// documentation collided with whatever else the machine was running.
+#[test]
+fn the_default_host_address_is_loopback_on_an_unassigned_port() {
+    assert_eq!(HOST_ADDRESS, "127.0.0.1:8963");
 }
 
 #[test]

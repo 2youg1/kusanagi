@@ -191,7 +191,7 @@ fn a_socks_proxy_is_given_the_name_rather_than_the_answer_to_it() {
     // would fail before the proxy was ever contacted — and on any name that
     // *does* resolve, it would have leaked a plaintext DNS query for it.
     let waypoint = HttpWaypoint::new(
-        "http://nonexistent.invalid:8443",
+        "http://nonexistent.invalid:8963",
         &Access {
             proxy: Some(Proxy::parse(&format!("socks5://127.0.0.1:{proxy_port}")).unwrap()),
             patience: Duration::from_secs(2),

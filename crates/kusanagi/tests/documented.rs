@@ -27,11 +27,12 @@
 use std::path::{Path, PathBuf};
 
 /// The documents a reader is expected to believe.
-const DOCUMENTS: [&str; 4] = [
+const DOCUMENTS: [&str; 5] = [
     "README.md",
     "README.zh-CN.md",
     "ARCHITECTURE.md",
     "docs/box-protocol.md",
+    "docs/joining.md",
 ];
 
 /// The workspace root, from where this crate sits in it.
@@ -112,6 +113,29 @@ fn the_largest_message_is_the_one_the_kernel_allows() {
         found,
         "no document says a message is capped at {said} bytes"
     );
+}
+
+#[test]
+fn every_port_in_the_documents_is_the_one_a_host_takes_by_default() {
+    let port = kusanagi::HOST_ADDRESS
+        .rsplit(':')
+        .next()
+        .expect("the default host address has no port");
+    for (name, text) in documents() {
+        // 8443 is `pcsync-https` in the IANA registry and is held in practice by
+        // Tomcat, ingress controllers and development proxies. A document that
+        // still shows it teaches the collision this default exists to avoid.
+        assert!(
+            !text.contains(":8443"),
+            "{name} still shows port 8443, which this host stopped taking"
+        );
+        for line in text.lines().filter(|line| line.contains("kusanagi host")) {
+            assert!(
+                !line.contains(':') || line.contains(port),
+                "{name} starts a host on a port that is not the default: {line}"
+            );
+        }
+    }
 }
 
 #[test]

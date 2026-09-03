@@ -11,7 +11,7 @@ who wrote them.
 
 ```bash
 # on Alice's machine
-kusanagi invite --name bob --waypoint http://box.example:8443
+kusanagi invite --name bob --waypoint http://box.example:8963
 # prints: kusanagi2:0201cff7...
 
 # on Bob's machine — piped, never pasted as an argument
@@ -58,7 +58,7 @@ hand.
 line of text to hand over.
 
 ```bash
-kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8443
+kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8963
 ```
 
 **2. Bob joins.** He needs the line and nothing else.
@@ -211,7 +211,7 @@ property and not just a speed one.
 
 ```text
 /var/lib/kusanagi                    a directory on this machine
-http://box.example:8443              somebody running `kusanagi host`
+http://box.example:8963              somebody running `kusanagi host`
 s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 ```
 

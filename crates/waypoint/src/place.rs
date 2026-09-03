@@ -13,7 +13,7 @@
 //! ```text
 //! /var/lib/kusanagi              a directory on this machine
 //! file:/var/lib/kusanagi         the same, said out loud
-//! http://box.example:8443        somebody's HTTP box
+//! http://box.example:8963        somebody's HTTP box
 //! s3://ACCOUNT.r2.cloudflarestorage.com/bucket/prefix?region=auto
 //! ```
 //!
@@ -330,9 +330,9 @@ mod tests {
     #[test]
     fn a_url_is_a_box_without_its_trailing_slash() {
         assert_eq!(
-            Locator::from_str("http://box.example:8443/").unwrap(),
+            Locator::from_str("http://box.example:8963/").unwrap(),
             Locator::Box {
-                base: "http://box.example:8443".to_owned()
+                base: "http://box.example:8963".to_owned()
             }
         );
     }

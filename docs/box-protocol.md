@@ -142,6 +142,6 @@ against a host that is already running, which is what `kusanagi doctor` does.
 use kusanagi_waypoint::{conformance, HttpWaypoint};
 use kusanagi_seal::{Secret, Stream};
 
-let place = HttpWaypoint::new("http://box.example:8443");
+let place = HttpWaypoint::new("http://box.example:8963");
 conformance::run(&place, &namespace)?;
 ```

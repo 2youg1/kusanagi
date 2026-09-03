@@ -45,6 +45,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `grant.unknown_parent_tag` | a step's parent is neither a root nor a step | keep the bytes and report it |
 | `grant.widened` | a step claims more than the step above it held | keep the bytes and report it: attenuation is one-way |
 | `grant.wrong_root` | a grant chain is rooted in a handle that is not this channel's | ask whoever invited you for a new invitation |
+| `kusanagi.address_unavailable` | this machine would not hand over the address `kusanagi host` was told to listen on | `--bind 0` takes any free port and prints it; `--bind ADDRESS` names one this machine has |
 | `kusanagi.argument` | an argument is not something this verb can act on | the answer names the flag and what to pass instead |
 | `kusanagi.bad_recovery_key` | an archive did not open under the recovery key that was offered | check the key: it is the 64 hexadecimal digits `kusanagi export` printed once, and it goes in on the first line of stdin |
 | `kusanagi.bad_greeting` | the introduction on a channel is not one this build can read | keep the bytes and report it |

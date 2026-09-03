@@ -58,6 +58,23 @@ pub enum Complaint {
         #[source]
         source: std::io::Error,
     },
+    /// This machine would not hand over the address a host was told to take.
+    ///
+    /// Three causes, one action. The port is already held by another program,
+    /// the address names an interface this machine does not have, or the
+    /// operating system reserves it. A caller can do exactly one thing about
+    /// any of them — name a different address — so they share one code, and
+    /// which of the three it was stays in `source` where a person reads it.
+    /// **A distinction that does not change what the caller does next does not
+    /// earn a second code.**
+    #[error("could not listen on {address}: {source}")]
+    Listening {
+        /// The address, as it was resolved from what the caller typed.
+        address: String,
+        /// The underlying failure.
+        #[source]
+        source: std::io::Error,
+    },
     /// Local state could not be read or written.
     #[error("could not {action}: {source}")]
     Local {
@@ -264,6 +281,7 @@ impl Complaint {
             Self::Sealed(error) => error.code(),
             Self::Grant(error) => error.code(),
             Self::Locator(error) => error.code(),
+            Self::Listening { .. } => "kusanagi.address_unavailable",
             Self::Local { .. } => "kusanagi.local",
             Self::Permissions { .. } => "site.permissions",
             // One published code for three shapes: what a caller does about a

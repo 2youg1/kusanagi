@@ -57,6 +57,13 @@ impl Complaint {
                 "a waypoint is a path, an http:// url, or s3://ENDPOINT/BUCKET[?region=R]"
                     .to_owned()
             }
+            // `--bind 0` first, because it always works and needs no guess. The
+            // named form comes second for the host whose address is already in
+            // somebody's invitation, and which therefore has to come back on the
+            // port it left on.
+            Self::Listening { .. } => "pass --bind 0 to take any free port, which is printed \
+                 when the host starts, or --bind ADDRESS to name one this machine has"
+                .to_owned(),
             Self::Local { .. } => {
                 "check that --root names a writable directory, then run the command again"
                     .to_owned()

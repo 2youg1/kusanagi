@@ -55,7 +55,7 @@ clipboard adds, so a paste that picked up a newline still works.
 joined `alice`
   you       3573c49d9948c61e…
   peer      098f2a052e158840…
-  waypoint  http://box.example:8443
+  waypoint  http://box.example:8963
 ```
 
 Two things worth knowing about that line:
@@ -151,11 +151,11 @@ time; `--after` narrows what is reported, never what is checked.
 ## 5 Check the host before you rely on it
 
 ```bash
-kusanagi doctor http://box.example:8443
+kusanagi doctor http://box.example:8963
 ```
 
 ```text
-http://box.example:8443
+http://box.example:8963
   kind  http box
   tier  write-once
 
@@ -182,8 +182,17 @@ who wrote them, and cannot tell which of them belong together — so hosting for
 other people costs you a directory and a port.
 
 ```bash
-kusanagi host --bind 0.0.0.0:8443 --dir /var/lib/kusanagi-host
+kusanagi host --dir /var/lib/kusanagi-host              # 127.0.0.1:8963
+kusanagi host --bind 9000 --dir /var/lib/kusanagi-host  # a bare port is loopback
+kusanagi host --bind 0 --dir /var/lib/kusanagi-host     # any free port, printed on stderr
+kusanagi host --bind 0.0.0.0:8963 --dir /var/lib/kusanagi-host  # every interface
 ```
+
+The default port is inside the block IANA lists as unassigned, so the first of
+these usually works on a machine that is already running other things. When it
+does not, the answer is `kusanagi.address_unavailable` and the way out is another
+`--bind`; a host never moves to a different port on its own, because its address
+is written into every invitation it has already handed out.
 
 Put a TLS terminator in front of it if it faces the internet. The contents are
 sealed either way; TLS hides the addresses from the network between you and your
@@ -192,7 +201,7 @@ callers.
 ## 7 Invite somebody
 
 ```bash
-kusanagi invite --name carol --waypoint http://box.example:8443
+kusanagi invite --name carol --waypoint http://box.example:8963
 ```
 
 The output includes the one line to hand over. Options worth knowing:
@@ -220,7 +229,7 @@ kusanagi channels
 
 ```text
 1 channel(s)
-  carol            root     send,read                      4bd1c0a7e9f2 — cut off (grant.revoked)  http://box.example:8443
+  carol            root     send,read                      4bd1c0a7e9f2 — cut off (grant.revoked)  http://box.example:8963
 ```
 
 The listing answers the two questions you have before running anything else:

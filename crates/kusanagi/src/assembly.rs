@@ -259,14 +259,43 @@ fn doctor(waypoint: &str, now: Instant) -> Result<Outcome, Complaint> {
     Ok(Outcome::examined(waypoint, place.kind(), &certificate))
 }
 
+/// Where `kusanagi host` listens when nobody says otherwise.
+///
+/// Loopback, so that starting a host is never by itself a decision to put one on
+/// the network. The port is inside the block IANA lists as unassigned
+/// (`8955-8979`) and below the dynamic range that begins at 49152, so it is
+/// neither a port some other product was given nor one the operating system will
+/// hand to an outgoing connection. The value it replaced, 8443, is registered as
+/// `pcsync-https` and is in practice held by Tomcat, ingress controllers and
+/// development proxies — which made the first command in the documentation fail
+/// on a machine that had done nothing wrong.
+pub const HOST_ADDRESS: &str = "127.0.0.1:8963";
+
+/// Turns what was typed after `--bind` into an address to listen on.
+///
+/// A bare number is a port on loopback, so `--bind 9000` is enough and
+/// `--bind 0` asks the operating system for any free one. Anything else goes to
+/// the operating system as written.
+///
+/// **The completion is `127.0.0.1` rather than `0.0.0.0`.** Saving five
+/// characters must not be the same keystroke as putting a host on the local
+/// network; listening beyond this machine stays a sentence somebody writes out.
+fn listening(bind: &str) -> String {
+    if !bind.is_empty() && bind.bytes().all(|byte| byte.is_ascii_digit()) {
+        return format!("127.0.0.1:{bind}");
+    }
+    bind.to_owned()
+}
+
 fn host(bind: &str, directory: &std::path::Path, capacity: u64) -> Result<Outcome, Complaint> {
-    let listener = TcpListener::bind(bind).map_err(|source| Complaint::Local {
-        action: "listen on that address",
+    let wanted = listening(bind);
+    let listener = TcpListener::bind(&wanted).map_err(|source| Complaint::Listening {
+        address: wanted.clone(),
         source,
     })?;
     let address = listener
         .local_addr()
-        .map_or_else(|_| bind.to_owned(), |addr| addr.to_string());
+        .map_or(wanted, |addr| addr.to_string());
 
     // Progress goes to stderr so that stdout carries only the result. A host runs
     // until it is killed, so the result arrives long after this line.

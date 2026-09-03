@@ -327,7 +327,7 @@ mod tests {
             secret: Secret::from_bytes([7; 32]),
             root: root.handle(),
             introduction: guest.verifying_key(),
-            locator: "http://box.example:8443".to_owned(),
+            locator: "http://box.example:8963".to_owned(),
             standing: Standing::Root,
             peer: with_peer.then(|| Peer {
                 key: guest.verifying_key(),

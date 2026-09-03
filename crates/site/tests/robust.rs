@@ -49,7 +49,7 @@ fn channel() -> Channel {
         secret: Secret::from_bytes([7; 32]),
         root: Handle::from_bytes([3; 32]),
         introduction: Signer::from_seed(&[2; 32]).verifying_key(),
-        locator: "http://box.example:8443".to_owned(),
+        locator: "http://box.example:8963".to_owned(),
         standing: Standing::Root,
         peer: None,
     }

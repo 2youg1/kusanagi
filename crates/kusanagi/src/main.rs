@@ -17,7 +17,7 @@ use std::process::ExitCode;
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory as _, Parser, Subcommand};
-use kusanagi::{Complaint, Outcome, Request, Site, Whose};
+use kusanagi::{Complaint, HOST_ADDRESS, Outcome, Request, Site, Whose};
 use kusanagi_grant::{Abilities, Ability};
 
 /// A decentralised collaboration network for agents.
@@ -134,8 +134,13 @@ enum Verb {
     Import,
     /// Hold other people's drops. This is the untrusted half of the network.
     Host {
-        /// The address to listen on.
-        #[arg(long, default_value = "127.0.0.1:8443", value_name = "ADDRESS")]
+        /// The address to listen on: HOST:PORT, a bare port, or 0 for any free
+        /// port.
+        ///
+        /// A bare port means loopback, so `--bind 9000` is `127.0.0.1:9000`.
+        /// Reaching this host from another machine takes the long form, which is
+        /// how that decision stays visible.
+        #[arg(long, default_value = HOST_ADDRESS, value_name = "ADDRESS")]
         bind: String,
         /// The directory to keep drops in.
         ///

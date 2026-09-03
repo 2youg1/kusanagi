@@ -8,7 +8,7 @@ kusanagi 是一个命令行程序，专门做这件事。消息是加密的，�
 
 ```bash
 # 在 Alice 的机器上
-kusanagi invite --name bob --waypoint http://box.example:8443
+kusanagi invite --name bob --waypoint http://box.example:8963
 # 输出：kusanagi2:0201cff7...
 
 # 在 Bob 的机器上——用管道递进去，不作为参数粘贴
@@ -49,7 +49,7 @@ cargo build --release      # 产物是 target/release/kusanagi
 **1. Alice 开一条 channel。** 她指定一个存放消息的地方，拿到一行文本交给对方。
 
 ```bash
-kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8443
+kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8963
 ```
 
 **2. Bob 加入。** 他只需要这一行，别的都不需要。
@@ -154,7 +154,7 @@ kusanagi --json read --from alice --after 6
 
 ```text
 /var/lib/kusanagi                    本机上的一个目录
-http://box.example:8443              某人在跑 `kusanagi host`
+http://box.example:8963              某人在跑 `kusanagi host`
 s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 ```
 
