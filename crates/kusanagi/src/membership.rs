@@ -13,9 +13,9 @@
 
 use kusanagi_grant::{Ability, Grant, Scope};
 use kusanagi_kernel::{Instant, PutOutcome, Reader, Segment, Signer, VerifyingKey, Waypoint as _};
-use kusanagi_seal::{Fit, Secret, derive, seal};
-use kusanagi_site::{Channel, Invite, Peer, Site, Standing};
-use kusanagi_waypoint::{Locator, Place};
+use kusanagi_seal::{Fit, Secret, derive, offer, open as open_sealed, seal};
+use kusanagi_site::{Channel, Invite, Offer, Peer, Site, Standing};
+use kusanagi_waypoint::{Conditional as _, Locator, Place, TtlOutcome};
 
 use crate::assembly::{open, signer};
 use crate::walk::peek;
@@ -98,9 +98,34 @@ pub(crate) fn invite(
     let expires_at = now.plus_seconds(lifetime);
     let grant = Grant::issue(&me, &bearer.handle(), Scope::new(abilities, expires_at));
 
+    // The offer goes to the host **before** the channel goes on the disk, so
+    // the two failures are the two harmless ones. A host that will not take it
+    // leaves nothing here to clean up; a disk that will not take the record
+    // leaves an offer nobody holds the key to, which the lifetime sweeps away.
+    let place = open(waypoint, now)?;
+    let (address, key) = offer(&secret);
+    let announcement = Offer {
+        inviter: me.verifying_key(),
+        grant,
+    };
+    let sealed = seal(&key, Fit::Veil, &announcement.to_bytes())?;
+    if place.put_with_ttl(&address, &sealed, lifetime)? == TtlOutcome::NotOffered {
+        // A bucket expires objects by lifecycle rule rather than per object.
+        // The offer still goes there; what it loses is the automatic sweep, and
+        // `doctor` reports that about a host before anybody trusts it with a
+        // channel.
+    }
+
+    let invitation = Invite {
+        secret: secret.clone(),
+        bearer_seed,
+        locator: waypoint.to_owned(),
+    };
+    let check = invitation.check();
+
     site.keep(&Channel {
         name: name.to_owned(),
-        secret: secret.clone(),
+        secret,
         root: me.handle(),
         introduction: bearer.verifying_key(),
         locator: waypoint.to_owned(),
@@ -108,16 +133,10 @@ pub(crate) fn invite(
         peer: None,
     })?;
 
-    let invitation = Invite {
-        inviter: me.verifying_key(),
-        secret,
-        bearer_seed,
-        locator: waypoint.to_owned(),
-        grant,
-    };
     Ok(Outcome::Invited {
         name: name.to_owned(),
         invite: invitation.to_string(),
+        check,
         expires_at: expires_at.as_unix_seconds(),
         expires_in: lifetime,
     })
@@ -136,12 +155,22 @@ pub(crate) fn join(
     }
     let invitation = Invite::parse(text)?;
     let me = signer(site)?;
+    let place = open(&invitation.locator, now)?;
+
+    // The line says where to look and holds the key to look with; who is
+    // inviting, and by what authority, is in the drop it points at.
+    let (offered_at, offer_key) = offer(&invitation.secret);
+    let Some(sealed) = place.get(&offered_at)? else {
+        return Err(Complaint::NoInvitation);
+    };
+    let announcement = Offer::from_bytes(&open_sealed(&offer_key, Fit::Veil, &sealed)?)?;
+
     // An invitation is for somebody else. A stream is derived from the channel
     // secret and the author's handle, so an endpoint that accepted its own would
     // hold two local names for one stream, discover itself as the peer, and read
     // its own segments back as though a peer had written them. Refusing here is
     // what keeps "one channel, two parties" true.
-    let root = invitation.inviter.handle();
+    let root = announcement.inviter.handle();
     if root == me.handle() {
         return Err(Complaint::OwnInvitation);
     }
@@ -149,23 +178,24 @@ pub(crate) fn join(
 
     // What the invitation conveys is checked before it is used, so an expired or
     // malformed one fails here rather than after a stranger's bytes are written.
-    let scope = invitation.grant.verify(&root, now, &revoked)?;
+    // A grant rooted in anybody but the inviter named beside it is refused by
+    // `verify` as `grant.wrong_root`.
+    let scope = announcement.grant.verify(&root, now, &revoked)?;
     let bearer = invitation.bearer();
-    let mine = invitation.grant.attenuate(&bearer, &me.handle(), scope)?;
+    let mine = announcement.grant.attenuate(&bearer, &me.handle(), scope)?;
 
-    let place = open(&invitation.locator, now)?;
     let introduction = invitation.secret.stream(&bearer.handle());
-    let announcement = Segment::genesis(
+    let hello = Segment::genesis(
         &bearer,
         &introduction.trail(&bearer),
         greeting(&me.verifying_key(), &mine),
     )?;
-    let (address, key) = derive(&introduction, INTRODUCTION);
-    let sealed = seal(&key, Fit::Veil, &announcement.to_canonical_bytes())?;
+    let (greeting_at, greeting_key) = derive(&introduction, INTRODUCTION);
+    let sealed = seal(&greeting_key, Fit::Veil, &hello.to_canonical_bytes())?;
 
     // The invitation is one-time because this address is write-once. Nothing
     // tracks whether it has been used; the host refuses the second greeting.
-    if place.put_if_absent(&address, &sealed)? == PutOutcome::AlreadyPresent {
+    if place.put_if_absent(&greeting_at, &sealed)? == PutOutcome::AlreadyPresent {
         return Err(Complaint::InviteSpent);
     }
 
@@ -177,7 +207,7 @@ pub(crate) fn join(
         locator: invitation.locator.clone(),
         standing: Standing::Granted(mine),
         peer: Some(Peer {
-            key: invitation.inviter,
+            key: announcement.inviter,
             standing: Standing::Root,
         }),
     })?;
@@ -186,6 +216,7 @@ pub(crate) fn join(
         name: name.to_owned(),
         handle: me.handle().to_string(),
         peer: root.to_string(),
+        check: invitation.check(),
         waypoint: invitation.locator,
     })
 }

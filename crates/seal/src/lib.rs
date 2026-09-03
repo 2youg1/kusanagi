@@ -16,5 +16,5 @@ mod secret;
 mod veil;
 
 pub use envelope::{Fit, Key, OpenFailed, open, seal};
-pub use secret::{Secret, Stream, backup_key, derive};
+pub use secret::{Secret, Stream, backup_key, derive, offer};
 pub use veil::DROP;

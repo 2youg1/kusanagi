@@ -35,7 +35,7 @@ to keep your site somewhere else.
 
 ## 3 Join
 
-Somebody hands you a line starting with `kusanagi1:`. Give it a local name — that
+Somebody hands you a line starting with `kusanagi2:`. Give it a local name — that
 name is yours alone and nobody else ever sees it.
 
 **Pipe the line in.** It is not an argument and cannot be made one: it carries the

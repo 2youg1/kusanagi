@@ -33,5 +33,5 @@ mod site;
 pub use archive::{export, import};
 pub use channel::{Channel, Peer, Standing};
 pub use error::SiteError;
-pub use invite::Invite;
+pub use invite::{Invite, Offer};
 pub use site::Site;

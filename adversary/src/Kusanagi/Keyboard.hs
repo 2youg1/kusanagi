@@ -291,13 +291,13 @@ adviceIsExecutable door site complaint =
 -- | Advice about an invitation is only given to somebody who supplied one.
 --
 -- The failure this rules out is specific and was real: mistype a channel name
--- and be told to paste the whole `kusanagi1:` line, which sends a confused
+-- and be told to paste the whole `kusanagi2:` line, which sends a confused
 -- person to look for a thing they never had.
 --
 -- "Supplied one" is judged by the position the caller was standing in, not by
 -- whether the text still contains the prefix. This adversary found the reason:
 -- it dropped the leading @k@ from an otherwise perfect invitation, and a rule
--- that searched for @kusanagi1:@ concluded that no invitation had been offered —
+-- that searched for @kusanagi2:@ concluded that no invitation had been offered —
 -- so it called correct advice a defect. A mangled invitation is an invitation
 -- supplied, and @join@ is the one verb whose positional argument is one.
 adviceIsAboutWhatWasGiven :: [String] -> Complaint -> Either String ()
@@ -308,9 +308,9 @@ adviceIsAboutWhatWasGiven arguments complaint
           <> Text.unpack (complaintRecover complaint)
   | otherwise = Right ()
   where
-    mentionsInvitation = Text.isInfixOf "kusanagi1:" (complaintRecover complaint)
+    mentionsInvitation = Text.isInfixOf "kusanagi2:" (complaintRecover complaint)
     suppliedInvitation =
-      "join" `elem` arguments || any (Text.isInfixOf "kusanagi1:" . Text.pack) arguments
+      "join" `elem` arguments || any (Text.isInfixOf "kusanagi2:" . Text.pack) arguments
 
 -- | What an agent pipes in comes back out, byte for byte.
 --

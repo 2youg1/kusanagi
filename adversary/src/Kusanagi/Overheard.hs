@@ -50,7 +50,7 @@ import Kusanagi.Door qualified as Door
 speaking :: String -> String -> [Verb]
 speaking name text =
   [ Invite channel "/tmp/host" Door.Forever Door.both
-  , Join (Invitation "kusanagi1:00") channel
+  , Join (Invitation "kusanagi2:00") channel
   , Send channel (Text.pack text)
   , Read channel
   , ReadAfter channel 3

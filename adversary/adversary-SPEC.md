@@ -37,7 +37,7 @@
    stderr **必须能解成** `{error, code, recover}`。一个只对人说话的失败，对代理而言等于没有发生。
 7. **引导是可执行的。** `recover` 里出现的每一条 `kusanagi …` 命令，拿去真的跑，
    **不得以 `kusanagi.argument` 失败**。叫不出来的命令不是引导，是安慰。
-8. **引导不谈你没给的东西。** 若 `recover` 提到 `kusanagi1:` 那行邀请，则本次输入里
+8. **引导不谈你没给的东西。** 若 `recover` 提到 `kusanagi2:` 那行邀请，则本次输入里
    **必须真的有一个邀请参数**。把名字写错的人被告知去拷邀请码，是把他送进另一个错误。
 9. **代理的字节原样进出。** 任意字节串经 stdin 进、经 `payload` 十六进制出，
    逐字节相等；包括换行、引号、反斜杠、非 UTF-8 与零字节。
@@ -91,7 +91,7 @@ var1 <- Invite Alice "one" Forever {send,read}
    `--help`/`--version`/无动词照旧走 stdout 且退出码 0。回归测试落在
    `crates/kusanagi/tests/door.rs::a_mistyped_flag_is_a_complaint_like_any_other`。
 2. **引导指向了用户没有的东西。** 把通道名打错（`--name BAD`）会被告知
-   「copy the whole invitation, including the `kusanagi1:` prefix」——他手里从来没有邀请码。
+   「copy the whole invitation, including the `kusanagi2:` prefix」——他手里从来没有邀请码。
    处置：`SiteError` 把「格式不对」拆成 `BadName` / `BadInvitation` / `BadRecord`，
    稳定码不变，恢复命令各说各的。
 
@@ -286,4 +286,4 @@ render    :: Text -> Actions World -> Text           -- 轨迹 → 一个 Rust #
 
 **消失这条第一次运行就红了**：主机删掉一个对象，把已验证到高度 1 的读者拉回高度 0。修法是 `kusanagi::walk::confirm`，交付物是 `crates/kusanagi/tests/lying.rs`。
 
-**洞也可能在性质里。** `adviceIsAboutWhatWasGiven` 用「参数里有没有 `kusanagi1:` 字面量」判断调用者是否给过邀请。对抗测试把一份完好邀请的首字母 `k` 打掉，于是这条规则断定没有邀请被给出，从而把**正确的**建议判为缺陷。判据改为调用者所站的位置：`join` 是唯一以邀请为位置参数的动词。**一份被打残的邀请仍然是一份被给出的邀请**，而这条记录留在这里，是因为下一个把性质写严的人会犯同一个错。
+**洞也可能在性质里。** `adviceIsAboutWhatWasGiven` 用「参数里有没有 `kusanagi2:` 字面量」判断调用者是否给过邀请。对抗测试把一份完好邀请的首字母 `k` 打掉，于是这条规则断定没有邀请被给出，从而把**正确的**建议判为缺陷。判据改为调用者所站的位置：`join` 是唯一以邀请为位置参数的动词。**一份被打残的邀请仍然是一份被给出的邀请**，而这条记录留在这里，是因为下一个把性质写严的人会犯同一个错。

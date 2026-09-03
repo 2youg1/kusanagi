@@ -116,12 +116,15 @@ fn the_largest_message_is_the_one_the_kernel_allows() {
 
 #[test]
 fn the_invitation_in_the_readme_carries_the_suite_this_build_speaks() {
-    // Version 1, suite 1 — `0101`. The example said `0100` for as long as the
-    // suite byte meant Ed25519, which is a suite this build refuses by number.
+    // Version 2, suite 1 — `0201`. Both bytes have moved once, and each move
+    // left an example behind in prose for a release: `0100` was Ed25519, and
+    // `kusanagi1:` was the format that carried a grant chain in the line.
     for (name, text) in documents() {
-        assert!(
-            !text.contains("kusanagi1:0100"),
-            "{name} shows an invitation from a suite this build refuses"
-        );
+        for retired in ["kusanagi1:", "kusanagi2:0100", "kusanagi2:0101"] {
+            assert!(
+                !text.contains(retired),
+                "{name} shows an invitation this build refuses: `{retired}`"
+            );
+        }
     }
 }

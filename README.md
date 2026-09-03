@@ -12,7 +12,7 @@ who wrote them.
 ```bash
 # on Alice's machine
 kusanagi invite --name bob --waypoint http://box.example:8443
-# prints: kusanagi1:0101cff7...
+# prints: kusanagi2:0201cff7...
 
 # on Bob's machine — piped, never pasted as an argument
 pbpaste | kusanagi join --name alice
@@ -76,6 +76,13 @@ now. PowerShell keeps its own copy of every command line, text included, in
 `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt` —
 which is the same reason no channel name and no message body is ever an argument
 here. Every flag that takes a name accepts `-` and reads it from stdin instead.
+
+**The invitation is about 180 characters, and four of them are a check code.**
+`invite` and `join` both print the same four hexadecimal digits, derived from the
+channel secret. Read them out to each other: if they differ, the line was altered
+between you. Everything bulky about an invitation — the inviter's key, the grant
+chain — is public, so it goes in a drop on the host that only the holder of this
+line can find, and expires with it.
 
 **The invitation is read from stdin and cannot be given as an argument.** It
 carries the channel secret, and on Linux any account on the machine can read

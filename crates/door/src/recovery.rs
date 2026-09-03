@@ -73,10 +73,12 @@ impl Complaint {
             // and telling somebody to "copy the invitation" without saying where
             // to put it sends them looking for a flag that does not exist.
             Self::BadInvitation { .. } => "pipe the whole invitation in, including the \
-                 `kusanagi1:` prefix: pbpaste | kusanagi join --name NAME"
+                 `kusanagi2:` prefix: pbpaste | kusanagi join --name NAME"
                 .to_owned(),
             Self::BadRecord { .. } => "this file is not one this build can read; keep it and \
                  report it, because a record written here should not fail to parse"
+                .to_owned(),
+            Self::NoInvitation => "ask for a fresh invitation: this one has expired, or the                  host no longer holds what it points at"
                 .to_owned(),
             Self::InviteSpent => {
                 "ask for a fresh invitation; each one admits exactly one endpoint".to_owned()

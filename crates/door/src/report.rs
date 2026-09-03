@@ -59,6 +59,8 @@ pub enum Outcome {
         name: String,
         /// The line to hand over. **This is a bearer credential.**
         invite: String,
+        /// Four hexadecimal digits both ends compute, to read out in person.
+        check: String,
         /// When it stops being accepted, in seconds since the Unix epoch.
         expires_at: u64,
         /// How many seconds that is from now.
@@ -72,6 +74,8 @@ pub enum Outcome {
         handle: String,
         /// The handle that issued the invitation.
         peer: String,
+        /// Four hexadecimal digits both ends compute, to read out in person.
+        check: String,
         /// Where the drops live.
         waypoint: String,
     },

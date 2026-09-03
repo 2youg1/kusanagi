@@ -65,8 +65,10 @@ fn a_host_holding_a_hundred_segments_can_link_none_of_them() {
     }
 
     let records = stored(&host);
-    // 100 segments plus bob's one-time greeting.
-    assert_eq!(records.len(), ROUNDS * 2 + 1, "the host holds a surprise");
+    // 100 segments, plus alice's offer and bob's one-time greeting. Both of
+    // those are drops of the same size at addresses of the same shape, which is
+    // the whole reason the count is the only thing that changed.
+    assert_eq!(records.len(), ROUNDS * 2 + 2, "the host holds a surprise");
 
     // (1) Every address is its own. Two drops never collide, so no address is
     //     ever rewritten and no two records are related by sharing one.

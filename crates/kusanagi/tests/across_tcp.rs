@@ -49,7 +49,7 @@ fn two_endpoints_meet_over_tcp_through_a_host_neither_of_them_trusts() {
 
     // The invitation carries the host's address, so joining needs nothing else.
     let invitation = invite_line(&alice, "bob", &waypoint);
-    assert!(invitation.contains("kusanagi1:"));
+    assert!(invitation.contains("kusanagi2:"));
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),

@@ -9,7 +9,7 @@ kusanagi 是一个命令行程序，专门做这件事。消息是加密的，�
 ```bash
 # 在 Alice 的机器上
 kusanagi invite --name bob --waypoint http://box.example:8443
-# 输出：kusanagi1:0101cff7...
+# 输出：kusanagi2:0201cff7...
 
 # 在 Bob 的机器上——用管道递进去，不作为参数粘贴
 pbpaste | kusanagi join --name alice
@@ -61,6 +61,8 @@ pbpaste | kusanagi --root ~/.bob join --name alice
 ```
 
 **在 Windows 上优先用文件。** 那里的剪贴板是一本日志而不是一个缓冲区：`Win+V` 历史默认保留，「跨设备同步」开着就把它上传到微软账户，任何前台应用都能读到当前的内容。PowerShell 还会把每一条命令行连同正文写进 `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`——这也正是这里的 channel 名和消息正文永远不作为参数的原因。每一个收名字的旗标都接受 `-`，改从标准输入读。
+
+**一条邀请大约 180 个字符，其中四个是校验码。** `invite` 与 `join` 都会印出同一组四位十六进制数字，它由通道秘密派生。两个人彼此念一遍：对不上，就说明这行字在路上被改过。邀请里真正庞大的那些东西——邀请者的公钥、grant 链——都是公开数据，所以它们被放到宙主上的一个 drop 里，只有拿着这行字的人算得出那个地址，并且随邀请一同过期。
 
 **邀请从标准输入读取，不能作为参数传入。** 它携带着通道秘密，而在 Linux 上本机任何一个账号都能从 `/proc` 读到别的进程的命令行，shell 还会把它写进历史记录。把这行字当密码对待，就意味着永远不让它变成一个参数。
 

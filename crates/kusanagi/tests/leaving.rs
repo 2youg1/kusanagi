@@ -234,7 +234,7 @@ fn forgetting_a_channel_frees_its_name_and_keeps_the_revocation() {
     let revoked = kusanagi::Site::at(alice.site_root()).revocations().unwrap();
     assert_eq!(revoked.len(), 1);
     let second = invite_line(&alice, "bob", &ground.join("host").display().to_string());
-    assert!(second.starts_with("kusanagi1:"));
+    assert!(second.starts_with("kusanagi2:"));
 
     std::fs::remove_dir_all(&ground).ok();
 }

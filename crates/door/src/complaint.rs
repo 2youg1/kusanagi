@@ -145,6 +145,13 @@ pub enum Complaint {
     /// The invitation has already been accepted by somebody.
     #[error("this invitation has already been used")]
     InviteSpent,
+    /// The invitation points at a drop that is not there.
+    ///
+    /// The line carries the key to a drop the inviter left on the host, and it
+    /// is gone: expired with the invitation's own lifetime, swept, or never
+    /// written because the inviter's own `invite` did not finish.
+    #[error("the invitation points at something the host does not have")]
+    NoInvitation,
     /// The invitation was minted by this endpoint.
     ///
     /// Accepting it would give one endpoint two local names for one stream: the
@@ -275,6 +282,7 @@ impl Complaint {
             Self::BadGreeting { .. } => "kusanagi.bad_greeting",
             Self::HistoryChanged { .. } => "kusanagi.history_changed",
             Self::InviteSpent => "kusanagi.invite_spent",
+            Self::NoInvitation => "kusanagi.no_invitation",
             Self::BadRecovery => "kusanagi.bad_recovery_key",
             Self::ForeignRecord { .. } => "site.foreign_record",
             Self::OwnInvitation => "kusanagi.own_invitation",

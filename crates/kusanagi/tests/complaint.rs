@@ -86,6 +86,6 @@ fn a_mistyped_name_is_not_told_to_copy_an_invitation() {
         reason: "has a capital in it".to_owned(),
     });
     let rendered = complaint.render(false);
-    assert!(!rendered.contains("kusanagi1:"), "{rendered}");
+    assert!(!rendered.contains("kusanagi2:"), "{rendered}");
     assert!(rendered.contains("a-z"), "{rendered}");
 }

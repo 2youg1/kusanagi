@@ -136,7 +136,7 @@ demo:
     # An invitation leaks one chance to enter one channel; `--to bob` leaks who
     # is talking to whom, on every message. So neither is an argument here.
     echo '--- alice opens a channel and mints one line ---'
-    invite=$(printf 'bob\n' | $alice --json invite --name - --waypoint "$ground/host" | grep -o 'kusanagi1:[0-9a-f]*')
+    invite=$(printf 'bob\n' | $alice --json invite --name - --waypoint "$ground/host" | grep -o 'kusanagi2:[0-9a-f]*')
     echo "${invite:0:72}…"
     echo
     echo '--- bob joins with nothing but that line, piped in ---'

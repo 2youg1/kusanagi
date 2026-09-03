@@ -56,6 +56,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `kusanagi.local` | the operating system refused a read or a write | check that `--root` names a writable directory |
 | `kusanagi.malformed` | a name, an invitation, or a file on this disk is not what it claims | the answer says which of the three, and what to do about it |
 | `kusanagi.no_identity` | a channel was to be written before this endpoint had an identity | run `kusanagi id`, then try again |
+| `kusanagi.no_invitation` | the invitation points at a drop the host does not have | ask for a fresh invitation: this one has expired, or the host no longer holds what it points at |
 | `kusanagi.no_peer_yet` | nobody has joined this channel yet | wait, or run `kusanagi channels` to see what is here |
 | `kusanagi.no_root` | the environment does not say where this user's data lives | pass `--root` |
 | `kusanagi.not_the_peer` | a segment on the peer's stream was signed by somebody else | keep the bytes and report it |

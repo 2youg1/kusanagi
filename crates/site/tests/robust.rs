@@ -76,7 +76,7 @@ proptest! {
     /// and everything after it is a decoder's problem.
     #[test]
     fn the_prefix_buys_nothing(hex in "[0-9a-f]{0,300}") {
-        let offered = format!("kusanagi1:{hex}");
+        let offered = format!("kusanagi2:{hex}");
         prop_assert!(Invite::parse(&offered).is_err());
     }
 

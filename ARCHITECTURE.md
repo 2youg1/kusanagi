@@ -150,6 +150,7 @@ One name per concept. A word with no implementation does not enter the code.
 | **Box** | a host somebody runs: it holds sealed bytes at opaque addresses and refuses to overwrite one | the untrusted half is a program, not a promise |
 | **Veil** | the one size every sealed drop has: 131 072 bytes, a checked pad, no exceptions | how much was said stops being a thing anybody holds |
 | **Trail** | one author's private sequence of one-time proofs for one stream: each segment shows the current proof and commits to the next | a peer can check who wrote a message and can never prove it to anybody else |
+| **Offer** | what an invitation points at rather than carries: the inviter's key and the grant, sealed in one drop the channel secret addresses | the secret stops being held hostage by the public bytes beside it |
 
 Reserved for work not yet done, and therefore **not** in the code: `Bell`, `Cohort`, `Depot`.
 
@@ -260,12 +261,12 @@ Reopening one of these requires a reason that did not exist when it was taken.
 - **The signature scheme is ML-DSA-87 (FIPS 204).** Integer-only arithmetic, so a
   constant-time implementation is reachable, and a final standard. The parameter set is
   the strongest rather than the cheapest, by ruling, and `DROP` is sized to whatever it
-  costs — so the price falls on an artefact nobody types: an invitation is a file, not a
-  line to paste. **Not a QR code either**: that carrier holds 2 953 bytes, one signature
-  is 4 627, and a measured one-hop invitation is 10 009, so no engineering brings the
-  artefact within reach of it while this scheme stands. What makes an invitation checkable
-  face to face is separating the 64 bytes that are secret from the 9 945 that are not — a
-  change to the invitation, not to how it is carried.
+  costs. **The price does not fall on the invitation**, because the 9 945 bytes that made
+  one 20 028 characters long — a verifying key and a grant chain — are public, and public
+  bytes belong in a drop rather than in a line somebody has to carry. What is left is the
+  64 bytes that are secret plus a locator: about 180 characters, and four hexadecimal
+  digits derived from the secret that both ends print and two people read to each other.
+  The separation is what makes an invitation checkable face to face.
 - **Every segment after the first is authenticated by a Trail rather than a signature, and
   the genesis signature covers the author and the first commitment but not the payload.**
   A signature is transferable: a peer who is compromised or coerced holds not merely

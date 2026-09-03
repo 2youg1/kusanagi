@@ -28,21 +28,26 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
         Outcome::Invited {
             name,
             invite,
+            check,
             expires_at,
             expires_in,
         } => format!(
             "channel `{name}` is open. This invitation lasts {}, until {expires_at}\n\n{invite}\n\n\
              hand that line over once. Anybody who holds it can join, so treat it \
-             the way you would treat a key.",
+             the way you would treat a key.\n\n\
+             check code {check} \u{2014} read it out to whoever you gave the line to. If their \
+             `join` shows anything else, the line was altered on the way.",
             lasting(*expires_in)
         ),
         Outcome::Joined {
             name,
             handle,
             peer,
+            check,
             waypoint,
         } => format!(
-            "joined `{name}`\n  you       {handle}\n  peer      {peer}\n  waypoint  {waypoint}"
+            "joined `{name}`\n  you       {handle}\n  peer      {peer}\n  waypoint  {waypoint}\n\
+             \n  check code {check} \u{2014} it should match what the person who invited you says"
         ),
         Outcome::Sent {
             name,

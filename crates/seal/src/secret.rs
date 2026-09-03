@@ -34,6 +34,38 @@ use zeroize::{Zeroize as _, ZeroizeOnDrop};
 
 use crate::envelope::Key;
 
+/// The one drop an invitation points at, addressed by the secret alone.
+///
+/// Every other address on a channel is derived through an author's handle,
+/// because both ends know both handles by then. **Here neither end knows the
+/// other yet** — that is what the drop is for — so the channel secret is all
+/// there is to derive from, and it is enough: producing this address requires
+/// the secret, and the secret is what the invitation carries.
+///
+/// One address per channel, so writing a second offer to a live channel finds
+/// the first one there. A host still learns nothing from it: it is a drop of the
+/// same size as every other, at an address indistinguishable from any other.
+#[must_use]
+pub fn offer(secret: &Secret) -> (DropAddr, Key) {
+    let mut address = [0_u8; 20];
+    let mut hasher = blake3::Hasher::new_derive_key(OFFER_CONTEXT);
+    hasher.update(secret.as_bytes());
+    hasher.finalize_xof().fill(&mut address);
+
+    let mut cipher_key = [0_u8; 32];
+    let mut nonce = [0_u8; 12];
+    let mut hasher = blake3::Hasher::new_derive_key(KEY_CONTEXT);
+    hasher.update(&address);
+    let mut output = hasher.finalize_xof();
+    output.fill(&mut cipher_key);
+    output.fill(&mut nonce);
+
+    let key = Key::new(cipher_key, nonce);
+    cipher_key.zeroize();
+    nonce.zeroize();
+    (DropAddr::from_bytes(address), key)
+}
+
 /// The key an archive is sealed under.
 ///
 /// Not derived from a stream, because an archive is not at an address: it is a
@@ -64,6 +96,7 @@ const ADDRESS_CONTEXT: &str = "kusanagi 2026-01-01 drop address";
 const KEY_CONTEXT: &str = "kusanagi 2026-01-01 drop key and nonce";
 const TRAIL_CONTEXT: &str = "kusanagi 2026-01-01 trail seed for one lane";
 const BACKUP_CONTEXT: &str = "kusanagi 2026-01-01 backup archive";
+const OFFER_CONTEXT: &str = "kusanagi 2026-01-01 offer drop";
 
 /// What an author signs once to obtain the seed of their trail on a lane.
 ///

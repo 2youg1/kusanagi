@@ -19,22 +19,27 @@
 //! person who used it, and nobody else.
 //!
 //! ```text
-//! version         1 byte    = 1
+//! version         1 byte    = 2
 //! suite           1 byte    = 1, the baseline: BLAKE3, ChaCha20-Poly1305, ML-DSA-87
-//! inviter      2592 bytes   the inviter's verifying key; its handle roots the channel
 //! secret         32 bytes   the channel secret
 //! bearer_seed    32 bytes   the one-time signing key
-//! locator_len     2 bytes   big endian
-//! locator         N bytes   utf-8
-//! grant_len       2 bytes   big endian
-//! grant           M bytes   inviter -> bearer
+//! locator         N bytes   utf-8, to the end
 //! ```
 //!
-//! The inviter arrives as a key rather than a name because the acceptor will
-//! read their stream, and a segment names its author without carrying the key
-//! that checks it. The grant's root step carries the same key, and
-//! [`Grant::verify`] is what makes the two agree — an invitation naming one
-//! inviter and rooting its grant in another is refused when it is accepted.
+//! **Everything else moved to a drop on the host.** Version 1 carried the
+//! inviter's 2 592-byte verifying key and a grant chain in the line itself,
+//! which made an ordinary invitation 20 028 characters: too long to read out,
+//! too long to type, and on Windows only transportable through a clipboard that
+//! keeps a history. None of that bulk is secret — a verifying key and a grant
+//! are public by construction — so **the secret was being held hostage by the
+//! public data beside it**. What is left here is the 64 bytes that actually are
+//! secret, plus where to look; the rest sits in an [`Offer`] at an address only
+//! the holder of this line can compute. About 180 characters.
+//!
+//! The inviter still arrives as a key rather than a name, because the acceptor
+//! will read their stream and a segment names its author without carrying the
+//! key that checks it. It arrives in the offer instead of the line, and the
+//! grant's root step carries the same key: [`Grant::verify`] makes the two agree.
 
 use core::fmt;
 
@@ -42,10 +47,17 @@ use kusanagi_grant::Grant;
 use kusanagi_kernel::{Hex, Reader, Signer, VerifyingKey, unhex};
 use kusanagi_seal::Secret;
 
-use crate::channel::{put_block, take_block, take_text};
 use crate::error::SiteError;
 
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
+
+/// The prefix version 1 used, refused by name.
+///
+/// A build that still mints them exists, and its invitations are not damaged —
+/// they are from a format this one does not read. Saying so is the difference
+/// between "ask for a new invitation" and an afternoon spent looking for a paste
+/// that went wrong.
+const PREVIOUS_PREFIX: &str = "kusanagi1:";
 
 /// An invitation that ends in the middle of a field.
 ///
@@ -74,21 +86,81 @@ fn mangled(error: kusanagi_kernel::Incomplete) -> SiteError {
 const BASELINE_SUITE: u8 = 1;
 
 /// The prefix that makes an invitation recognisable when pasted into anything.
-const PREFIX: &str = "kusanagi1:";
+const PREFIX: &str = "kusanagi2:";
 
 /// Everything a newcomer needs, and nothing else.
 #[derive(Clone, Debug)]
 pub struct Invite {
-    /// Who issued it, and the root of every grant on the channel.
-    pub inviter: VerifyingKey,
     /// The channel secret.
     pub secret: Secret,
     /// The one-time key the grant was issued to.
     pub bearer_seed: [u8; 32],
     /// Where the drops live.
     pub locator: String,
+}
+
+/// What an invitation points at: who is inviting, and by what authority.
+///
+/// Sealed into one drop at the address [`kusanagi_seal::offer`] derives from the
+/// channel secret. Public data, kept off the line because it is large, and kept
+/// out of the clear because an address nobody can compute costs less than an
+/// argument about whether it mattered.
+///
+/// ```text
+/// version    1 byte     = 1
+/// inviter 2592 bytes    the inviter's verifying key
+/// grant      the rest   inviter -> bearer
+/// ```
+#[derive(Clone, Debug)]
+pub struct Offer {
+    /// Who issued the invitation, and the root of every grant on the channel.
+    pub inviter: VerifyingKey,
     /// The grant from the inviter to the one-time key.
     pub grant: Grant,
+}
+
+/// The layout of an offer, which versions apart from the invitation's own.
+const OFFER_VERSION: u8 = 1;
+
+impl Offer {
+    /// The bytes that go in the drop.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = vec![OFFER_VERSION];
+        out.extend_from_slice(self.inviter.as_bytes());
+        out.extend_from_slice(&self.grant.to_canonical_bytes());
+        out
+    }
+
+    /// Reads what [`Self::to_bytes`] wrote.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::BadInvitation`] when the bytes are not an offer this build
+    /// reads. They opened under a key derived from the channel secret, so
+    /// whoever wrote them held it: this is a build disagreement or damage,
+    /// never a forgery.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SiteError> {
+        let mut reader = Reader::new(bytes);
+        let version = reader.take_byte().map_err(mangled)?;
+        if version != OFFER_VERSION {
+            return Err(SiteError::BadInvitation {
+                reason: format!(
+                    "this invitation points at a version {version} offer; this build reads {OFFER_VERSION}"
+                ),
+            });
+        }
+        let inviter = VerifyingKey::from_bytes(
+            reader
+                .take_array::<{ VerifyingKey::WIDTH }>()
+                .map_err(mangled)?,
+        );
+        let rest = reader.take(reader.remaining()).map_err(mangled)?;
+        Ok(Self {
+            inviter,
+            grant: Grant::from_canonical_bytes(rest)?,
+        })
+    }
 }
 
 impl Invite {
@@ -98,19 +170,39 @@ impl Invite {
         Signer::from_seed(&self.bearer_seed)
     }
 
+    /// Four hexadecimal digits two people can read to each other.
+    ///
+    /// **This is what makes an invitation checkable in person.** Both ends
+    /// compute it from the same 32 bytes, so a line altered in transit produces
+    /// four different characters at the other end. Four is short enough to say
+    /// out loud and long enough that somebody rewriting a line in flight has to
+    /// be lucky one time in 65 536 — and they get one try, because the wrong
+    /// answer is spoken aloud.
+    #[must_use]
+    pub fn check(&self) -> String {
+        let digest = blake3::hash(self.secret.as_bytes());
+        Hex(&digest.as_bytes()[..2]).to_string()
+    }
+
     /// Parses an invitation.
     ///
     /// # Errors
     ///
-    /// [`SiteError::BadInvitation`] when the text is not an invitation this build
-    /// understands, including one for a different cipher suite.
+    /// [`SiteError::BadInvitation`] when the text is not an invitation this
+    /// build understands, including one for a different cipher suite or an
+    /// earlier format.
     pub fn parse(text: &str) -> Result<Self, SiteError> {
-        let body = text
-            .trim()
-            .strip_prefix(PREFIX)
-            .ok_or(SiteError::BadInvitation {
-                reason: format!("an invitation starts with `{PREFIX}`"),
-            })?;
+        let text = text.trim();
+        if text.starts_with(PREVIOUS_PREFIX) {
+            return Err(SiteError::BadInvitation {
+                reason: "this is a version 1 invitation, which carried the inviter key and \
+                         the grant inline; this build reads version 2"
+                    .to_owned(),
+            });
+        }
+        let body = text.strip_prefix(PREFIX).ok_or(SiteError::BadInvitation {
+            reason: format!("an invitation starts with `{PREFIX}`"),
+        })?;
         let bytes = unhex(body)?;
 
         let mut reader = Reader::new(&bytes);
@@ -125,30 +217,23 @@ impl Invite {
             });
         }
 
-        let inviter = VerifyingKey::from_bytes(
-            reader
-                .take_array::<{ VerifyingKey::WIDTH }>()
-                .map_err(mangled)?,
-        );
         let secret = Secret::from_bytes(reader.take_array::<32>().map_err(mangled)?);
         let bearer_seed = reader.take_array::<32>().map_err(mangled)?;
-        let locator = take_text(&mut reader, "a locator")?;
-        let grant = Grant::from_canonical_bytes(&take_block(&mut reader)?)?;
-
-        if reader.remaining() != 0 {
+        // The locator runs to the end: there is nothing behind it to be
+        // delimited from, and a length prefix would be two bytes spent saying so.
+        let rest = reader.take(reader.remaining()).map_err(mangled)?;
+        let locator = String::from_utf8(rest.to_vec()).map_err(|_| SiteError::BadInvitation {
+            reason: "the locator in this invitation is not text".to_owned(),
+        })?;
+        if locator.is_empty() {
             return Err(SiteError::BadInvitation {
-                reason: format!(
-                    "{} byte(s) follow a complete invitation",
-                    reader.remaining()
-                ),
+                reason: "this invitation names no waypoint".to_owned(),
             });
         }
         Ok(Self {
-            inviter,
             secret,
             bearer_seed,
             locator,
-            grant,
         })
     }
 }
@@ -160,11 +245,9 @@ impl fmt::Display for Invite {
     /// Anything that logs one has given away a channel.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut bytes = vec![VERSION, BASELINE_SUITE];
-        bytes.extend_from_slice(self.inviter.as_bytes());
         bytes.extend_from_slice(self.secret.as_bytes());
         bytes.extend_from_slice(&self.bearer_seed);
-        put_block(&mut bytes, self.locator.as_bytes());
-        put_block(&mut bytes, &self.grant.to_canonical_bytes());
+        bytes.extend_from_slice(self.locator.as_bytes());
         write!(f, "{PREFIX}{}", Hex(&bytes))
     }
 }
@@ -179,20 +262,24 @@ impl fmt::Display for Invite {
     reason = "test code"
 )]
 mod tests {
-    use super::{Invite, PREFIX, SiteError};
+    use super::{Invite, Offer, PREFIX, PREVIOUS_PREFIX, SiteError};
     use kusanagi_grant::{Abilities, Grant, Scope};
     use kusanagi_kernel::{Instant, Signer};
     use kusanagi_seal::Secret;
 
     fn invite() -> Invite {
-        let inviter = Signer::from_seed(&[1; 32]);
-        let bearer_seed = [2_u8; 32];
-        let bearer = Signer::from_seed(&bearer_seed);
         Invite {
-            inviter: inviter.verifying_key(),
             secret: Secret::from_bytes([3; 32]),
-            bearer_seed,
+            bearer_seed: [2_u8; 32],
             locator: "http://box.example:8443".to_owned(),
+        }
+    }
+
+    fn offer() -> Offer {
+        let inviter = Signer::from_seed(&[1; 32]);
+        let bearer = Signer::from_seed(&[2; 32]);
+        Offer {
+            inviter: inviter.verifying_key(),
             grant: Grant::issue(
                 &inviter,
                 &bearer.handle(),
@@ -209,16 +296,56 @@ mod tests {
         assert!(!text.contains(char::is_whitespace));
 
         let parsed = Invite::parse(&text).unwrap();
-        assert_eq!(parsed.inviter.as_bytes(), original.inviter.as_bytes());
         assert_eq!(parsed.secret.as_bytes(), original.secret.as_bytes());
         assert_eq!(parsed.bearer_seed, original.bearer_seed);
         assert_eq!(parsed.locator, original.locator);
+    }
+
+    /// The whole point of version 2: a line somebody can read out.
+    #[test]
+    fn an_invitation_is_short_enough_to_read_to_somebody() {
+        let text = invite().to_string();
+        assert!(
+            text.len() < 200,
+            "an invitation is {} characters, which is not a line",
+            text.len()
+        );
+    }
+
+    #[test]
+    fn an_offer_round_trips_through_one_drop() {
+        let original = offer();
+        let parsed = Offer::from_bytes(&original.to_bytes()).unwrap();
+        assert_eq!(parsed.inviter.as_bytes(), original.inviter.as_bytes());
         assert_eq!(parsed.grant, original.grant);
     }
 
     #[test]
+    fn an_offer_from_another_version_is_refused_rather_than_guessed() {
+        let mut bytes = offer().to_bytes();
+        bytes[0] = 9;
+        assert!(Offer::from_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn the_check_code_follows_the_secret_and_nothing_else() {
+        let one = invite();
+        let mut other = invite();
+        other.locator = "http://elsewhere:8443".to_owned();
+        assert_eq!(one.check(), other.check());
+        assert_eq!(one.check().len(), 4);
+
+        other.secret = Secret::from_bytes([4; 32]);
+        assert_ne!(one.check(), other.check());
+    }
+
+    #[test]
     fn surrounding_whitespace_is_forgiven() {
-        let text = format!("  {}\n", invite());
+        let text = format!(
+            "  {}
+",
+            invite()
+        );
         assert!(Invite::parse(&text).is_ok());
     }
 
@@ -229,17 +356,21 @@ mod tests {
         assert!(Invite::parse(stripped).is_err());
     }
 
+    /// The format that carried the inviter key and the grant inline.
+    ///
+    /// It has to be refused by name. An endpoint that reads a version 1 line as
+    /// a version 2 one reports a corrupted paste to somebody whose paste was
+    /// perfect, and sends them looking for a problem that is not there.
     #[test]
-    fn a_flipped_character_never_becomes_a_different_valid_invitation() {
+    fn the_format_this_network_has_left_behind_is_refused_by_name() {
         let text = invite().to_string();
-        let mut damaged: Vec<char> = text.chars().collect();
-        let at = damaged.len() - 3;
-        damaged[at] = if damaged[at] == 'a' { 'b' } else { 'a' };
-        let damaged: String = damaged.into_iter().collect();
-        match Invite::parse(&damaged) {
-            Err(_) => {}
-            Ok(parsed) => assert_ne!(parsed.grant, invite().grant),
-        }
+        let body = text.strip_prefix(PREFIX).unwrap();
+        let old = format!("{PREVIOUS_PREFIX}{body}");
+        let refused = Invite::parse(&old).unwrap_err();
+        let SiteError::BadInvitation { reason } = refused else {
+            panic!("a version 1 invitation was not refused as an invitation");
+        };
+        assert!(reason.contains("version 1"), "{reason}");
     }
 
     /// Byte 1 is the suite, and its second hexadecimal character is at index 3.
@@ -254,12 +385,6 @@ mod tests {
         assert!(Invite::parse(&with_suite(&text, '9')).is_err());
     }
 
-    /// The suite this network spoke before ML-DSA-87 replaced Ed25519.
-    ///
-    /// It has to be refused by number, not discovered as damage. An endpoint
-    /// that reads suite 0 and then fails on the key length reports a corrupted
-    /// paste to somebody whose paste was perfect, and sends them looking for a
-    /// problem that is not there.
     #[test]
     fn the_suite_this_network_has_left_behind_is_refused() {
         let text = invite().to_string();
