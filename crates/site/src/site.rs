@@ -93,19 +93,17 @@ impl Site {
     /// caller outside this file is `archive`, which puts it in a sealed backup —
     /// the one place it is meant to leave the disk.
     pub(crate) fn seed(&self) -> Result<Option<[u8; 32]>, SiteError> {
-        match fs::read(self.root.join("identity")) {
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(SiteError::Local {
-                action: "read this endpoint's identity",
-                source,
-            }),
-            Ok(bytes) => <[u8; 32]>::try_from(bytes.as_slice())
-                .map(Some)
-                .map_err(|_| SiteError::BadRecord {
-                    what: "an identity file",
-                    reason: format!("an identity is 32 bytes; this one is {}", bytes.len()),
-                }),
-        }
+        let Some(bytes) =
+            permissions::read(&self.root.join("identity"), "read this endpoint's identity")?
+        else {
+            return Ok(None);
+        };
+        <[u8; 32]>::try_from(bytes.as_slice())
+            .map(Some)
+            .map_err(|_| SiteError::BadRecord {
+                what: "an identity file",
+                reason: format!("an identity is 32 bytes; this one is {}", bytes.len()),
+            })
     }
 
     /// What this site files a channel called `name` under.
@@ -144,17 +142,11 @@ impl Site {
     /// [`SiteError::UnknownChannel`] when there is no such channel.
     pub fn channel(&self, name: &str) -> Result<Channel, SiteError> {
         let path = self.channel_path(name)?;
-        match fs::read(&path) {
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-                Err(SiteError::UnknownChannel {
-                    name: name.to_owned(),
-                })
-            }
-            Err(source) => Err(SiteError::Local {
-                action: "read a channel",
-                source,
+        match permissions::read(&path, "read a channel")? {
+            None => Err(SiteError::UnknownChannel {
+                name: name.to_owned(),
             }),
-            Ok(bytes) => {
+            Some(bytes) => {
                 let channel = Channel::from_bytes(&bytes)?;
                 // The record says what it is called and the file says where it
                 // was filed; they are derived from each other, so disagreement
@@ -223,8 +215,9 @@ impl Site {
     /// mistake rather than a state of the disk, so it is not a miss.
     pub fn cairn(&self, name: &str, author: &Handle) -> Result<Option<Cairn>, SiteError> {
         let path = self.cairn_path(name, author)?;
-        Ok(fs::read(&path)
+        Ok(permissions::read(&path, "read a cairn")
             .ok()
+            .flatten()
             .and_then(|bytes| Cairn::from_bytes(&bytes).ok()))
     }
 
@@ -328,10 +321,11 @@ impl Site {
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
-            let bytes = fs::read(entry.path()).map_err(|source| SiteError::Local {
-                action: "read a channel while listing them",
-                source,
-            })?;
+            let Some(bytes) =
+                permissions::read(&entry.path(), "read a channel while listing them")?
+            else {
+                continue;
+            };
             names.push(Channel::from_bytes(&bytes)?.name);
         }
         names.sort();

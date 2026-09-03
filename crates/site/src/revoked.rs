@@ -29,18 +29,13 @@ use crate::permissions;
 /// [`SiteError::Local`] when the list cannot be read, and
 /// [`SiteError::BadRecord`] when a line is not a step identifier.
 pub(crate) fn all(root: &Path) -> Result<Revocations, SiteError> {
-    let text = match std::fs::read_to_string(root.join("revoked")) {
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Revocations::new());
-        }
-        Err(source) => {
-            return Err(SiteError::Local {
-                action: "read the revocation list",
-                source,
-            });
-        }
-        Ok(text) => text,
+    let Some(bytes) = permissions::read(&root.join("revoked"), "read the revocation list")? else {
+        return Ok(Revocations::new());
     };
+    let text = String::from_utf8(bytes).map_err(|_| SiteError::BadRecord {
+        what: "the revocation list",
+        reason: "this file is not text".to_owned(),
+    })?;
 
     let mut revoked = Revocations::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {

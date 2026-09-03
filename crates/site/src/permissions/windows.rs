@@ -46,6 +46,9 @@ use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, INVALID_HANDLE_VALUE,
 use windows_sys::Win32::Security::Authorization::{
     ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
+use windows_sys::Win32::Security::Cryptography::{
+    CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData, CryptUnprotectData,
+};
 use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_WRITE,
@@ -213,4 +216,102 @@ pub(super) fn create_file(path: &Path, action: &'static str) -> Result<File, Sit
 /// A NUL-terminated UTF-16 copy of `text`, as every `…W` entry point wants.
 fn wide(text: &OsStr) -> Vec<u16> {
     text.encode_wide().chain(std::iter::once(0)).collect()
+}
+
+/// Seals `plain` so that only this Windows account can open it.
+///
+/// `CRYPTPROTECT_UI_FORBIDDEN` because a one-shot command must never stop for a
+/// dialogue; the extra entropy binds a blob to this program, so a blob lifted
+/// out of a site does not open under another application's call.
+pub(crate) fn protect(plain: &[u8]) -> Result<Vec<u8>, SiteError> {
+    crypt(plain, Direction::Seal)
+}
+
+/// Opens what [`protect`] sealed, under the account that sealed it.
+pub(crate) fn unprotect(sealed: &[u8]) -> Result<Vec<u8>, SiteError> {
+    crypt(sealed, Direction::Open)
+}
+
+/// Which way through DPAPI.
+#[derive(Clone, Copy)]
+enum Direction {
+    Seal,
+    Open,
+}
+
+/// What binds a blob to this program as well as to this account.
+///
+/// A constant rather than a secret: it is not a key and does not pretend to be
+/// one. What it buys is that a blob copied out of a site does not open under
+/// somebody else's `CryptUnprotectData` call in the same session.
+const ENTROPY: &[u8] = b"kusanagi/site/1";
+
+/// One call through DPAPI, in either direction.
+fn crypt(input: &[u8], direction: Direction) -> Result<Vec<u8>, SiteError> {
+    let refused = |what: &'static str| SiteError::Permissions {
+        what,
+        source: std::io::Error::last_os_error(),
+    };
+    let source = blob(input)?;
+    let entropy = blob(ENTROPY)?;
+    let mut out = CRYPT_INTEGER_BLOB {
+        cbData: 0,
+        pbData: std::ptr::null_mut(),
+    };
+    // SAFETY: both input blobs point at slices that outlive the call, `out` is a
+    // live local the callee writes once, and the two null pointers are the
+    // documented values for "no reserved data" and "no prompt".
+    let done = unsafe {
+        match direction {
+            Direction::Seal => CryptProtectData(
+                &raw const source,
+                std::ptr::null(),
+                &raw const entropy,
+                std::ptr::null(),
+                std::ptr::null(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &raw mut out,
+            ),
+            Direction::Open => CryptUnprotectData(
+                &raw const source,
+                std::ptr::null_mut(),
+                &raw const entropy,
+                std::ptr::null(),
+                std::ptr::null(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &raw mut out,
+            ),
+        }
+    };
+    if done == 0 {
+        return Err(refused(match direction {
+            Direction::Seal => "seal a site record for this account",
+            Direction::Open => "open a site record sealed for this account",
+        }));
+    }
+    let len = usize::try_from(out.cbData)
+        .map_err(|_| refused("read back a blob larger than this machine can address"))?;
+    // SAFETY: on success DPAPI reports a buffer of exactly `cbData` bytes at
+    // `pbData`, allocated with `LocalAlloc`. The copy happens before the free,
+    // and nothing else holds the pointer.
+    let bytes = unsafe { std::slice::from_raw_parts(out.pbData, len) }.to_vec();
+    // SAFETY: `out.pbData` came from DPAPI, which documents `LocalFree` as the
+    // way to release it, and this is the only release of it.
+    unsafe { LocalFree(out.pbData.cast()) };
+    Ok(bytes)
+}
+
+/// A blob pointing at `bytes`, which the caller keeps alive across the call.
+///
+/// It borrows rather than owns: nothing here allocated the bytes and nothing
+/// here frees them, so the blob is valid exactly as long as the slice is.
+fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SiteError> {
+    let len = u32::try_from(bytes.len()).map_err(|_| SiteError::Permissions {
+        what: "describe a site record to the operating system",
+        source: std::io::Error::other("a record is larger than four gigabytes"),
+    })?;
+    Ok(CRYPT_INTEGER_BLOB {
+        cbData: len,
+        pbData: bytes.as_ptr().cast_mut(),
+    })
 }

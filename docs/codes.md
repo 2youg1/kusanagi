@@ -79,6 +79,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `segment.tag` | a segment's first byte is neither genesis nor follows | keep the bytes and report it |
 | `segment.trailing` | bytes follow a complete segment | keep the bytes and report it |
 | `segment.truncated` | a segment ends in the middle of a field | keep the bytes and report it |
+| `site.foreign_record` | a record on this disk was sealed by a platform store this one has not | run `kusanagi export` on the platform that made it, and pipe the archive into `kusanagi import` here |
 | `site.permissions` | the operating system would not attach the restriction a site needs | choose a `--root` on a disk that keeps per-file permissions |
 | `waypoint.io` | the underlying store failed | run `kusanagi doctor <waypoint>` |
 | `waypoint.overwrite_not_refused` | the store accepted a write that should have been refused | this place cannot hold a channel; use one `doctor` passes |

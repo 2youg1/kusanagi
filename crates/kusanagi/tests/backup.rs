@@ -85,7 +85,11 @@ fn a_site_deleted_and_restored_is_the_site_it_was() {
         .expect("import refused a key it produced");
     assert_eq!(json(&report)["channels"], 1);
 
-    assert_eq!(restored.handle(), identity, "the identity did not come back");
+    assert_eq!(
+        restored.handle(),
+        identity,
+        "the identity did not come back"
+    );
     assert_eq!(
         json(&restored.run(&Request::Channels).unwrap()),
         before,
@@ -162,9 +166,7 @@ fn an_archive_names_nobody_and_carries_no_seed_in_the_clear() {
     // The channel is called `bob` here, and that name is a local fact this
     // endpoint keeps. It must not be readable in a file somebody backs up to a
     // cloud drive.
-    let found = archive
-        .windows(3)
-        .any(|window| window == b"bob".as_slice());
+    let found = archive.windows(3).any(|window| window == b"bob".as_slice());
     assert!(!found, "a channel name is in the clear in an archive");
 
     // Nor is the handle, which is derived from the seed the archive carries.

@@ -54,7 +54,11 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::at_rest::{open_at_rest, seal_at_rest};
 use crate::error::SiteError;
+
+#[cfg(windows)]
+pub(crate) use platform::{protect, unprotect};
 
 /// Creates `path` and every missing parent, readable by nobody else.
 ///
@@ -79,7 +83,7 @@ pub(crate) fn create_dir(path: &Path, action: &'static str) -> Result<(), SiteEr
 /// place.
 pub(crate) fn write(path: &Path, bytes: &[u8], action: &'static str) -> Result<(), SiteError> {
     let staged = staging(path, action)?;
-    put(&staged, bytes, action)?;
+    put(&staged, &seal_at_rest(bytes)?, action)?;
     match fs::rename(&staged, path) {
         Ok(()) => Ok(()),
         Err(source) => {
@@ -113,7 +117,26 @@ fn staging(path: &Path, action: &'static str) -> Result<PathBuf, SiteError> {
 ///
 /// [`SiteError::Local`] when the file exists or cannot be written.
 pub(crate) fn write_new(path: &Path, bytes: &[u8], action: &'static str) -> Result<(), SiteError> {
-    put(path, bytes, action)
+    put(path, &seal_at_rest(bytes)?, action)
+}
+
+/// Reads back what [`write`] or [`write_new`] put there.
+///
+/// **The one place a site record is read.** Sealing on the way out and opening
+/// on the way in are one decision, so they live behind one pair of functions and
+/// no caller of this module has to remember either.
+///
+/// # Errors
+///
+/// [`SiteError::Local`] when the file cannot be read, and whatever
+/// [`crate::at_rest::open_at_rest`] reports for a record this platform has no
+/// store for.
+pub(crate) fn read(path: &Path, action: &'static str) -> Result<Option<Vec<u8>>, SiteError> {
+    match fs::read(path) {
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(SiteError::Local { action, source }),
+        Ok(stored) => open_at_rest(&stored).map(Some),
+    }
 }
 
 /// Creates the file and puts the bytes on the disk.

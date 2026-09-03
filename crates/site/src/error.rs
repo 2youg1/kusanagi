@@ -87,6 +87,16 @@ pub enum SiteError {
         #[source]
         source: std::io::Error,
     },
+    /// A record on this disk was sealed by a platform store this one has not.
+    ///
+    /// A site outlives the machine it was made on. The tag in front of every
+    /// record says which store sealed it, and a build with no such store refuses
+    /// by name rather than handing back a blob as though it were a record.
+    #[error("this record was sealed by a store this platform does not have (tag {tag:#04x})")]
+    ForeignRecord {
+        /// The tag the record carries.
+        tag: u8,
+    },
     /// An archive did not open under the recovery key that was offered.
     ///
     /// One answer for every reason it could fail — a wrong key, a damaged file,

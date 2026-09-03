@@ -228,8 +228,11 @@ fn forgetting_a_channel_frees_its_name_and_keeps_the_revocation() {
 
     // The name is free again — but the revocation outlives the record, or a
     // second invitation under the same name would bring a dead grant back.
-    let revoked = std::fs::read_to_string(alice.site_root().join("revoked")).unwrap();
-    assert_eq!(revoked.lines().count(), 1);
+    // Read through the site rather than off the disk: on Windows the file is a
+    // DPAPI blob, which is what `at_rest.rs` is for and what this must not
+    // depend on.
+    let revoked = kusanagi::Site::at(alice.site_root()).revocations().unwrap();
+    assert_eq!(revoked.len(), 1);
     let second = invite_line(&alice, "bob", &ground.join("host").display().to_string());
     assert!(second.starts_with("kusanagi1:"));
 

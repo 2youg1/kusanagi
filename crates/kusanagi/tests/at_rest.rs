@@ -165,3 +165,83 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         .windows(needle.len())
         .any(|window| window == needle)
 }
+
+/// What is on the disk when somebody else has the disk.
+///
+/// File permissions stop another account on a running machine. They stop nothing
+/// once the drive is somewhere else, and "somewhere else" is a backup, a folder a
+/// sync client uploads, or a laptop that was taken. On Windows every record is a
+/// DPAPI blob whose key comes from this account's logon credentials, so what
+/// travels is noise.
+#[cfg(windows)]
+#[test]
+fn nothing_a_site_writes_is_readable_without_this_windows_account() {
+    let ground = scratch("at-rest-sealed");
+    let host = ground.join("host");
+    let alice = Endpoint::new(ground.join("alice"));
+    let bob = Endpoint::new(ground.join("bob"));
+
+    let invitation = invite_line(&alice, "bob", &host.display().to_string());
+    bob.run(&Request::Join {
+        invite: invitation,
+        name: "alice".to_owned(),
+    })
+    .unwrap();
+    alice.send("bob", "something worth keeping");
+
+    let files = files_under(alice.site_root());
+    assert!(files.len() >= 2, "the site wrote nothing to check");
+    for (path, bytes) in &files {
+        // Every record says which store sealed it, and on this platform that is
+        // DPAPI. A `0x00` here would be a record written in the clear.
+        assert_eq!(
+            bytes.first(),
+            Some(&0x01),
+            "{} is not sealed at rest",
+            path.display()
+        );
+        // The local name of the channel is the thing a person would grep for.
+        assert!(
+            !contains(bytes, b"bob"),
+            "{} holds a channel name in the clear",
+            path.display()
+        );
+    }
+
+    // And the endpoint itself reads all of it back, which is the other half:
+    // sealing that cannot be opened is data loss with a good excuse.
+    let heard = common::json(
+        &alice
+            .run(&Request::Read {
+                name: "bob".to_owned(),
+                after: None,
+                whose: Whose::Mine,
+            })
+            .unwrap(),
+    );
+    assert_eq!(heard["height"], 0);
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+/// A record from a platform whose store this one does not have.
+#[test]
+fn a_record_this_platform_cannot_open_is_refused_by_name() {
+    let ground = scratch("at-rest-foreign");
+    let alice = Endpoint::new(ground.join("alice"));
+    alice.run(&Request::Identity).unwrap();
+
+    // Tag `0x02` is reserved for the next platform's store. Nothing here has
+    // one, so the answer must name the situation rather than hand back a blob.
+    let identity = alice.site_root().join("identity");
+    let mut foreign = vec![0x02_u8];
+    foreign.extend_from_slice(&[7; 32]);
+    std::fs::write(&identity, &foreign).unwrap();
+
+    let refused = alice
+        .run(&Request::Identity)
+        .expect_err("a record from another platform was read as though it were ours");
+    assert_eq!(refused.code(), "site.foreign_record");
+
+    std::fs::remove_dir_all(&ground).ok();
+}

@@ -21,6 +21,7 @@
 //! (`kusanagi channels`, `--root`) that only a front end knows it has.
 
 mod archive;
+mod at_rest;
 mod channel;
 mod error;
 mod invite;

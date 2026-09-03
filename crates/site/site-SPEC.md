@@ -74,6 +74,7 @@
 lib.rs      模块索引
 site.rs     Site —— identity / channels / cairns 的路径与读写
 archive.rs  export / import —— 整个站点封进一串字节，再放回来
+at_rest.rs  站点静态加密：标签字节 + 每平台一个存储
 permissions/mod.rs      暂存与改名：每个平台都一样的那一半
 permissions/unix.rs     创建时定模式位：目录 0700、文件 0600
 permissions/windows.rs  创建时挂受保护 DACL —— 全仓唯一含 `unsafe` 的模块
@@ -224,6 +225,22 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
   哪一份是对的。
 - 密封用 `Fit::Exact`（不填充到 DROP）：归档不去任何宿主那里，把它填充成 drop 的整数倍，
   只会让「三条通道的站点」与「六条通道的站点」在**已经同时拥有两者的那个人**眼里变得一样。
+
+### 静态加密（I6）
+
+站点里每个文件的**第一个字节是标签**：`0x00` 明文、`0x01` DPAPI、`0x02` 起留给下一个平台的存储。
+
+- 读到本平台打不开的标签 → `SiteError::ForeignRecord`，码 `site.foreign_record`，恢复是
+  「在做出它的平台上 `export`，把归档 pipe 进这里的 `import`」——`archive.rs` 写的是明文形态的
+  记录，正是为了让这条恢复路径不需要为每一对平台各写一份迁移代码。
+- **封与开只有一处**：`permissions::write` / `write_new` 出去时封，新增的 `permissions::read`
+  进来时开。site 里所有 `fs::read` 都改成走它，于是「哪些文件要加密」不再是一个需要记住的清单。
+- Windows 用 `CryptProtectData` / `CryptUnprotectData`，`CRYPTPROTECT_UI_FORBIDDEN`（一次性
+  动词绝不能停下来等对话框），附加熵常量 `b"kusanagi/site/1"`——它不是密钥也不假装是，买到的是
+  「从站点里抠出来的 blob 不会在别人的 `CryptUnprotectData` 调用下打开」。
+- **失败是拒绝，不是回退。** 加密失败就明文写下去，等于悄悄撤回这个属性本身。
+- 边界照旧写清楚：DPAPI 挡不住这个账户自己、挡不住一台开着且已解锁的机器、挡不住取证级手段。
+  全盘加密仍是前提（§8 的裁决不变）。
 
 ## 15 影响面
 
