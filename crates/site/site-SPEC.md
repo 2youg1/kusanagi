@@ -73,6 +73,7 @@
 ```
 lib.rs      模块索引
 site.rs     Site —— identity / channels / cairns 的路径与读写
+archive.rs  export / import —— 整个站点封进一串字节，再放回来
 permissions/mod.rs      暂存与改名：每个平台都一样的那一半
 permissions/unix.rs     创建时定模式位：目录 0700、文件 0600
 permissions/windows.rs  创建时挂受保护 DACL —— 全仓唯一含 `unsafe` 的模块
@@ -188,6 +189,7 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 | `grant` | Standing 里放的就是 Grant；撤销表放的是 StepId |
 | `seal` | Channel 持有 Secret |
 | `thiserror` | 与其他 crate 同一套错误派生 |
+| `zeroize` | 身份种子进归档的路上要能被擦掉；仓库已有 |
 | `windows-sys` 0.61（仅 `cfg(windows)`） | 微软自己发布的绑定，只开 `Win32_Foundation` / `Win32_Security` / `Win32_Security_Authorization` / `Win32_Storage_FileSystem` 四个特性。J3 之后它已彻底离开依赖树，所以这是**我们显式声明的**一个供应商，不是「反正已经在树里了」 |
 
 `serde` **不在此列**：被签名或被哈希的东西一律手写编码，磁盘格式也是手写的。
@@ -203,6 +205,26 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 | Windows 上不加 `\?\` 长路径前缀 | 直接用 Win32 入口点，超过 260 字符的路径由操作系统拒绝，带着真实错误码浮上来成为 `site.local`，**不静默截断** | 出路是更短的 `--root` |
 | 已存在的父目录保留它自己的权限 | 与 Unix 的「非本构建创建的目录保持原模式」同一条规矩；要事后收紧就得走按路径解析的 API，那正是本模块存在的理由 | 里面的文件仍然逐个是关的 |
 
+### 归档格式（S1）
+
+```
+"KSNB" | version u8 | nonce[12] | sealed(kind u8 | len u32 | bytes)*
+```
+
+四种 kind：身份种子、通道记录、cairn（前缀一个 `u16` 名字长度）、被撤销的 step。
+
+- **归档里放的是明文形态的记录**，即本 build 写到盘上的形状，在任何平台存储介入之前。
+  于是 Windows 上做的归档能在 Linux 上打开——**它就是跨平台迁移路径**，所以这里没有任何一行
+  知道平台是什么。
+- **nonce 随密文走**，因为归档没有地址可派生：它是本仓库唯一一个被密封、却不是 drop 的东西。
+  密钥是 `blake3::derive_key("kusanagi 2026-01-01 backup archive", recovery)`。
+- **恢复密钥是生成的，不是选的。** 人想出来的口令是人猜得到的口令，而一个文件上没有速率限制。
+  三十二字节由操作系统给出，十六进制**只印一次**。
+- **`import` 拒绝落在已有身份的 root 上**。合并两个站点会让一个端点拥有两份一切，而没有规则说
+  哪一份是对的。
+- 密封用 `Fit::Exact`（不填充到 DROP）：归档不去任何宿主那里，把它填充成 drop 的整数倍，
+  只会让「三条通道的站点」与「六条通道的站点」在**已经同时拥有两者的那个人**眼里变得一样。
+
 ## 15 影响面
 
 上游只有 `kusanagi` 一个。磁盘格式的任何改动都是**别人机器上已存在的文件**的改动，
@@ -215,7 +237,10 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 **一条通道记录的长度不说明邀请是否被接受**：`peer: None` 时仍写满一个定宽公钥块，那块字节不被读取。
 
 15 个单元测试就在三个文件里，跨过边界的那一条断言在 `kusanagi/src/complaint.rs` 的测试模块。
-本 crate 没有集成测试目录：它的端到端行为是 `kusanagi/tests/` 的九个动词。
+本 crate 没有集成测试目录：它的端到端行为是 `kusanagi/tests/` 的动词，归档由
+`kusanagi/tests/backup.rs` 七条判定——往返后 `channels --json` 逐字节相同、cairn 回来了
+（`--after` 之后读到零段）、错密钥得 `kusanagi.bad_recovery_key`、归档字节里 grep 不到通道名
+与身份、落在已有身份上被拒、空站点导出得 `kusanagi.no_identity`。
 
 ## 17 文档同步
 

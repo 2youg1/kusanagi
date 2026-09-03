@@ -23,7 +23,7 @@
     reason = "test code"
 )]
 
-use kusanagi_seal::{DROP, Secret, derive, open, seal};
+use kusanagi_seal::{DROP, Fit, Secret, derive, open, seal};
 use proptest::prelude::*;
 
 /// The key every case here opens under, derived the way the read path does.
@@ -44,29 +44,29 @@ proptest! {
     fn any_bytes_at_all_produce_an_answer(
         bytes in prop::collection::vec(any::<u8>(), 0..DROP + 8)
     ) {
-        prop_assert!(open(&key(), &bytes).is_err(), "random bytes opened");
+        prop_assert!(open(&key(), Fit::Veil, &bytes).is_err(), "random bytes opened");
     }
 
     /// A drop of the right length made of the wrong bytes is still refused.
     #[test]
     fn a_drop_shaped_thing_is_not_a_drop(fill in any::<u8>()) {
-        prop_assert!(open(&key(), &vec![fill; DROP]).is_err());
+        prop_assert!(open(&key(), Fit::Veil, &vec![fill; DROP]).is_err());
     }
 }
 
 #[test]
 fn what_was_sealed_is_what_comes_back() {
     let said = b"the payload this drop carries".to_vec();
-    let sealed = seal(&key(), &said).unwrap();
+    let sealed = seal(&key(), Fit::Veil, &said).unwrap();
     assert_eq!(sealed.len(), DROP);
-    assert_eq!(open(&key(), &sealed).unwrap(), said);
+    assert_eq!(open(&key(), Fit::Veil, &sealed).unwrap(), said);
 }
 
 #[test]
 fn a_drop_one_byte_from_the_right_length_is_refused() {
-    let sealed = seal(&key(), b"anything").unwrap();
-    assert!(open(&key(), &sealed[..DROP - 1]).is_err());
+    let sealed = seal(&key(), Fit::Veil, b"anything").unwrap();
+    assert!(open(&key(), Fit::Veil, &sealed[..DROP - 1]).is_err());
     let mut longer = sealed.clone();
     longer.push(0);
-    assert!(open(&key(), &longer).is_err());
+    assert!(open(&key(), Fit::Veil, &longer).is_err());
 }

@@ -133,6 +133,9 @@ pub enum Complaint {
         /// Which channel was being extended.
         name: String,
     },
+    /// An archive did not open under the recovery key that was offered.
+    #[error("this archive did not open under that recovery key")]
+    BadRecovery,
     /// The invitation has already been accepted by somebody.
     #[error("this invitation has already been used")]
     InviteSpent,
@@ -219,6 +222,7 @@ impl From<SiteError> for Complaint {
             SiteError::BadRecord { what, reason } => Self::BadRecord { what, reason },
             SiteError::UnknownChannel { name } => Self::UnknownChannel { name },
             SiteError::NoIdentity => Self::NoIdentity,
+            SiteError::BadRecovery => Self::BadRecovery,
             SiteError::Grant(error) => Self::Grant(error),
         }
     }
@@ -264,6 +268,7 @@ impl Complaint {
             Self::BadGreeting { .. } => "kusanagi.bad_greeting",
             Self::HistoryChanged { .. } => "kusanagi.history_changed",
             Self::InviteSpent => "kusanagi.invite_spent",
+            Self::BadRecovery => "kusanagi.bad_recovery_key",
             Self::OwnInvitation => "kusanagi.own_invitation",
             Self::CannotRevokeRoot { .. } => "kusanagi.cannot_revoke_root",
             Self::Argument { .. } => "kusanagi.argument",
@@ -330,6 +335,8 @@ impl Complaint {
             Self::InviteSpent => {
                 "ask for a fresh invitation; each one admits exactly one endpoint".to_owned()
             }
+            Self::BadRecovery => "check the recovery key: it is the 64 hexadecimal digits                  `kusanagi export` printed once, and it goes in on the first line of stdin"
+                .to_owned(),
             Self::OwnInvitation => "hand this line to the endpoint you mean to admit; \
                  the channel it opens is already here under the name you gave it"
                 .to_owned(),

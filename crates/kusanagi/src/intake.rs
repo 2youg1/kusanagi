@@ -151,6 +151,43 @@ pub fn addressed(given: String, text: Option<String>) -> Result<(String, Vec<u8>
     split_name(&fed)
 }
 
+/// How large an archive this door will read.
+///
+/// A site of a hundred channels is a few hundred kilobytes: a channel record
+/// carries a 2 592-byte key, and a cairn is 105. Eight megabytes is two
+/// thousand channels, which is more than a person has and still refuses to
+/// buffer a file somebody handed over by mistake.
+const ARCHIVE_ROOM: u64 = 8 * 1_048_576;
+
+/// The recovery key and the archive it opens, both from stdin.
+///
+/// **The key is never an argument**, for the reason every other secret here is
+/// not one: a command line is public while the process runs and is written to a
+/// history file afterwards. The first line is the key in hexadecimal, and the
+/// rest of stdin is the archive.
+///
+/// # Errors
+///
+/// [`Complaint::Argument`] when stdin is a terminal or holds no first line, and
+/// [`Complaint::BadName`] when the first line is not 64 hexadecimal digits.
+pub fn restored() -> Result<([u8; 32], Vec<u8>), Complaint> {
+    let fed = piped(
+        "the recovery key and the archive",
+        "pipe both: cat key.txt backup.ksnb | kusanagi import --root NEW",
+        ARCHIVE_ROOM.saturating_add(NAME_ROOM),
+    )?;
+    let (line, archive) = split_name(&fed)?;
+    let bytes = kusanagi_kernel::unhex(line.trim()).map_err(|_| Complaint::BadName {
+        name: "the recovery key".to_owned(),
+        reason: "a recovery key is 64 hexadecimal digits on the first line".to_owned(),
+    })?;
+    let key = <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| Complaint::BadName {
+        name: "the recovery key".to_owned(),
+        reason: "a recovery key is 32 bytes, which is 64 hexadecimal digits".to_owned(),
+    })?;
+    Ok((key, archive))
+}
+
 /// A channel name and the invitation that opens it.
 ///
 /// The invitation has arrived only on stdin since `ARCHITECTURE.md` §8 ruled it

@@ -106,4 +106,13 @@ pub enum Request {
         /// The most this host will hold, in bytes.
         capacity: u64,
     },
+    /// Seal everything this endpoint holds into one archive.
+    Export,
+    /// Restore an archive into a root that has nothing in it.
+    Import {
+        /// The recovery key the archive was sealed under.
+        recovery: [u8; 32],
+        /// The archive itself.
+        archive: Vec<u8>,
+    },
 }

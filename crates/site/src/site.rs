@@ -89,10 +89,10 @@ impl Site {
 
     /// The 32 bytes in the identity file, if there are any.
     ///
-    /// The one place that reads that file. Private: the seed is the whole of
-    /// this endpoint, and the only thing outside this crate that may hold it is
-    /// the code that generated it.
-    fn seed(&self) -> Result<Option<[u8; 32]>, SiteError> {
+    /// `pub(crate)` and nothing wider. The seed **is** this endpoint, so the one
+    /// caller outside this file is `archive`, which puts it in a sealed backup —
+    /// the one place it is meant to leave the disk.
+    pub(crate) fn seed(&self) -> Result<Option<[u8; 32]>, SiteError> {
         match fs::read(self.root.join("identity")) {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(source) => Err(SiteError::Local {

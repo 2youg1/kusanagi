@@ -17,7 +17,7 @@ use std::process::ExitCode;
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory as _, Parser, Subcommand};
-use kusanagi::{Complaint, Request, Site, Whose};
+use kusanagi::{Complaint, Outcome, Request, Site, Whose};
 use kusanagi_grant::{Abilities, Ability};
 
 /// A decentralised collaboration network for agents.
@@ -121,6 +121,17 @@ enum Verb {
         /// The waypoint to measure.
         waypoint: String,
     },
+    /// Seal this endpoint's identity, channels and progress into one archive.
+    ///
+    /// The archive goes to stdout; the key that opens it goes to stderr, once.
+    /// Nothing keeps a copy of that key, so a lost one is a lost archive.
+    Export,
+    /// Restore an archive into a `--root` that has nothing in it.
+    ///
+    /// The recovery key is the first line of stdin and the archive is the rest,
+    /// because a command line is public while the process runs and is written to
+    /// a history file afterwards.
+    Import,
     /// Hold other people's drops. This is the untrusted half of the network.
     Host {
         /// The address to listen on.
@@ -205,6 +216,11 @@ fn request(verb: Verb) -> Result<Request, Complaint> {
             name: intake::channel(name)?,
         },
         Verb::Doctor { waypoint } => Request::Doctor { waypoint },
+        Verb::Export => Request::Export,
+        Verb::Import => {
+            let (recovery, archive) = intake::restored()?;
+            Request::Import { recovery, archive }
+        }
         Verb::Host {
             bind,
             directory,
@@ -344,6 +360,19 @@ fn run() -> ExitCode {
         }
     };
     match kusanagi::run(&Site::at(&root), &request) {
+        // An archive is bytes, not text, so it goes to stdout on its own and
+        // what happened goes to stderr beside it. Every other verb is the other
+        // way round; this one is the only verb whose result is a file.
+        Ok(outcome @ Outcome::Exported { .. }) => {
+            eprintln!("{}", outcome.render(cli.json, fence));
+            let Outcome::Exported { archive, .. } = &outcome else {
+                return ExitCode::FAILURE;
+            };
+            match std::io::Write::write_all(&mut std::io::stdout(), archive) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(_) => ExitCode::FAILURE,
+            }
+        }
         Ok(outcome) => {
             println!("{}", outcome.render(cli.json, fence));
             ExitCode::SUCCESS

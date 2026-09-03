@@ -125,6 +125,21 @@ pub enum Outcome {
         /// One row per capability.
         capabilities: Vec<Measured>,
     },
+    /// Everything this endpoint holds, sealed.
+    Exported {
+        /// The key that opens it, in hexadecimal. **Shown once, here.**
+        recovery: String,
+        /// The archive itself, which goes to stdout rather than into JSON.
+        #[serde(skip)]
+        archive: Vec<u8>,
+    },
+    /// An archive was put back.
+    Imported {
+        /// Where it landed.
+        site: String,
+        /// How many channels came back with it.
+        channels: usize,
+    },
     /// This endpoint served as a host until the listener stopped.
     Hosted {
         /// What it was listening on.

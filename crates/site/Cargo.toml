@@ -16,6 +16,8 @@ kusanagi-seal.workspace = true
 # The keyed hash that files a channel under something other than its name.
 blake3.workspace = true
 thiserror.workspace = true
+# Erasure for the identity seed on its way into an archive.
+zeroize.workspace = true
 
 # The access list every site file is created with. Microsoft's own binding, so
 # the vendor count does not move; `site::permissions::windows` is the only module

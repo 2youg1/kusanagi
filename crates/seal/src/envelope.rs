@@ -56,9 +56,29 @@ impl core::fmt::Debug for Key {
     }
 }
 
+/// How much room a sealed body takes.
+///
+/// **An enum rather than a flag, because the two are different promises.** A
+/// veiled body is the same length for every message on the network, which is
+/// what stops a host from reading the size of what was said; an exact one is as
+/// long as what went in, which is only safe where nothing untrusted sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fit {
+    /// Padded to exactly [`DROP`]. Everything that reaches a host.
+    Veil,
+    /// Exactly as long as what went in. **Never sent anywhere.**
+    ///
+    /// A backup archive is the one thing sealed here that no host ever holds: it
+    /// goes to a file the owner chose, and padding it to a multiple of a drop
+    /// would make a site of three channels indistinguishable from one of six only
+    /// to the person who already owns both.
+    Exact,
+}
+
 /// Seals `plain` under `key`.
 ///
-/// What comes back is always [`DROP`] bytes, whatever went in.
+/// What comes back is [`DROP`] bytes under [`Fit::Veil`], and the length of
+/// `plain` plus the cipher's tag under [`Fit::Exact`].
 ///
 /// # Errors
 ///
@@ -67,15 +87,18 @@ impl core::fmt::Debug for Key {
 /// reachable for a segment, whose size `kernel` caps to exactly what fits — they
 /// are returned rather than asserted away because an unreachable panic is still
 /// a panic.
-pub fn seal(key: &Key, plain: &[u8]) -> Result<Vec<u8>, OpenFailed> {
-    let mut veiled = pad(plain)?;
+pub fn seal(key: &Key, fit: Fit, plain: &[u8]) -> Result<Vec<u8>, OpenFailed> {
+    let mut body = match fit {
+        Fit::Veil => pad(plain)?,
+        Fit::Exact => plain.to_vec(),
+    };
     let sealed = key
         .cipher()?
-        .encrypt(&Nonce::from(key.nonce), veiled.as_slice())
+        .encrypt(&Nonce::from(key.nonce), body.as_slice())
         .map_err(|_| OpenFailed::Rejected)?;
-    // The padded body held a copy of the segment. Nothing downstream needs it,
-    // and the allocation it sits in will be handed to somebody else.
-    veiled.zeroize();
+    // The body held a copy of what was sealed. Nothing downstream needs it, and
+    // the allocation it sits in will be handed to somebody else.
+    body.zeroize();
     Ok(sealed)
 }
 
@@ -88,15 +111,18 @@ pub fn seal(key: &Key, plain: &[u8]) -> Result<Vec<u8>, OpenFailed> {
 /// blob moved here from another address. They are one answer deliberately: an
 /// attacker who learns *why* a forgery failed has been handed a way to test
 /// guesses one at a time.
-pub fn open(key: &Key, sealed: &[u8]) -> Result<Vec<u8>, OpenFailed> {
-    if sealed.len() != DROP {
+pub fn open(key: &Key, fit: Fit, sealed: &[u8]) -> Result<Vec<u8>, OpenFailed> {
+    if fit == Fit::Veil && sealed.len() != DROP {
         return Err(OpenFailed::Rejected);
     }
     let mut veiled = key
         .cipher()?
         .decrypt(&Nonce::from(key.nonce), sealed)
         .map_err(|_| OpenFailed::Rejected)?;
-    let plain = unpad(&veiled);
+    let plain = match fit {
+        Fit::Veil => unpad(&veiled),
+        Fit::Exact => Ok(veiled.clone()),
+    };
     veiled.zeroize();
     plain
 }
@@ -143,7 +169,7 @@ impl OpenFailed {
     reason = "test code"
 )]
 mod tests {
-    use super::{OpenFailed, open, seal};
+    use super::{Fit, OpenFailed, open, seal};
     use crate::{Secret, derive};
     use kusanagi_kernel::Signer;
 
@@ -154,13 +180,13 @@ mod tests {
 
     #[test]
     fn a_sealed_message_opens_again() {
-        let sealed = seal(&keys(0), b"the message").unwrap();
-        assert_eq!(open(&keys(0), &sealed).unwrap(), b"the message");
+        let sealed = seal(&keys(0), Fit::Veil, b"the message").unwrap();
+        assert_eq!(open(&keys(0), Fit::Veil, &sealed).unwrap(), b"the message");
     }
 
     #[test]
     fn the_sealed_form_does_not_contain_the_plain_form() {
-        let sealed = seal(&keys(0), b"the message").unwrap();
+        let sealed = seal(&keys(0), Fit::Veil, b"the message").unwrap();
         assert!(!sealed.windows(11).any(|w| w == b"the message"));
     }
 
@@ -169,7 +195,7 @@ mod tests {
         // The assertion the whole envelope exists for. A host that can measure
         // an object learns nothing from measuring this one.
         for len in [0_usize, 1, 11, 512, 4_076, 65_536] {
-            let sealed = seal(&keys(0), &vec![3_u8; len]).unwrap();
+            let sealed = seal(&keys(0), Fit::Veil, &vec![3_u8; len]).unwrap();
             assert_eq!(
                 sealed.len(),
                 crate::DROP,
@@ -180,26 +206,32 @@ mod tests {
 
     #[test]
     fn bytes_that_are_not_one_drop_long_never_open() {
-        let sealed = seal(&keys(0), b"the message").unwrap();
+        let sealed = seal(&keys(0), Fit::Veil, b"the message").unwrap();
         let mut longer = sealed.clone();
         longer.push(0);
-        assert_eq!(open(&keys(0), &longer), Err(OpenFailed::Rejected));
         assert_eq!(
-            open(&keys(0), &sealed[..sealed.len() - 1]),
+            open(&keys(0), Fit::Veil, &longer),
+            Err(OpenFailed::Rejected)
+        );
+        assert_eq!(
+            open(&keys(0), Fit::Veil, &sealed[..sealed.len() - 1]),
             Err(OpenFailed::Rejected)
         );
     }
 
     #[test]
     fn an_empty_message_survives() {
-        let sealed = seal(&keys(0), b"").unwrap();
-        assert_eq!(open(&keys(0), &sealed).unwrap(), b"");
+        let sealed = seal(&keys(0), Fit::Veil, b"").unwrap();
+        assert_eq!(open(&keys(0), Fit::Veil, &sealed).unwrap(), b"");
     }
 
     #[test]
     fn another_drops_key_does_not_open_it() {
-        let sealed = seal(&keys(0), b"the message").unwrap();
-        assert_eq!(open(&keys(1), &sealed), Err(OpenFailed::Rejected));
+        let sealed = seal(&keys(0), Fit::Veil, b"the message").unwrap();
+        assert_eq!(
+            open(&keys(1), Fit::Veil, &sealed),
+            Err(OpenFailed::Rejected)
+        );
     }
 
     /// A flip anywhere in a sealed drop is refused — sampled, not exhaustive.
@@ -215,7 +247,7 @@ mod tests {
     #[test]
     fn every_flipped_byte_is_refused() {
         const TAG: usize = 16;
-        let sealed = seal(&keys(0), b"the message").unwrap();
+        let sealed = seal(&keys(0), Fit::Veil, b"the message").unwrap();
         let seam = sealed.len() - TAG;
         let sampled: Vec<usize> = (0..4)
             .chain((seam - 2)..sealed.len())
@@ -225,7 +257,7 @@ mod tests {
             let mut tampered = sealed.clone();
             tampered[at] ^= 0x01;
             assert_eq!(
-                open(&keys(0), &tampered),
+                open(&keys(0), Fit::Veil, &tampered),
                 Err(OpenFailed::Rejected),
                 "a flip at byte {at} was accepted"
             );
@@ -234,12 +266,12 @@ mod tests {
 
     #[test]
     fn truncation_is_refused() {
-        let sealed = seal(&keys(0), b"the message").unwrap();
+        let sealed = seal(&keys(0), Fit::Veil, b"the message").unwrap();
         assert_eq!(
-            open(&keys(0), &sealed[..sealed.len() - 1]),
+            open(&keys(0), Fit::Veil, &sealed[..sealed.len() - 1]),
             Err(OpenFailed::Rejected)
         );
-        assert_eq!(open(&keys(0), &[]), Err(OpenFailed::Rejected));
+        assert_eq!(open(&keys(0), Fit::Veil, &[]), Err(OpenFailed::Rejected));
     }
 
     #[test]
@@ -251,13 +283,16 @@ mod tests {
         for (at, byte) in invented.iter_mut().enumerate() {
             *byte = u8::try_from(at % 251).unwrap_or(0);
         }
-        assert_eq!(open(&keys(0), &invented), Err(OpenFailed::Rejected));
         assert_eq!(
-            open(&keys(0), &vec![0_u8; crate::DROP]),
+            open(&keys(0), Fit::Veil, &invented),
             Err(OpenFailed::Rejected)
         );
         assert_eq!(
-            open(&keys(0), &vec![0xff_u8; crate::DROP]),
+            open(&keys(0), Fit::Veil, &vec![0_u8; crate::DROP]),
+            Err(OpenFailed::Rejected)
+        );
+        assert_eq!(
+            open(&keys(0), Fit::Veil, &vec![0xff_u8; crate::DROP]),
             Err(OpenFailed::Rejected)
         );
     }
@@ -265,8 +300,8 @@ mod tests {
     #[test]
     fn the_same_text_at_two_heights_looks_different() {
         assert_ne!(
-            seal(&keys(0), b"identical").unwrap(),
-            seal(&keys(1), b"identical").unwrap()
+            seal(&keys(0), Fit::Veil, b"identical").unwrap(),
+            seal(&keys(1), Fit::Veil, b"identical").unwrap()
         );
     }
 }

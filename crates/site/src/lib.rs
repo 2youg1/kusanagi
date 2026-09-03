@@ -20,6 +20,7 @@
 //! by the door in `kusanagi::Complaint` — because recovery is phrased in verbs
 //! (`kusanagi channels`, `--root`) that only a front end knows it has.
 
+mod archive;
 mod channel;
 mod error;
 mod invite;
@@ -28,6 +29,7 @@ mod permissions;
 mod revoked;
 mod site;
 
+pub use archive::{export, import};
 pub use channel::{Channel, Peer, Standing};
 pub use error::SiteError;
 pub use invite::Invite;

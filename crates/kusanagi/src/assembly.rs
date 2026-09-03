@@ -67,7 +67,38 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
             directory,
             capacity,
         } => host(bind, directory, *capacity),
+        Request::Export => export(site),
+        Request::Import { recovery, archive } => import(site, recovery, archive),
     }
+}
+
+/// Seals everything this endpoint holds under a key drawn here and shown once.
+///
+/// **The recovery key is generated rather than chosen.** A passphrase somebody
+/// invents is a passphrase somebody guesses, and there is no rate limit on a
+/// file. Thirty-two bytes from the operating system, in hexadecimal, handed back
+/// exactly once: whoever runs this writes it down or loses the archive.
+fn export(site: &Site) -> Result<Outcome, Complaint> {
+    let mut recovery = fresh_seed()?;
+    let mut nonce = [0_u8; 12];
+    nonce.copy_from_slice(fresh_seed()?.get(..12).unwrap_or(&[0; 12]));
+    let archive = kusanagi_site::export(site, &recovery, nonce)?;
+    let key = kusanagi_kernel::Hex(&recovery).to_string();
+    recovery.zeroize();
+    Ok(Outcome::Exported {
+        recovery: key,
+        archive,
+    })
+}
+
+/// Puts an archive back into a root that has nothing in it.
+fn import(site: &Site, recovery: &[u8; 32], archive: &[u8]) -> Result<Outcome, Complaint> {
+    kusanagi_site::import(site, recovery, archive)?;
+    let names = site.names()?;
+    Ok(Outcome::Imported {
+        site: site.root().display().to_string(),
+        channels: names.len(),
+    })
 }
 
 /// Where an endpoint keeps its site when nobody names a directory.

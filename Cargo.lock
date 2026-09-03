@@ -465,6 +465,7 @@ dependencies = [
  "proptest",
  "thiserror",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

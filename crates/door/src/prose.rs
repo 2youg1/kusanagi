@@ -71,6 +71,17 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             tier,
             capabilities,
         } => certificate(waypoint, kind, tier, capabilities),
+        Outcome::Exported { recovery, archive } => format!(
+            "{} bytes of archive are on stdout. The key that opens them is
+
+  {recovery}
+
+             write it down now: it is shown once, it is not stored anywhere, and              without it the archive is noise.",
+            archive.len()
+        ),
+        Outcome::Imported { site, channels } => {
+            format!("restored {channels} channel(s) into {site}")
+        }
         Outcome::Hosted { address, directory } => {
             format!("stopped hosting {directory} on {address}")
         }

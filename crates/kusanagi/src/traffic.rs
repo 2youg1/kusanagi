@@ -13,7 +13,7 @@
 
 use kusanagi_grant::Ability;
 use kusanagi_kernel::{Instant, PutOutcome, Segment, Signer, Waypoint as _};
-use kusanagi_seal::{derive, seal};
+use kusanagi_seal::{Fit, derive, seal};
 use kusanagi_site::{Channel, Site};
 
 use crate::assembly::{open, signer};
@@ -76,7 +76,7 @@ pub(crate) fn send(
     }?;
 
     let (address, key) = derive(&stream, segment.index());
-    let sealed = seal(&key, &segment.to_canonical_bytes())?;
+    let sealed = seal(&key, Fit::Veil, &segment.to_canonical_bytes())?;
     match place.put_if_absent(&address, &sealed)? {
         // The host took it at an address that was empty, so this endpoint knows
         // the segment is there without reading it back. Recording that now is

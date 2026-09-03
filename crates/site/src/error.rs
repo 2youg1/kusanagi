@@ -87,9 +87,23 @@ pub enum SiteError {
         #[source]
         source: std::io::Error,
     },
+    /// An archive did not open under the recovery key that was offered.
+    ///
+    /// One answer for every reason it could fail — a wrong key, a damaged file,
+    /// an archive from somebody else — because an attacker who learns *why* a
+    /// key was wrong has been handed a way to test guesses one at a time.
+    #[error("this archive did not open under that recovery key")]
+    BadRecovery,
     /// A grant inside a record or an invitation does not decode.
     #[error(transparent)]
     Grant(#[from] GrantError),
+}
+
+/// Sealed bytes that will not open are one answer here, whatever went wrong.
+impl From<kusanagi_seal::OpenFailed> for SiteError {
+    fn from(_: kusanagi_seal::OpenFailed) -> Self {
+        Self::BadRecovery
+    }
 }
 
 impl From<HexError> for SiteError {

@@ -13,7 +13,7 @@
 
 use kusanagi_grant::{Ability, Grant, Scope};
 use kusanagi_kernel::{Instant, PutOutcome, Reader, Segment, Signer, VerifyingKey, Waypoint as _};
-use kusanagi_seal::{Secret, derive, seal};
+use kusanagi_seal::{Fit, Secret, derive, seal};
 use kusanagi_site::{Channel, Invite, Peer, Site, Standing};
 use kusanagi_waypoint::{Locator, Place};
 
@@ -161,7 +161,7 @@ pub(crate) fn join(
         greeting(&me.verifying_key(), &mine),
     )?;
     let (address, key) = derive(&introduction, INTRODUCTION);
-    let sealed = seal(&key, &announcement.to_canonical_bytes())?;
+    let sealed = seal(&key, Fit::Veil, &announcement.to_canonical_bytes())?;
 
     // The invitation is one-time because this address is write-once. Nothing
     // tracks whether it has been used; the host refuses the second greeting.

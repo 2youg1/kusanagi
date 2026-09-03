@@ -34,6 +34,24 @@ use zeroize::{Zeroize as _, ZeroizeOnDrop};
 
 use crate::envelope::Key;
 
+/// The key an archive is sealed under.
+///
+/// Not derived from a stream, because an archive is not at an address: it is a
+/// file somebody keeps, and the only secret behind it is the recovery key its
+/// owner wrote down. The nonce is the caller's because it must be fresh for
+/// every archive — one recovery key seals many of them over a site's life.
+///
+/// The context string follows the same convention as the others below: one
+/// global, dated purpose per string, so two keys derived from one secret never
+/// collide.
+#[must_use]
+pub fn backup_key(recovery: &[u8; 32], nonce: [u8; 12]) -> Key {
+    let mut cipher_key = blake3::derive_key(BACKUP_CONTEXT, recovery);
+    let key = Key::new(cipher_key, nonce);
+    cipher_key.zeroize();
+    key
+}
+
 /// Context strings for BLAKE3's key derivation mode.
 ///
 /// The convention these follow is BLAKE3's own: a hard-coded, globally unique,
@@ -45,6 +63,7 @@ const STREAM_CONTEXT: &str = "kusanagi 2026-01-01 stream: one author's lane in a
 const ADDRESS_CONTEXT: &str = "kusanagi 2026-01-01 drop address";
 const KEY_CONTEXT: &str = "kusanagi 2026-01-01 drop key and nonce";
 const TRAIL_CONTEXT: &str = "kusanagi 2026-01-01 trail seed for one lane";
+const BACKUP_CONTEXT: &str = "kusanagi 2026-01-01 backup archive";
 
 /// What an author signs once to obtain the seed of their trail on a lane.
 ///

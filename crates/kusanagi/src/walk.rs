@@ -27,7 +27,7 @@
 
 use kusanagi_chain::{Cairn, Verifier};
 use kusanagi_kernel::{ChainHead, DropAddr, Segment, SegmentError, VerifyingKey, Waypoint};
-use kusanagi_seal::{Stream, derive, open};
+use kusanagi_seal::{Fit, Stream, derive, open};
 use kusanagi_site::Site;
 
 use kusanagi_door::Complaint;
@@ -218,7 +218,7 @@ pub fn peek(
     let Some(sealed) = waypoint.get(&address)? else {
         return Ok(None);
     };
-    let plain = open(&key, &sealed)?;
+    let plain = open(&key, Fit::Veil, &sealed)?;
     Ok(Some(Segment::from_canonical_bytes(&plain, author)?))
 }
 
