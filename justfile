@@ -1,7 +1,7 @@
 # The closing condition for every change.
 default: check
 
-check: fmt lint test budget deny
+check: fmt lint test budget boxes deny
 
 # The inner loop, for while a change is still being written.
 #
@@ -181,6 +181,77 @@ adversary:
     [ -n "$built" ] || { echo "cargo did not report an executable"; exit 1; }
     cd adversary
     KUSANAGI_BIN="$built" cabal test --test-show-details=direct
+
+# Two rules about where a test may stand, and what may follow it into a release.
+#
+# **Black box in Haskell, white box in Rust.** A test that drives the shipped
+# binary from outside is answering "does the program a person runs behave", and
+# the answer is only worth having if nothing in the test can reach inside. Rust
+# integration tests link the library, so a black-box claim written in Rust is one
+# refactor away from quietly becoming a white-box one — there is no compiler
+# saying otherwise. `adversary/` cannot reach inside by construction: no linking,
+# no FFI, no shared type, one subprocess and two streams. So `CARGO_BIN_EXE`, the
+# one way a Rust test launches the product, is the marker this refuses.
+#
+# **A test may not reach the artefact.** Three ways it could: a `mod tests` that
+# forgot `#[cfg(test)]` and is therefore compiled into every build, a testing
+# crate declared as a real dependency instead of a dev one, and either of those
+# leaving its name in the shipped bytes. The third is checked against the file
+# itself when there is one, because that is the only check that is about the
+# thing being shipped rather than about the intent to ship it.
+boxes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    outside=$(grep -rl 'CARGO_BIN_EXE' crates/ 2>/dev/null || true)
+    if [ -n "$outside" ]; then
+        printf 'a Rust test drives the shipped binary. That claim belongs in adversary/:\n'
+        printf '  %s\n' $outside
+        exit 1
+    fi
+
+    loose=$(grep -rn --include='*.rs' -B1 '^mod tests' crates/*/src \
+        | grep -A1 -- '--' | grep '^crates.*:mod tests' || true)
+    ungated=$(for file in $(grep -rl --include='*.rs' '^mod tests' crates/*/src); do
+        if ! grep -q '#\[cfg(test)\]' "$file"; then echo "$file"; fi
+    done)
+    if [ -n "$ungated" ]; then
+        printf 'a test module is compiled into every build:\n'
+        printf '  %s\n' $ungated
+        exit 1
+    fi
+
+    # Crates that exist only to test with. A crate named under
+    # `[dev-dependencies]` somewhere and under `[dependencies]` somewhere else is
+    # not one of them: `getrandom` is how this program asks the operating system
+    # for entropy and also how a test builds a probe, and only the first of those
+    # is a reason it ships.
+    section() {
+        awk -v want="$1" '$0 == want {d=1;next} /^\[/{d=0} d && NF' crates/*/Cargo.toml \
+            | sed 's/[. ].*//' | sort -u
+    }
+    testing=$(comm -23 <(section '[dev-dependencies]') <(section '[dependencies]') \
+        | grep -v '^kusanagi-' || true)
+    shipped=$(cargo tree --workspace --edges normal --prefix none | sed 's/ .*//' | sort -u)
+    for crate in $testing; do
+        if printf '%s\n' "$shipped" | grep -qx "$crate"; then
+            printf 'the testing crate `%s` is on a normal edge, so it ships.\n' "$crate"
+            exit 1
+        fi
+    done
+
+    for built in dist/kusanagi-* target/release/kusanagi target/release/kusanagi.exe; do
+        [ -f "$built" ] || continue
+        case "$built" in *.sha256) continue;; esac
+        for crate in $testing; do
+            if grep -qa "$crate" "$built"; then
+                printf '%s carries the name of the testing crate `%s`.\n' "$built" "$crate"
+                exit 1
+            fi
+        done
+    done
+
+    printf 'boxes: no Rust test drives the binary; nothing from a test reaches it.\n'
 
 # Let this program reach the proxy and nothing else. Needs an administrator.
 #

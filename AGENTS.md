@@ -23,6 +23,7 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 | `just deny` | licences, advisories and banned crates, against `deny.toml` |
 | `just demo` | two identities, one host, one verifiable exchange, in a throwaway directory |
 | `just budget` | line counts against the budget in `ARCHITECTURE.md` §5 |
+| `just boxes` | the two rules about where a test may stand: **no Rust test drives the shipped binary** (that is `adversary/`'s job, and it cannot reach inside), and **nothing from a test reaches the artefact** |
 | `just dist` | a stripped release binary, its SHA-256, and the hash the binary reports about itself |
 | `just repro` | builds twice and refuses if the two differ; `docs/VERIFY.md` says what that does and does not establish |
 | `just confine` / `just unconfine` | a Windows Firewall rule letting this binary reach the proxy and nothing else. Needs an administrator; `docs/confine.md` says what it buys |
@@ -53,6 +54,8 @@ Violating any of these turns the build red.
 | Return failure through `Result`. No `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`, bare indexing or slicing in non-test code. Checked arithmetic. No `as` casts. No `unsafe` outside `site::permissions::windows`, which hands the operating system a security descriptor: one FFI call per block, one `// SAFETY:` line each, allowlist entry three. | `[workspace.lints]` in `Cargo.toml`, with `-D warnings` |
 | Every suppression carries `reason = "…"`. In non-test code a suppression is allowed **only** for a lint on the allowlist written in `Cargo.toml` — which currently holds three entries: `clippy::disallowed_methods` at the one function that reads the clock, `clippy::large_enum_variant` at `kernel::Link`, and `unsafe_code` at `site::permissions::windows`. | `allow_attributes_without_reason = "deny"`, plus review |
 | Test code (`#[cfg(test)]`, `tests/`, `benches/`) relaxes freely with a scoped `#[allow(…, reason = "test code")]`. | the tier policy above |
+| **A black-box claim is written in Haskell; a white-box claim stays in Rust.** A Rust test links the library, so a black-box claim written there is one refactor away from quietly reaching inside and still being called a test of the door. `adversary/` cannot reach inside by construction: no linking, no FFI, no shared type, one subprocess and two streams. | `just boxes`, which refuses `CARGO_BIN_EXE` anywhere under `crates/` |
+| **A test never reaches the build artefact.** A `mod tests` carries `#[cfg(test)]`, a crate that exists only to test with never appears on a normal dependency edge, and the shipped file carries no such crate's name. | `just boxes` |
 | One module, one file, semantically named. `lib.rs` holds the module index and nothing else. | review |
 | Default to private. A `pub trait` is a seam, and **a seam ships with two implementations plus a conformance suite**. One adapter is a hypothetical seam; two make it real. | review, and `waypoint::conformance` as the worked example |
 | Start every `.rs` file with the MPL-2.0 notice and the copyright line. | review |

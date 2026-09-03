@@ -42,6 +42,7 @@ import Kusanagi.Lying qualified as Lying
 import Kusanagi.Veil qualified as Veil
 import Kusanagi.Door (Door)
 import Kusanagi.Door qualified as Door
+import Kusanagi.Doorway qualified as Doorway
 import Kusanagi.Ground
 import Kusanagi.Keyboard
   ( Bench (..)
@@ -76,6 +77,30 @@ properties door =
     , testProperty
         "nothing that identifies anybody reaches the command line"
         Overheard.nothingIdentifyingReachesTheCommandLine
+    , testGroup
+        "the edges of the command line itself"
+        [ testCase
+            "an invitation survives whatever a clipboard did to it"
+            (doorway door Doorway.invitationSurvivesAnyClipboard)
+        , testCase
+            "a pipe with nothing in it is answered rather than waited on"
+            (doorway door Doorway.anEmptyPipeIsAnswered)
+        , testCase
+            "a flood on stdin ends with a code rather than a buffer"
+            (doorway door Doorway.aFloodOnStdinIsAnswered)
+        , testCase
+            "an ability nobody defined is refused, and the refusal says what to pass"
+            (doorway door Doorway.anArgumentTheVerbCannotActOnIsRefused)
+        , testCase
+            "a mistyped flag leaves by the door every other failure leaves by"
+            (doorway door Doorway.aMistypedFlagLeavesByTheSameDoor)
+        , testCase
+            "a site nobody placed lands under this user's profile"
+            (doorway door Doorway.aSiteNobodyPlacedLandsUnderTheProfile)
+        , testCase
+            "a machine that will not say where data lives is asked rather than guessed"
+            (doorway door Doorway.aMachineThatWillNotSayIsAsked)
+        ]
     , testProperty "a mistyped line is answerable, and its advice can be taken" (keyboard door)
     , testProperty "what an agent pipes in comes back byte for byte" (piping door)
     , testProperty "a reader that remembers is still told everything" (remembering door)
@@ -124,6 +149,10 @@ properties door =
             (measured (Tempo.presenceSaysOnlyWhatIsWrittenDown door))
         ]
     ]
+
+-- | Runs one command-line question against a throwaway world.
+doorway :: Door -> (Door -> Ground -> IO (Either String ())) -> IO ()
+doorway door act = measured (withGround (act door))
 
 -- | Runs one weighing against a throwaway world.
 weighing ::

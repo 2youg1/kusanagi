@@ -28,10 +28,13 @@ module Kusanagi.Door
   , ask
   , hosting
   , typed
+  , typedWith
   , spoken
   , piped
   ) where
 
+import Control.Exception (IOException, try)
+import Control.Monad (void)
 import Data.ByteString qualified as ByteString
 import Data.List (intercalate)
 import Data.Text (Text)
@@ -192,8 +195,27 @@ data Typed = Typed
 -- No `--root`, no `--json`, nothing added: what is passed here is what a person
 -- typed or an agent spawned, character for character.
 typed :: Door -> [String] -> Maybe ByteString.ByteString -> IO Typed
-typed (Door binary) arguments input = do
-  (status, out, err) <- capture binary arguments input
+typed door arguments input = typedWith door Nothing arguments input
+
+-- | The same, with the whole environment chosen rather than inherited.
+--
+-- Some of what this program does is decided by the environment rather than by
+-- an argument: where a site goes when nobody says, and whether a proxy stands in
+-- front of every request. A test that cannot set the environment cannot ask
+-- about either, and the alternative — changing this process's own environment —
+-- would leak into every other property running beside it.
+--
+-- @Nothing@ inherits. @Just pairs@ replaces: a variable that is not in the list
+-- is not in the child's environment at all, which is how "this machine will not
+-- say where data lives" is asked.
+typedWith ::
+  Door ->
+  Maybe [(String, String)] ->
+  [String] ->
+  Maybe ByteString.ByteString ->
+  IO Typed
+typedWith (Door binary) surroundings arguments input = do
+  (status, out, err) <- captureIn surroundings binary arguments input
   pure (Typed status out err)
 
 argv :: FilePath -> Verb -> [String]
@@ -265,12 +287,21 @@ capture ::
   [String] ->
   Maybe ByteString.ByteString ->
   IO (ExitCode, ByteString.ByteString, ByteString.ByteString)
-capture binary arguments input =
+capture = captureIn Nothing
+
+captureIn ::
+  Maybe [(String, String)] ->
+  FilePath ->
+  [String] ->
+  Maybe ByteString.ByteString ->
+  IO (ExitCode, ByteString.ByteString, ByteString.ByteString)
+captureIn surroundings binary arguments input =
   withCreateProcess
     (proc binary arguments)
       { std_in = maybe NoStream (const CreatePipe) input
       , std_out = CreatePipe
       , std_err = CreatePipe
+      , env = surroundings
       }
     $ \stdin out err handle ->
       case (out, err) of
@@ -278,9 +309,13 @@ capture binary arguments input =
           hSetBinaryMode outHandle True
           hSetBinaryMode errHandle True
           case (stdin, input) of
+            -- A broken pipe here is the product working. Every verb reads a
+            -- bounded amount of stdin and then stops, so feeding it more than
+            -- the bound closes the far end mid-write — and a harness that could
+            -- not survive that could not ask about the bound at all.
             (Just inHandle, Just payload) -> do
               hSetBinaryMode inHandle True
-              ByteString.hPut inHandle payload
+              void (try (ByteString.hPut inHandle payload) :: IO (Either IOException ()))
               hClose inHandle
             _ -> pure ()
           reported <- ByteString.hGetContents outHandle

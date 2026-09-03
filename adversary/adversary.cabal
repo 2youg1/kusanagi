@@ -26,6 +26,7 @@ library
     Kusanagi.Cairn
     Kusanagi.Discriminator
     Kusanagi.Door
+    Kusanagi.Doorway
     Kusanagi.Ground
     Kusanagi.Keyboard
     Kusanagi.Lying

@@ -30,6 +30,16 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: test
         run: cargo test --all-features
+      # Where a test may stand, and what may follow it into a release. Bash and
+      # `cargo tree` are all it needs, so it runs on every platform.
+      - name: boxes
+        shell: bash
+        run: |
+          outside=$(grep -rl 'CARGO_BIN_EXE' crates/ 2>/dev/null || true)
+          [ -z "$outside" ] || { echo "::error::a Rust test drives the shipped binary: $outside"; exit 1; }
+          for file in $(grep -rl --include='*.rs' '^mod tests' crates/*/src); do
+            grep -q '#\[cfg(test)\]' "$file" || { echo "::error::$file compiles a test module into every build"; exit 1; }
+          done
       # The line budget is an architectural rule, so it fails the build like any
       # other. Bash is present on all three runners.
       - name: budget

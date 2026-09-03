@@ -104,7 +104,14 @@ withRelay door directory act =
       port <- socketPort gate
       accepting <- forkIO (forever (handOff forwarding seen gate))
       let relay = Relay {relayLocator = "http://127.0.0.1:" <> show port, relaySeen = seen}
-      act relay `finally` killThread accepting
+      -- **The socket closes before the thread is killed, and the order is the
+      -- whole of it.** `accept` is a blocking foreign call; a Haskell thread
+      -- sitting inside one cannot take an asynchronous exception, so with the
+      -- threaded runtime `killThread` waits for a call that will never return on
+      -- its own. Closing the socket makes that call return, and only then is
+      -- there a thread there to kill. `close` twice is harmless, which is why
+      -- the enclosing bracket can still do its job.
+      act relay `finally` (swallow (close gate) >> killThread accepting)
 
 -- | A socket listening on a port nobody chose.
 listening :: IO Socket
