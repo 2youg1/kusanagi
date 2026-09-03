@@ -26,6 +26,7 @@ module Kusanagi.Door
   , seconds
   , discover
   , ask
+  , hosting
   , typed
   , spoken
   , piped
@@ -40,7 +41,7 @@ import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
-import System.IO (hClose, hSetBinaryMode)
+import System.IO (hClose, hGetLine, hSetBinaryMode)
 import System.Process
   ( CreateProcess (..)
   , StdStream (..)
@@ -143,6 +144,35 @@ ask (Door binary) site verb = do
           <> show verb
           <> "\n  said:  "
           <> show (ByteString.take 400 raw)
+
+-- | Runs a host for the duration of an action, and hands over the address it took.
+--
+-- The one verb that never returns needs a shape of its own: the result of
+-- @kusanagi host@ is not a value on stdout but a socket somebody else can
+-- connect to, and that address is announced on stderr as the last word of the
+-- first line. **The address is asked for rather than chosen** (@--bind 0@),
+-- because a test that picks a port has already lost a race with every other
+-- test on the machine.
+--
+-- Reading that line is also the readiness signal: it is written once the
+-- listener is up, so an action that begins by connecting will find something
+-- there.
+hosting :: Door -> FilePath -> (String -> IO a) -> IO a
+hosting (Door binary) directory act =
+  withCreateProcess
+    (proc binary ["host", "--dir", directory, "--bind", "0"])
+      { std_in = NoStream
+      , std_out = CreatePipe
+      , std_err = CreatePipe
+      }
+    $ \_ _ err _ ->
+      case err of
+        Nothing -> fail "the host was created without the pipe it was asked for"
+        Just errHandle -> do
+          announced <- hGetLine errHandle
+          case reverse (words announced) of
+            (address : _) -> act address
+            [] -> fail ("the host announced no address: " <> show announced)
 
 -- | What a command line did, before anything decides whether that was allowed.
 --

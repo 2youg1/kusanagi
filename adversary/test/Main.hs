@@ -58,6 +58,7 @@ import Kusanagi.Model
 import Kusanagi.Naming qualified as Naming
 import Kusanagi.Overheard qualified as Overheard
 import Kusanagi.Regression (coherent, render, sequenced)
+import Kusanagi.Tempo qualified as Tempo
 
 main :: IO ()
 main = do
@@ -109,6 +110,18 @@ properties door =
         , testCase
             "whether anything was said separates them by exactly what is written down"
             (measured (Discriminator.presenceSaysOnlyHowMany door))
+        ]
+    , testGroup
+        "what somebody carrying the traffic would find"
+        [ testCase
+            "the relay in front of the host sees every request and nothing else"
+            (measured (Tempo.everyRequestIsSeen door))
+        , testCase
+            "how much was said does not separate two worlds in time"
+            (measured (Tempo.volumeKeepsTime door))
+        , testCase
+            "whether anything was said separates them in time by what is written down"
+            (measured (Tempo.presenceSaysOnlyWhatIsWrittenDown door))
         ]
     ]
 

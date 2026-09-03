@@ -39,8 +39,12 @@
 -- can read instead of a set of weights.
 module Kusanagi.Discriminator
   ( Reading (..)
+  , Sample (..)
+  , sides
   , features
   , separating
+  , report
+  , sampleWorld
   , volumeSaysNothing
   , presenceSaysOnlyHowMany
   ) where
@@ -57,6 +61,8 @@ import Kusanagi.Answer (Address (..), Answer (..), ChannelName (..), Outcome (..
 import Kusanagi.Door (Door)
 import Kusanagi.Door qualified as Door
 import Kusanagi.Ground (Ground, stored, waypoint, withGround)
+import Kusanagi.Relay (Observation, observed, withRelay)
+import Kusanagi.Relay qualified as Relay
 
 -- | How many worlds are built for each side of an experiment.
 --
@@ -207,8 +213,8 @@ separates left right
 -- | Same number of messages, three orders of magnitude apart in what they say.
 volumeSaysNothing :: Door -> IO (Either String ())
 volumeSaysNothing door = do
-  quiet <- replicateM sides (sampleWorld door (replicate 4 1))
-  loud <- replicateM sides (sampleWorld door (replicate 4 3_000))
+  quiet <- replicateM sides (weighed door (replicate 4 1))
+  loud <- replicateM sides (weighed door (replicate 4 3_000))
   pure $ do
     terse <- sequence quiet
     wordy <- sequence loud
@@ -224,8 +230,8 @@ volumeSaysNothing door = do
 -- | Nothing said, against something said.
 presenceSaysOnlyHowMany :: Door -> IO (Either String ())
 presenceSaysOnlyHowMany door = do
-  silent <- replicateM sides (sampleWorld door [])
-  busy <- replicateM sides (sampleWorld door (replicate 3 200))
+  silent <- replicateM sides (weighed door [])
+  busy <- replicateM sides (weighed door (replicate 3 200))
   pure $ do
     quiet <- sequence silent
     talking <- sequence busy
@@ -261,18 +267,37 @@ report names left right =
     | name <- names
     ]
 
+-- | One world, from both positions it can be watched from.
+--
+-- The host's view and the carrier's view of the same conversation. Building
+-- them together is not an optimisation: a timing comparison against worlds built
+-- separately from the ones that were weighed would be two experiments described
+-- as one.
+data Sample = Sample
+  { sampleHeld :: [(Address, ByteString.ByteString)]
+  , sampleSeen :: [Observation]
+  }
+
 -- | One throwaway world, measured and then deleted.
-sampleWorld :: Door -> [Int] -> IO (Either String [Reading])
-sampleWorld door lengths = withGround $ \ground -> do
-  opened <- converse door ground lengths
-  case opened of
-    Left reason -> pure (Left reason)
-    Right () -> Right . features <$> stored ground
+sampleWorld :: Door -> [Int] -> IO (Either String Sample)
+sampleWorld door lengths = withGround $ \ground ->
+  withRelay door (waypoint ground) $ \relay -> do
+    opened <- converse door ground (Relay.locator relay) lengths
+    case opened of
+      Left reason -> pure (Left reason)
+      Right () -> do
+        held <- stored ground
+        seen <- observed relay
+        pure (Right Sample {sampleHeld = held, sampleSeen = seen})
+
+-- | What a host holds in one world, or why there is no world.
+weighed :: Door -> [Int] -> IO (Either String [Reading])
+weighed door lengths = fmap (features . sampleHeld) <$> sampleWorld door lengths
 
 -- | Opens a channel between two fresh endpoints and says these things on it.
-converse :: Door -> Ground -> [Int] -> IO (Either String ())
-converse door ground lengths = do
-  minted <- Door.ask door writer (Door.Invite channel (waypoint ground) Door.Forever Door.both)
+converse :: Door -> Ground -> FilePath -> [Int] -> IO (Either String ())
+converse door ground at lengths = do
+  minted <- Door.ask door writer (Door.Invite channel at Door.Forever Door.both)
   case minted of
     Accepted (Invited _ invitation _) -> do
       joined <- Door.ask door reader (Door.Join invitation channel)
