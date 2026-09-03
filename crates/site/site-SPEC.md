@@ -16,7 +16,7 @@
 | U4 撤销表 | `Site::revocations` / `Site::revoke` | 重复撤销不重复计数；跨进程可见 |
 | U5 邀请 | `Invite` 的 `kusanagi1:` 一行文本形式 | 往返恒等；缺前缀、改套件字节各得错误 |
 | U6 失败形状 | `SiteError` 三个变体 | 每个变体在门那一层拿到稳定码；门加不出第四个码就编译不过 |
-| U7 只有主人能读 | `permissions`：本 crate 写盘的唯一入口 | Unix 上站点里没有任何文件或目录对其他账号可读；被替换的记录是新 inode，生下来就是 `0600` |
+| U7 只有主人能读 | `permissions/`：本 crate 写盘的唯一入口，平台差异是文件不是分支 | 站点里没有任何文件或目录对其他账号可读——Unix 看模式位，Windows 看受保护 DACL；被替换的记录是新 inode / 新句柄，生下来就是关的 |
 
 ## 2 验收标准
 
@@ -32,7 +32,9 @@
 | 文件 `0600`、目录 `0700`，**只在创建时确立，此后永不调整** | 一份站点里是身份种子与全部通道秘密，而 `fs::write` 默认留下的是 `0644`；要防的不是国家级对手，是共用构建机上的第二个账号、sidecar 容器、推到镜像仓库的一层。**后半句是安全属性本身**：`set_permissions` 作用于路径并跟随符号链接，一个会去 chmod 非自己创建的文件的构建，等于给能往站点目录里写东西的人一个把 chmod 指向别处的原语 |
 | 替换旧记录用「旁边暂存 + 重命名盖过去」 | 不是为了原子性而已。`rename` 作用于**名字**，因此被替换的是链接本身而不是它指向的东西；新文件是新 inode，生下来就是 `0600`，因此不存在任何一处去 chmod 一个本构建未曾创建的路径。与 `waypoint::dir` 让一个 drop 整个出现用的是同一个形状 |
 | 本构建未曾创建的**目录**保持原模式 | 里面每个文件仍是 `0600`，因此暴露的是通道名的集合而不是内容。关上它需要 chmod 一个本构建未曾创建的目录，那正是上一行禁止的操作 |
-| Windows 不做任何事 | 模式位在那里没有对应物，限制一个文件要写 ACL，而那需要一个本 workspace 不引入 `unsafe` 就够不到的 API。**这是缺口，不是方案**，写在 `permissions.rs` 的模块注释与 `ARCHITECTURE.md` §9 |
+| Windows 走 `CreateDirectoryW` / `CreateFileW` + SDDL `D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)` | **缺口已关。** `D:P` 拒绝继承——落在别人打开过的目录下的站点不会跟着被打开；`OW` 是 OWNER RIGHTS，即创建者本人，因此代码不必去问「现在是谁在跑」；`SY` 是 SYSTEM，缺它则备份、索引与更新以没人能联系到本程序的方式失败。**不列 Administrators**：他们能取得任何对象的所有权，列了也防不住谁 |
+| 不用 `SetNamedSecurityInfoW`，也不用 `OpenOptionsExt::security_attributes` | 前者按路径解析，站点将去的位置上被预埋一个 junction 就会把这次修改指向别人的目录；后者在 std 里仍未稳定。所以直接 `CreateFileW` 拿句柄再 `File::from_raw_handle` | 
+| **`unsafe` 有且只有一个地址** | `site::permissions::windows`，四个 FFI 调用、每个一个 `unsafe {}` 与一行 `// SAFETY:`。根 `Cargo.toml` 由 `forbid` 降到 `deny` 并把该模块写进允许清单第三行。两个现成的封装 crate（`windows-acl` 2019、`windows-permissions` 2020）都无人维护——把 `unsafe` 塞进一个五年没动的依赖不是消除它，是把它挪到本仓库没人读的地方 |
 | 通道名字符集 | `a-z0-9-`、1..=32、**首字符不是 `-`** | 放宽须同时想清路径、shell、URL 三处；首字符那条另有理由，见 §10 步骤 1 |
 | 一条通道几方 | 两方 | cohort 落地后由名册决定 |
 
@@ -71,6 +73,9 @@
 ```
 lib.rs      模块索引
 site.rs     Site —— identity / channels / cairns 的路径与读写
+permissions/mod.rs      暂存与改名：每个平台都一样的那一半
+permissions/unix.rs     创建时定模式位：目录 0700、文件 0600
+permissions/windows.rs  创建时挂受保护 DACL —— 全仓唯一含 `unsafe` 的模块
 naming.rs   名字能长什么样，以及它的文件叫什么（两条规则，一处）
 revoked.rs  <root>/revoked —— 撤销表，活得比通道记录长
 channel.rs  Channel / Standing / Peer 与其磁盘格式（版本 3）
@@ -183,6 +188,7 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 | `grant` | Standing 里放的就是 Grant；撤销表放的是 StepId |
 | `seal` | Channel 持有 Secret |
 | `thiserror` | 与其他 crate 同一套错误派生 |
+| `windows-sys` 0.61（仅 `cfg(windows)`） | 微软自己发布的绑定，只开 `Win32_Foundation` / `Win32_Security` / `Win32_Security_Authorization` / `Win32_Storage_FileSystem` 四个特性。J3 之后它已彻底离开依赖树，所以这是**我们显式声明的**一个供应商，不是「反正已经在树里了」 |
 
 `serde` **不在此列**：被签名或被哈希的东西一律手写编码，磁盘格式也是手写的。
 
@@ -194,7 +200,8 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 | 通道记录版本 1 | 拒绝未来格式而不是猜 | 换格式即换版本字节 |
 | `kusanagi1:` 前缀、版本 1、套件 1 | 邀请串的识别与拒绝不认识的格式 | 换密码学即换套件字节；套件 0 已作废 |
 | 归档密钥的语境串 `kusanagi 2026 channel file name v1` | BLAKE3 `derive_key` 的惯例：一个语境串全局只指一个用途，同一颗种子派生出的两把密钥因此永不相撞 | 改这个字符串会让已有站点的每一条通道都「找不到」；要改就得连迁移一起做 |
-| 不设身份文件的 Unix 模式位 | 跨平台一致优先 | 多用户机器上须把 site 放进仅本人可读的目录 |
+| Windows 上不加 `\?\` 长路径前缀 | 直接用 Win32 入口点，超过 260 字符的路径由操作系统拒绝，带着真实错误码浮上来成为 `site.local`，**不静默截断** | 出路是更短的 `--root` |
+| 已存在的父目录保留它自己的权限 | 与 Unix 的「非本构建创建的目录保持原模式」同一条规矩；要事后收紧就得走按路径解析的 API，那正是本模块存在的理由 | 里面的文件仍然逐个是关的 |
 
 ## 15 影响面
 
@@ -211,6 +218,8 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 1. 本文。
 2. `ARCHITECTURE.md` §4 词表（`Site`）、§5 crate 图与行数表。
 3. `crates/kusanagi/kusanagi-SPEC.md` §7 模块边界。
+4. `AGENTS.md`「机器持有的规则」的 `unsafe` 一行与允许清单条数；根 `Cargo.toml` 的允许清单。
+5. `crates/door/door-SPEC.md` §12——`site.permissions` 这个码。
 
 
 ---

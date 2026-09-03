@@ -460,6 +460,7 @@ dependencies = [
  "kusanagi-kernel",
  "kusanagi-seal",
  "thiserror",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

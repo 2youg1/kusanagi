@@ -72,11 +72,20 @@ ureq = { version = "3", default-features = false, features = [
     "socks-proxy",
 ] }
 proptest = "1"
+# Win32, for `site::permissions::windows` alone. Microsoft publishes it, so it
+# adds no vendor this tree did not already trust for the toolchain itself.
+windows-sys = { version = "0.61", default-features = false }
 
 # The production allowlist for lint suppression (rust-hardening §"allow/expect policy").
 # A `#[expect]` in non-test code is permitted ONLY for a lint named here:
 #
 #   clippy::disallowed_methods — at exactly one function, `kusanagi::world::sample`.
+#   unsafe_code — at exactly one module, `site::permissions::windows`, whose entire
+#     job is to hand the operating system a security descriptor. Four FFI calls, one
+#     `unsafe {}` block each, one `// SAFETY:` line each. `forbid` was the rule until
+#     a Windows access list had to be written, and the two published wrappers for that
+#     API were last touched in 2019 and 2020 — vendoring the `unsafe` into an
+#     unmaintained crate does not remove it, it moves it somewhere nobody here reads.
 #   clippy::large_enum_variant — at exactly one type, `kernel::Link`, whose two
 #     shapes differ by an ML-DSA-87 signature. Boxing it would cost `Copy`, which
 #     every `const fn` accessor on `Segment` relies on.
@@ -91,7 +100,7 @@ proptest = "1"
 # Adding a row to this list requires an explicit ruling recorded as a `Verdict:` trailer.
 [workspace.lints.rust]
 warnings = "deny"
-unsafe_code = "forbid"
+unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "deny"
 missing_docs = "warn"
 # `kani` is a real configuration this workspace compiles under; the proof harness

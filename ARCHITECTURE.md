@@ -129,8 +129,8 @@ size, their content, their authorship, a relationship, or that a relationship ex
 the identity seed and every channel secret, so the claim is checkable rather than broad: it
 holds **no message** (`kusanagi/tests/at_rest.rs`), and **no channel is stored under the name
 of the person it is with** — a record is filed under a keyed hash of that name, so a listing
-gives up a count and not a graph (`site/tests/site.rs`). On Unix nothing it writes is readable
-by another account (`site/tests/unreadable.rs`); on Windows nothing does that yet.
+gives up a count and not a graph (`site/tests/site.rs`). Nothing it writes is readable by
+another account — mode bits on Unix, a protected access list on Windows (`site/tests/unreadable*.rs`).
 
 ## 4 The words
 
@@ -347,10 +347,10 @@ Reopening one of these requires a reason that did not exist when it was taken.
   way in; a channel name is worse, leaking who talks to whom on every message, so every
   flag that takes one accepts `-` and reads it from the first line of stdin instead.
 - **A site is readable by its owner and nobody else, and no file in it is named after
-  anybody.** `0600` on every file and `0700` on every directory — on Unix; Windows is the
-  gap in §9 — established at creation and never adjusted after, because `set_permissions`
-  follows symbolic links and a build that chmods a file it did not create can be aimed at
-  one it did not choose; a replacement stages beside its target and renames over it. A
+  anybody.** `0600` and `0700` on Unix, an access list naming only the owner and `SYSTEM`
+  on Windows — established at creation and never adjusted after, because `set_permissions`
+  and `SetNamedSecurityInfoW` both resolve a path, so a build that re-permissions what it
+  did not create can be aimed at what it did not choose; a replacement renames over it. A
   channel is filed under a keyed hash of its name, so a listing gives up a count and not a
   graph. The attacker this answers is a second account on a shared machine, not a nation
   state.
@@ -387,8 +387,7 @@ Named so that their absence is a decision rather than an oversight, each its own
 | **Riding a carrier** | the way property 0 closes for a path observer, and the way 4b closes with it. Drops written into a store that already receives opaque high-entropy blobs on a schedule — an encrypted backup repository, a container registry — by invoking the real client rather than imitating it. Nothing here imitates a protocol today, and nothing should start: see §3 on why mimicry loses |
 | **TLS fingerprint** | a `rustls` handshake is identifiable as one (JA3/JA4). Closing it needs handshake mimicry with no clean answer in the Rust ecosystem, and it is second in line behind the carrier, which would make the handshake a real client's |
 | **Forward secrecy** | one static channel secret decrypts everything, forever, for whoever takes a site. A per-epoch ratchet is the answer and needs a decision about law 1 first: a ratchet that has moved cannot re-read what it advanced past |
-| **On-disk deniability** | mode bits stop another account; they do not stop somebody holding the disk, who finds a 32-byte identity, 73-byte cairns and fixed-offset channel records — no longer under anybody's name, but still recognisable as what they are |
-| **Windows file permissions** | `0600` has no counterpart; restricting a file there means writing an ACL, which needs an API this workspace cannot reach without `unsafe` or a crate that brings one. Both crates that would bring one are unmaintained, so which of them to trust is a supply-chain decision and not an implementation detail |
+| **On-disk deniability** | file permissions stop another account; they do not stop somebody holding the disk, who finds a 32-byte identity, 73-byte cairns and fixed-offset channel records — no longer under anybody's name, but still recognisable as what they are |
 | `Bell` | a privacy mechanism rather than a latency tweak. A reader that polls names the address it waits on, then the next one after a hit, so a host watching one endpoint can follow the live edge; a host that can be asked to wait is told one address instead. Riding a carrier that bulk-syncs closes the same leak more completely, and whichever lands first decides whether the other is built |
 | `Cohort` — rosters and epochs | needs multi-node test infrastructure; two parties do not need a roster |
 | `Depot` — chunked content | optional again. `DROP` is sized to hold the largest artefact this protocol produces, so the signature swap did not need chunking after all; what still needs it is user content larger than one drop |

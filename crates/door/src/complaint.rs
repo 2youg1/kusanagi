@@ -44,6 +44,20 @@ pub enum Complaint {
     /// The waypoint locator does not name a place.
     #[error(transparent)]
     Locator(#[from] LocatorError),
+    /// The operating system would not attach the restriction a site needs.
+    ///
+    /// Distinct from [`Complaint::Local`] because the write did not fail — it was
+    /// refused. Going ahead would have left an identity seed or a channel secret
+    /// readable by every account on the machine, and a filesystem with no access
+    /// lists cannot be talked into having them.
+    #[error("could not {what}: {source}")]
+    Permissions {
+        /// What was being attempted.
+        what: &'static str,
+        /// The underlying failure.
+        #[source]
+        source: std::io::Error,
+    },
     /// Local state could not be read or written.
     #[error("could not {action}: {source}")]
     Local {
@@ -199,6 +213,7 @@ impl From<SiteError> for Complaint {
     fn from(error: SiteError) -> Self {
         match error {
             SiteError::Local { action, source } => Self::Local { action, source },
+            SiteError::Permissions { what, source } => Self::Permissions { what, source },
             SiteError::BadName { name, reason } => Self::BadName { name, reason },
             SiteError::BadInvitation { reason } => Self::BadInvitation { reason },
             SiteError::BadRecord { what, reason } => Self::BadRecord { what, reason },
@@ -229,6 +244,7 @@ impl Complaint {
             Self::Grant(error) => error.code(),
             Self::Locator(error) => error.code(),
             Self::Local { .. } => "kusanagi.local",
+            Self::Permissions { .. } => "site.permissions",
             // One published code for three shapes: what a caller does about a
             // malformed thing depends on which thing, and that is the recovery's
             // job. Splitting the code would break every script that matches it.
@@ -291,6 +307,10 @@ impl Complaint {
                 "check that --root names a writable directory, then run the command again"
                     .to_owned()
             }
+            Self::Permissions { .. } => "choose a --root on a local disk that keeps per-file \
+                 permissions: NTFS on Windows, any ordinary filesystem elsewhere. FAT, exFAT \
+                 and most network shares cannot keep a channel secret from other accounts"
+                .to_owned(),
             Self::BadName { .. } => "pick a name of 1 to 32 characters from a-z, 0-9 and -, \
                  not starting with -, and run the command again"
                 .to_owned(),

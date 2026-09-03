@@ -48,8 +48,8 @@ Violating any of these turns the build red.
 
 | Write it this way | Held by |
 |---|---|
-| Return failure through `Result`. No `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`, bare indexing or slicing in non-test code. Checked arithmetic. No `as` casts. No `unsafe` anywhere. | `[workspace.lints]` in `Cargo.toml`, with `-D warnings` |
-| Every suppression carries `reason = "…"`. In non-test code a suppression is allowed **only** for a lint on the allowlist written in `Cargo.toml` — which currently holds exactly one entry, `clippy::disallowed_methods`, at the one function that reads the clock. | `allow_attributes_without_reason = "deny"`, plus review |
+| Return failure through `Result`. No `unwrap`, `expect`, `panic!`, `todo!`, `unreachable!`, bare indexing or slicing in non-test code. Checked arithmetic. No `as` casts. No `unsafe` outside `site::permissions::windows`, which hands the operating system a security descriptor: one FFI call per block, one `// SAFETY:` line each, allowlist entry three. | `[workspace.lints]` in `Cargo.toml`, with `-D warnings` |
+| Every suppression carries `reason = "…"`. In non-test code a suppression is allowed **only** for a lint on the allowlist written in `Cargo.toml` — which currently holds three entries: `clippy::disallowed_methods` at the one function that reads the clock, `clippy::large_enum_variant` at `kernel::Link`, and `unsafe_code` at `site::permissions::windows`. | `allow_attributes_without_reason = "deny"`, plus review |
 | Test code (`#[cfg(test)]`, `tests/`, `benches/`) relaxes freely with a scoped `#[allow(…, reason = "test code")]`. | the tier policy above |
 | One module, one file, semantically named. `lib.rs` holds the module index and nothing else. | review |
 | Default to private. A `pub trait` is a seam, and **a seam ships with two implementations plus a conformance suite**. One adapter is a hypothetical seam; two make it real. | review, and `waypoint::conformance` as the worked example |

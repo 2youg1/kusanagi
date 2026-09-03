@@ -17,5 +17,16 @@ kusanagi-seal.workspace = true
 blake3.workspace = true
 thiserror.workspace = true
 
+# The access list every site file is created with. Microsoft's own binding, so
+# the vendor count does not move; `site::permissions::windows` is the only module
+# that touches it, and the only module in this workspace with `unsafe` in it.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+] }
+
 [lints]
 workspace = true

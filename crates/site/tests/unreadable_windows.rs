@@ -44,7 +44,13 @@ use kusanagi_site::{Channel, Site, Standing};
 ///
 /// Everyone, Users, Authenticated Users, Interactive, Guests. Well-known SIDs,
 /// so this list means the same thing on every installation in every language.
-const OUTSIDERS: [&str; 5] = ["S-1-1-0", "S-1-5-32-545", "S-1-5-11", "S-1-5-4", "S-1-5-32-546"];
+const OUTSIDERS: [&str; 5] = [
+    "S-1-1-0",
+    "S-1-5-32-545",
+    "S-1-5-11",
+    "S-1-5-4",
+    "S-1-5-32-546",
+];
 
 /// SYSTEM and OWNER RIGHTS, which a site's own list is allowed to carry.
 const SYSTEM: &str = "S-1-5-18";
@@ -118,17 +124,15 @@ fn written(tag: &str) -> Site {
     std::fs::remove_dir_all(&root).ok();
     let site = Site::at(root);
     site.adopt(&[5; 32]).unwrap();
-    site.keep(
-        "peer",
-        &Channel {
-            secret: Secret::from_bytes([7; 32]),
-            root: Signer::from_seed(&[3; 32]).handle(),
-            introduction: Signer::from_seed(&[2; 32]).handle(),
-            locator: "./drops".to_owned(),
-            standing: Standing::Root,
-            peer: None,
-        },
-    )
+    site.keep(&Channel {
+        name: "peer".to_owned(),
+        secret: Secret::from_bytes([7; 32]),
+        root: Signer::from_seed(&[3; 32]).handle(),
+        introduction: Signer::from_seed(&[2; 32]).verifying_key(),
+        locator: "./drops".to_owned(),
+        standing: Standing::Root,
+        peer: None,
+    })
     .unwrap();
     site.revoke(StepId::from_bytes([1; 32])).unwrap();
     site
@@ -177,7 +181,10 @@ fn nobody_else_is_named() {
 fn the_protection_is_the_site_s_own() {
     let site = written("protected");
     let mine = me();
-    assert!(mine.starts_with("S-1-"), "could not read this account's sid");
+    assert!(
+        mine.starts_with("S-1-"),
+        "could not read this account's sid"
+    );
 
     for path in everything(site.root()) {
         let (protected, entries) = acl(&path);

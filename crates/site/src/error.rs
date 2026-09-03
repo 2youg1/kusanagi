@@ -72,6 +72,21 @@ pub enum SiteError {
     /// says so as [`SiteError::UnknownChannel`].
     #[error("this endpoint has no identity yet, so it cannot keep a channel")]
     NoIdentity,
+    /// The operating system would not attach the restriction a site needs.
+    ///
+    /// Apart from [`SiteError::Local`] because the way out is different: this is
+    /// not "the write failed", it is "the write would have succeeded and left
+    /// the bytes readable by somebody else", so it refuses instead. A filesystem
+    /// with no access lists at all — FAT32, exFAT, most network shares — reaches
+    /// here rather than quietly writing an open file.
+    #[error("could not {what}: {source}")]
+    Permissions {
+        /// What was being attempted, in the words a person would use.
+        what: &'static str,
+        /// The underlying failure.
+        #[source]
+        source: std::io::Error,
+    },
     /// A grant inside a record or an invitation does not decode.
     #[error(transparent)]
     Grant(#[from] GrantError),

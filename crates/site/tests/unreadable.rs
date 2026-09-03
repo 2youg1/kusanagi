@@ -15,8 +15,8 @@
 //! container, or an image layer pushed to a registry.
 //!
 //! The whole file is `#[cfg(unix)]` because the mode bits it checks exist only
-//! there. What Windows does instead is written down in
-//! `crates/site/src/permissions.rs`, and it is a gap rather than a solution.
+//! there. Windows asks the same two questions in access control lists, in
+//! `unreadable_windows.rs`, against `site::permissions::windows`.
 
 #![cfg(unix)]
 #![allow(
@@ -66,17 +66,15 @@ fn nothing_a_site_writes_is_readable_by_anybody_else() {
     let author = Signer::from_seed(&[3; 32]);
 
     site.adopt(&[5; 32]).unwrap();
-    site.keep(
-        "peer",
-        &Channel {
-            secret: Secret::from_bytes([7; 32]),
-            root: author.handle(),
-            introduction: Signer::from_seed(&[2; 32]).handle(),
-            locator: "./drops".to_owned(),
-            standing: Standing::Root,
-            peer: None,
-        },
-    )
+    site.keep(&Channel {
+        name: "peer".to_owned(),
+        secret: Secret::from_bytes([7; 32]),
+        root: author.handle(),
+        introduction: Signer::from_seed(&[2; 32]).verifying_key(),
+        locator: "./drops".to_owned(),
+        standing: Standing::Root,
+        peer: None,
+    })
     .unwrap();
     site.revoke(StepId::from_bytes([1; 32])).unwrap();
 
@@ -154,17 +152,15 @@ fn a_symbolic_link_planted_at_a_record_is_replaced_and_never_followed() {
     std::fs::create_dir_all(&channels).unwrap();
     std::os::unix::fs::symlink(&bait, channels.join("peer")).unwrap();
 
-    site.keep(
-        "peer",
-        &Channel {
-            secret: Secret::from_bytes([7; 32]),
-            root: Signer::from_seed(&[3; 32]).handle(),
-            introduction: Signer::from_seed(&[2; 32]).handle(),
-            locator: "./drops".to_owned(),
-            standing: Standing::Root,
-            peer: None,
-        },
-    )
+    site.keep(&Channel {
+        name: "peer".to_owned(),
+        secret: Secret::from_bytes([7; 32]),
+        root: Signer::from_seed(&[3; 32]).handle(),
+        introduction: Signer::from_seed(&[2; 32]).verifying_key(),
+        locator: "./drops".to_owned(),
+        standing: Standing::Root,
+        peer: None,
+    })
     .unwrap();
 
     let after = std::fs::metadata(&bait).unwrap();
