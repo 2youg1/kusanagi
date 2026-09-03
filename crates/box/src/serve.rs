@@ -13,7 +13,9 @@
 //! What the server refuses is as important as what it does:
 //!
 //! - **There is no unconditional write.** A `PUT` without `If-None-Match: *` is
-//!   answered `428`, so no request in the protocol can overwrite a drop.
+//!   ignored, so no request in the protocol can overwrite a drop.
+//! - **There is no confirmed write.** Every `PUT` is answered `404`, empty,
+//!   whether it was stored, refused, or dropped for want of room.
 //! - **There is no listing.** A caller who does not already know an address
 //!   learns nothing, which is what makes address unlinkability worth anything.
 //! - **There is no account.** The server never learns who anybody is, so it has
@@ -23,11 +25,12 @@
 //!   gets one answer — `404`, empty — to every question, which is what an
 //!   ordinary static file server gives them.
 //!
-//! That last one is the difference between a host somebody runs and a host
-//! somebody can be found running: a banner at a well-known path turns an
-//! internet-wide scan into a list of this network's users, at one request per
-//! address. A host is measured rather than asked — `kusanagi doctor` writes twice
-//! and reads back (`ARCHITECTURE.md` §8).
+//! The last three are one property: the difference between a host somebody runs
+//! and a host somebody can be found running. A banner at a well-known path turns
+//! an internet-wide scan into a list of this network's users at one request per
+//! address — and so did a `201`, until this file stopped sending one. A host is
+//! measured rather than asked: `kusanagi doctor` writes and reads back
+//! (`ARCHITECTURE.md` §8), and so does every ordinary write.
 //!
 //! Objects carry an expiry in front of the bytes, so a swept object and an object
 //! that was never written are the same answer, `404`, with no bookkeeping to
@@ -42,21 +45,63 @@ use kusanagi_kernel::{Clock, DropAddr, Instant, PutOutcome, Waypoint as _};
 use crate::exchange::{IDLE, Request, Response, address_of, etag};
 use kusanagi_waypoint::DirWaypoint;
 
+/// How many bytes a host will hold before it stops accepting more.
+///
+/// A host answers strangers, and a stranger's write is free to them and not to
+/// the disk it lands on. A gigabyte is eight thousand drops: more than any two
+/// people will exchange, and small enough that filling it is somebody's project
+/// rather than somebody's afternoon.
+pub const CAPACITY: u64 = 1_073_741_824;
+
 /// A host: a directory, an HTTP door, and no opinions.
 #[derive(Debug)]
 pub struct Server<C> {
     drops: DirWaypoint,
+    root: PathBuf,
     clock: C,
+    capacity: u64,
 }
 
 impl<C: Clock> Server<C> {
-    /// Serves `root`, dating objects by `clock`.
+    /// Serves `root`, dating objects by `clock`, holding at most [`CAPACITY`].
     #[must_use]
     pub fn new(root: impl Into<PathBuf>, clock: C) -> Self {
+        let root = root.into();
         Self {
-            drops: DirWaypoint::new(root.into()),
+            drops: DirWaypoint::new(root.clone()),
+            root,
             clock,
+            capacity: CAPACITY,
         }
+    }
+
+    /// The same host, holding at most `bytes`.
+    #[must_use]
+    pub const fn holding(mut self, bytes: u64) -> Self {
+        self.capacity = bytes;
+        self
+    }
+
+    /// What this host is already holding, in bytes.
+    ///
+    /// Walked per write rather than counted incrementally, because a counter is
+    /// state and a host that is killed loses it. A box holds thousands of files,
+    /// not millions, and the walk is one `readdir` per shard.
+    fn held(&self) -> u64 {
+        fn beneath(path: &std::path::Path) -> u64 {
+            let Ok(entries) = std::fs::read_dir(path) else {
+                return 0;
+            };
+            entries
+                .flatten()
+                .map(|entry| match entry.metadata() {
+                    Ok(data) if data.is_dir() => beneath(&entry.path()),
+                    Ok(data) => data.len(),
+                    Err(_) => 0,
+                })
+                .fold(0_u64, u64::saturating_add)
+        }
+        beneath(&self.root)
     }
 
     /// Answers requests until the listener fails.
@@ -150,9 +195,27 @@ impl<C: Clock> Server<C> {
         }
     }
 
+    /// Takes a write, and says nothing about it either way.
+    ///
+    /// **Every outcome is the same empty `404` every other request gets.** §3
+    /// claims a host answers a stranger exactly as a static file server does, and
+    /// a static file server does not answer `201` to a `PUT`. Before this, one
+    /// request to `/d/<40 hex>` told a scanner it had found a box; a scan of the
+    /// internet was therefore a list of them, and the list is the relationship
+    /// graph's first column.
+    ///
+    /// The caller loses nothing, because it never believed the status anyway:
+    /// `waypoint::http` reads the address back and compares bytes.
+    /// **Hosts are measured, not believed** — §8 already ruled that for reads,
+    /// and this is the write path catching up.
+    ///
+    /// Nothing is written once the directory is full, and that is also a `404`.
+    /// A host that reported fullness would be telling a stranger how much of it
+    /// they had used.
     fn write(&self, addr: &DropAddr, request: &Request) -> Response {
+        let refused = Response::empty(404);
         if request.header("if-none-match") != Some("*") {
-            return Response::empty(428);
+            return refused;
         }
         let expires_at = match request.header("cache-control").and_then(max_age) {
             None => Instant::NEVER,
@@ -161,10 +224,12 @@ impl<C: Clock> Server<C> {
 
         let mut envelope = expires_at.as_unix_seconds().to_be_bytes().to_vec();
         envelope.extend_from_slice(&request.body);
+        let wanted = u64::try_from(envelope.len()).unwrap_or(u64::MAX);
+        if self.held().saturating_add(wanted) > self.capacity {
+            return refused;
+        }
         match self.drops.put_if_absent(addr, &envelope) {
-            Ok(PutOutcome::Stored) => Response::empty(201),
-            Ok(PutOutcome::AlreadyPresent) => Response::empty(412),
-            Err(_) => Response::empty(500),
+            Ok(PutOutcome::Stored | PutOutcome::AlreadyPresent) | Err(_) => refused,
         }
     }
 

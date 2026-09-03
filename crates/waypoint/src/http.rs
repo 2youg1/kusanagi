@@ -11,11 +11,17 @@
 //!
 //! ```text
 //! GET /d/<address>     200 + body + ETag | 304 (If-None-Match) | 404
-//! PUT /d/<address>     201 | 412 when occupied | 428 without If-None-Match: *
+//! PUT /d/<address>     404, always, whatever happened
 //! ```
 //!
-//! An unconditional `PUT` is refused rather than accepted, so this host cannot
+//! An unconditional `PUT` is ignored rather than accepted, so this host cannot
 //! lose write-once semantics by accident: there is no request that overwrites.
+//!
+//! **A write is confirmed by reading it back, never by a status code.** A host
+//! that answered `201` would be announcing that it is a box to anybody who sent
+//! one request to `/d/<40 hex>`, and a scan of the internet would return the list
+//! of boxes. So the box says nothing, and this client finds out what happened the
+//! way it finds out everything else about a host it does not trust: it looks.
 //!
 //! **Every header here is one that ordinary web traffic already carries.**
 //! `If-None-Match` is how any cache asks a conditional question and how S3
@@ -63,12 +69,17 @@ impl HttpWaypoint {
         format!("{}/d/{addr}", self.base)
     }
 
+    /// Sends one conditional write, and reports only that it was sent.
+    ///
+    /// **What the host answers is not evidence and is not read.** What it did is
+    /// found out by looking, which is the caller's job because only the caller
+    /// knows whether looking would even be meaningful.
     fn put_inner(
         &self,
         addr: &DropAddr,
         bytes: &[u8],
         ttl: Option<u64>,
-    ) -> Result<PutOutcome, WaypointError> {
+    ) -> Result<(), WaypointError> {
         let mut request = self
             .client
             .agent()
@@ -81,21 +92,31 @@ impl HttpWaypoint {
         let response = request
             .send(bytes)
             .map_err(|source| self.client.failed("writing to a box", &source))?;
-
-        match Client::actionable("writing to a box", &response)? {
-            200 | 201 | 204 => Ok(PutOutcome::Stored),
-            412 => Ok(PutOutcome::AlreadyPresent),
-            428 => Err(WaypointError::OverwriteNotRefused),
-            other => Err(WaypointError::UnusableAddress {
-                reason: format!("the box answered {other} to a conditional write"),
-            }),
-        }
+        Client::actionable("writing to a box", &response)?;
+        Ok(())
     }
 }
 
 impl Waypoint for HttpWaypoint {
+    /// Writes, then looks.
+    ///
+    /// What is at the address afterwards is the whole answer: equal to what was
+    /// sent means this write landed; different means somebody else's did and this
+    /// address is spent; nothing there means the write did not happen — the host
+    /// is full, or it is not a box.
+    ///
+    /// The extra request is a protocol constant rather than a function of what is
+    /// being said, so it changes what a host counts and not what a host can
+    /// distinguish.
     fn put_if_absent(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
-        self.put_inner(addr, bytes, None)
+        self.put_inner(addr, bytes, None)?;
+        match self.get(addr)? {
+            Some(found) if found == bytes => Ok(PutOutcome::Stored),
+            Some(_) => Ok(PutOutcome::AlreadyPresent),
+            None => Err(WaypointError::Unwritten {
+                action: "writing to a box",
+            }),
+        }
     }
 
     fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
@@ -139,17 +160,19 @@ impl Conditional for HttpWaypoint {
         }
     }
 
+    /// Writes with a lifetime, and does **not** look afterwards.
+    ///
+    /// A lifetime cannot be confirmed by reading back, because a lifetime that
+    /// has already elapsed and a write that never happened are the same empty
+    /// address. Telling those two apart is exactly what `probe::examine` is for,
+    /// so this reports what it sent and leaves the finding to the prober.
     fn put_with_ttl(
         &self,
         addr: &DropAddr,
         bytes: &[u8],
         seconds: u64,
     ) -> Result<TtlOutcome, WaypointError> {
-        match self.put_inner(addr, bytes, Some(seconds))? {
-            PutOutcome::Stored => Ok(TtlOutcome::Accepted),
-            PutOutcome::AlreadyPresent => Err(WaypointError::UnusableAddress {
-                reason: "the probe address was already occupied".to_owned(),
-            }),
-        }
+        self.put_inner(addr, bytes, Some(seconds))?;
+        Ok(TtlOutcome::Accepted)
     }
 }

@@ -38,7 +38,20 @@ mod common;
 use common::{host, probe};
 
 /// Words that would give the game away, in the case a scanner would try first.
-const TELLS: [&str; 6] = ["kusanagi", "drop", "segment", "box", "write-once", "expiry"];
+///
+/// `201` and `412` are here because they are not words a static file server
+/// says: either one answered to a `PUT` at `/d/<40 hex>` turns an internet-wide
+/// scan into a list of this network's hosts, at one request each.
+const TELLS: [&str; 8] = [
+    "kusanagi",
+    "drop",
+    "segment",
+    "box",
+    "write-once",
+    "expiry",
+    "201",
+    "412",
+];
 
 /// The questions a scanner asks, in the order a scanner asks them.
 fn questions() -> Vec<&'static str> {

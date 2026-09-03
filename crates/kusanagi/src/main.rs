@@ -131,6 +131,13 @@ enum Verb {
         /// Defaults to the site directory with `-host` after it.
         #[arg(long = "dir", value_name = "PATH")]
         directory: Option<PathBuf>,
+        /// The most this host will hold, in bytes.
+        ///
+        /// A write that would take it over the ceiling is dropped, and answered
+        /// exactly like every other write: a host that reported being full would
+        /// be telling a stranger how much of it they had used.
+        #[arg(long = "cap", default_value_t = kusanagi_box::CAPACITY, value_name = "BYTES")]
+        capacity: u64,
     },
 }
 
@@ -198,12 +205,17 @@ fn request(verb: Verb) -> Result<Request, Complaint> {
             name: intake::channel(name)?,
         },
         Verb::Doctor { waypoint } => Request::Doctor { waypoint },
-        Verb::Host { bind, directory } => Request::Host {
+        Verb::Host {
+            bind,
+            directory,
+            capacity,
+        } => Request::Host {
             bind,
             directory: match directory {
                 Some(named) => named,
                 None => kusanagi::default_host_dir()?,
             },
+            capacity,
         },
     })
 }

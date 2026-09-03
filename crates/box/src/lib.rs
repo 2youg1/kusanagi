@@ -19,4 +19,4 @@
 mod exchange;
 mod serve;
 
-pub use serve::Server;
+pub use serve::{CAPACITY, Server};

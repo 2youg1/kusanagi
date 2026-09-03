@@ -103,5 +103,7 @@ pub enum Request {
         bind: String,
         /// The directory to keep drops in.
         directory: PathBuf,
+        /// The most this host will hold, in bytes.
+        capacity: u64,
     },
 }

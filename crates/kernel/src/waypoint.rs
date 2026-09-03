@@ -85,6 +85,17 @@ pub enum WaypointError {
         /// Where the host wanted the request to go instead.
         to: String,
     },
+    /// The write did not land, and the host said nothing about why.
+    ///
+    /// A box answers every write the same way, so a caller learns what happened
+    /// by reading the address back. Nothing there means nothing was written: the
+    /// host is full, what arrived had already expired, or the place being
+    /// written to is not a box at all.
+    #[error("waypoint kept nothing while {action}")]
+    Unwritten {
+        /// What was being attempted.
+        action: &'static str,
+    },
     /// The host took longer than a one-shot command can wait.
     #[error("waypoint did not answer while {action}, after {after:?}")]
     Unanswered {
@@ -104,6 +115,7 @@ impl WaypointError {
             Self::OverwriteNotRefused => "waypoint.overwrite_not_refused",
             Self::UnusableAddress { .. } => "waypoint.unusable_address",
             Self::Redirected { .. } => "waypoint.redirected",
+            Self::Unwritten { .. } => "waypoint.unwritten",
             Self::Unanswered { .. } => "waypoint.timeout",
         }
     }

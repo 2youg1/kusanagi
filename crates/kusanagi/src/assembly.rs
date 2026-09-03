@@ -62,7 +62,11 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
         Request::Revoke { name } => revoke(site, name),
         Request::Forget { name } => forget(site, name),
         Request::Doctor { waypoint } => doctor(waypoint, now),
-        Request::Host { bind, directory } => host(bind, directory),
+        Request::Host {
+            bind,
+            directory,
+            capacity,
+        } => host(bind, directory, *capacity),
     }
 }
 
@@ -224,7 +228,7 @@ fn doctor(waypoint: &str, now: Instant) -> Result<Outcome, Complaint> {
     Ok(Outcome::examined(waypoint, place.kind(), &certificate))
 }
 
-fn host(bind: &str, directory: &std::path::Path) -> Result<Outcome, Complaint> {
+fn host(bind: &str, directory: &std::path::Path, capacity: u64) -> Result<Outcome, Complaint> {
     let listener = TcpListener::bind(bind).map_err(|source| Complaint::Local {
         action: "listen on that address",
         source,
@@ -241,6 +245,7 @@ fn host(bind: &str, directory: &std::path::Path) -> Result<Outcome, Complaint> {
     );
 
     Server::new(directory, SystemClock)
+        .holding(capacity)
         .serve(&listener)
         .map_err(|source| Complaint::Local {
             action: "serve requests",

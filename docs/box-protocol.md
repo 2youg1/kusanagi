@@ -65,21 +65,35 @@ drop change the world.
 
 | Response | When |
 |---|---|
-| `201`, no body | the address was empty and now holds these bytes |
-| `412`, no body | the address was already claimed; the stored bytes are untouched |
-| `428`, no body | `If-None-Match: *` was missing |
+| `404`, no body | **always** |
+
+**A write is never confirmed.** Stored, refused as occupied, dropped for want of
+`If-None-Match: *`, dropped because the host is full — one answer, byte for byte
+the answer every other request gets. A status that distinguished them would make
+one `PUT` to `/d/<40 hex>` enough to identify a box, and an internet-wide scan
+enough to enumerate this network's hosts.
+
+**A caller finds out by looking.** `GET` the same address: bytes equal to what was
+sent means this write landed, different bytes mean somebody else's did and the
+address is spent, and nothing there means the write did not happen. The reference
+client does exactly this, and reports `waypoint.unwritten` for the last case.
+The extra request is a protocol constant, so it changes what a host counts and
+not what a host can tell apart.
 
 A `Cache-Control` value a host cannot parse is **ignored**, not refused, which is
 what RFC 9111 §5.2 asks of a recipient and also what keeps a malformed value from
 being a way of telling this host apart from a cache. A lifetime too large to add
 to the clock saturates.
 
-`412` is not an error condition for a caller. A resend after a lost
-acknowledgement lands here, and the correct response is to carry on.
+An address that is already claimed is not an error condition for a caller. A
+resend after a lost acknowledgement finds its own bytes there, and the correct
+response is to carry on.
 
 The `0` lifetime is what makes expiry testable without waiting: a host that
 honours lifetimes answers the next `GET` with `404`, and one that ignores them
-hands the bytes back. `kusanagi doctor` uses exactly that.
+hands the bytes back. `kusanagi doctor` uses exactly that — and it is the one
+case where reading back cannot confirm a write, because a lifetime that has
+already elapsed and a write that never happened are the same empty address.
 
 ## There is no third request
 
@@ -98,11 +112,17 @@ back, which is evidence, while a self-description is not.
 | body | 1 MiB (`kusanagi_waypoint::MAX_OBJECT`, which is also what a client will read back) |
 | idle connection | 30 seconds |
 | connection reuse | none; every response carries `Connection: close` |
+| total stored | 1 GiB by default, `kusanagi host --cap <BYTES>` |
 
-Every sealed drop is exactly 4 096 bytes, and the reference host stores it behind
-an eight-byte expiry, so the body limit is margin by three orders of magnitude
-rather than a constraint. A body larger than the limit is refused with `400`
-before anything is allocated for it.
+Every sealed drop is exactly 131 072 bytes, and the reference host stores it
+behind an eight-byte expiry, so the body limit is eight times a drop rather than
+a constraint. A body larger than the limit is refused with `400` before anything
+is allocated for it; `Content-Length` must be digits and must appear at most
+once, so two readers cannot disagree about where one request ends.
+
+The storage ceiling is silent, like everything else about a write. A host that
+answered "full" would be letting a stranger measure how much of it they had
+used.
 
 ## Storage
 

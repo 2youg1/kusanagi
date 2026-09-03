@@ -14,6 +14,10 @@
 //! them found one — every rule already held — and they are committed because a
 //! rule that holds by accident and a rule that holds on purpose look identical
 //! until somebody changes the code.
+//!
+//! **None of them reads a status code to find out whether a write happened.**
+//! A box answers every write `404`, so the evidence is always what is at the
+//! address afterwards — which is what a caller of this protocol does too.
 
 #![allow(
     clippy::unwrap_used,
@@ -45,7 +49,7 @@ fn a_lifetime_too_large_to_add_does_not_take_the_host_down() {
     // a panic on the serving thread, reachable by anybody who can reach the port.
     let (address, root) = host("hostile-ttl", 2);
 
-    let written = probe(
+    probe(
         &address,
         &put(
             &format!("/d/{ADDRESS}"),
@@ -53,7 +57,6 @@ fn a_lifetime_too_large_to_add_does_not_take_the_host_down() {
             "a segment",
         ),
     );
-    assert_eq!(status(&written), 201, "a saturating lifetime was refused");
 
     // And the object is still there afterwards, which is what says the expiry
     // saturated at the end of time rather than wrapping round to before now.
@@ -84,22 +87,23 @@ fn only_the_exact_conditional_header_gets_a_write() {
         "If-None-Match:\r\n",
         "If-Match: *\r\n",
     ];
-    let (address, root) = host("hostile-conditional", nearly.len() + 1);
+    let (address, root) = host("hostile-conditional", nearly.len() + 3);
+    let get = format!("GET /d/{ADDRESS} HTTP/1.1\r\nHost: h\r\n\r\n");
 
     for headers in nearly {
-        let answer = probe(
+        probe(
             &address,
             &put(&format!("/d/{ADDRESS}"), headers, "sneaked in"),
         );
-        assert_eq!(
-            status(&answer),
-            428,
-            "a write with headers {headers:?} was not refused"
-        );
     }
+    // The evidence: nothing above stored anything, so the address is still empty.
+    assert_eq!(
+        status(&probe(&address, &get)),
+        404,
+        "a write without the exact conditional header was kept"
+    );
 
-    // Nothing above stored anything, so the address is still free.
-    let answer = probe(
+    probe(
         &address,
         &put(
             &format!("/d/{ADDRESS}"),
@@ -107,7 +111,11 @@ fn only_the_exact_conditional_header_gets_a_write() {
             "the real one",
         ),
     );
-    assert_eq!(status(&answer), 201, "the near misses had claimed the drop");
+    let read = probe(&address, &get);
+    assert!(
+        String::from_utf8_lossy(&read).ends_with("the real one"),
+        "the write that asked correctly was not kept"
+    );
 
     std::fs::remove_dir_all(&root).ok();
 }
@@ -120,7 +128,7 @@ fn an_address_has_exactly_one_spelling() {
     let upper = ADDRESS.to_uppercase();
     let (address, root) = host("hostile-spelling", 3);
 
-    let claimed = probe(
+    probe(
         &address,
         &put(
             &format!("/d/{ADDRESS}"),
@@ -128,16 +136,9 @@ fn an_address_has_exactly_one_spelling() {
             "the first",
         ),
     );
-    assert_eq!(status(&claimed), 201);
-
-    let again = probe(
+    probe(
         &address,
         &put(&format!("/d/{upper}"), "If-None-Match: *\r\n", "the second"),
-    );
-    assert_eq!(
-        status(&again),
-        404,
-        "an address spelled in upper case was accepted as a second address"
     );
 
     let read = probe(
