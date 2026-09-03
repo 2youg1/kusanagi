@@ -9,7 +9,7 @@ kusanagi 是一个命令行程序，专门做这件事。消息是加密的，�
 ```bash
 # 在 Alice 的机器上
 kusanagi invite --name bob --waypoint http://box.example:8443
-# 输出：kusanagi1:0100cff7...
+# 输出：kusanagi1:0101cff7...
 
 # 在 Bob 的机器上——用管道递进去，不作为参数粘贴
 pbpaste | kusanagi join --name alice
@@ -40,7 +40,7 @@ cd kusanagi
 cargo build --release      # 产物是 target/release/kusanagi
 ```
 
-需要 Rust 1.97 或更高版本。没有别的依赖，不需要 C 工具链，也没有运行时。
+需要 Rust 1.97 或更高版本，以及你的 Rust 工具链本来就要求的那个 C 编译器——提供 TLS 的 `ring` 在构建时会编译一点 C。在 Windows 上那就是 MSVC 工具链本来就需要的 Build Tools。没有运行时，除了这个二进制文件之外没有任何东西要装。
 
 ## 五分钟上手
 
@@ -56,8 +56,11 @@ kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8443
 
 ```bash
 pbpaste | kusanagi --root ~/.bob join --name alice
-# 或：  kusanagi --root ~/.bob join --name alice < invitation.txt
+# 或：      kusanagi --root ~/.bob join --name alice < invitation.txt
+# PowerShell：Get-Clipboard | kusanagi --root ~/.bob join --name alice
 ```
+
+**在 Windows 上优先用文件。** 那里的剪贴板是一本日志而不是一个缓冲区：`Win+V` 历史默认保留，「跨设备同步」开着就把它上传到微软账户，任何前台应用都能读到当前的内容。PowerShell 还会把每一条命令行连同正文写进 `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`——这也正是这里的 channel 名和消息正文永远不作为参数的原因。每一个收名字的旗标都接受 `-`，改从标准输入读。
 
 **邀请从标准输入读取，不能作为参数传入。** 它携带着通道秘密，而在 Linux 上本机任何一个账号都能从 `/proc` 读到别的进程的命令行，shell 还会把它写进历史记录。把这行字当密码对待，就意味着永远不让它变成一个参数。
 
@@ -72,7 +75,7 @@ kusanagi --root ~/.bob   send --to alice "bob 听到了"
 kusanagi --root ~/.alice read --from bob
 ```
 
-每次读取都会把整条链验一遍：每条消息都要对上作者的签名，也要对上它前面那一条。任何一项对不上，你拿到的是错误而不是列表。这里没有「读一半」这种结果。
+每次读取都从本端点上次验到的位置续验，首次读一条流则从创世开始验：每条消息都要对上作者的签名，也要对上它前面那一条。任何一项对不上，你拿到的是错误而不是列表。这里没有「读一半」这种结果。
 
 **4. Alice 反悔了。**
 
@@ -94,14 +97,25 @@ kusanagi --root ~/.alice revoke --from bob
 | `invite --name N --waypoint W [--for SECS] [--can send,read]` | 开一条 channel，签发一条邀请。 |
 | `join --name N` | 接受一条邀请，从标准输入读取。它永远不是参数，理由见第 2 步。 |
 | `send --to N ["文本"]` | 追加一条消息。不给文本时，内容从标准输入读取。 |
-| `read --from N [--after H] [--mine]` | 读取对方的消息，从头验证。`--after H` 只返回高度 `H` 之后的部分，`--mine` 读你自己的。 |
+| `read --from N [--after H] [--mine]` | 读取对方的消息，从上次验到的位置续验。`--after H` 只返回高度 `H` 之后的部分，`--mine` 读你自己的。 |
 | `channels` | 列出本机的 channel，各自还允许什么，以及到什么时候为止。 |
 | `revoke --from N` | 切断一个对端，立即且永久。 |
 | `forget --channel N` | 在本端点丢弃一条 channel。 |
 | `doctor <WAYPOINT>` | 实测一台主机的真实行为，并出具证书。 |
-| `host --bind ADDR --dir PATH` | 让本机充当别人的存放主机。 |
+| `host --bind ADDR --dir PATH --cap BYTES` | 让本机充当别人的存放主机，最多保存 `--cap` 字节（默认 1 GiB）。 |
+| `export` | 把本端点封成一份归档写到标准输出。打开它的密钥只往标准错误印**一次**。 |
+| `import` | 把归档还原到一个空的 `--root`。密钥是标准输入的第一行，其余是归档。 |
 
-所有命令都接受 `--json`。所有失败都带一个稳定的错误码，以及一条能让你走出去的命令——参数打错也算一种失败，同样有。
+所有命令都接受 `--json`，每一个 JSON 答案都带 `"contract": 1`。所有失败都带一个稳定的错误码，以及一条能让你走出去的命令——参数打错也算一种失败，同样有。错误码的目录在 [`docs/codes.md`](docs/codes.md)，由一条测试保证它与代码逐条相等。
+
+**`--root` 默认落在你自己的用户资料目录下**——Windows 上是 `%LOCALAPPDATA%\kusanagi`，其他平台是 `$XDG_DATA_HOME/kusanagi`——而不是相对于程序恰好被启动的那个目录。在 Windows 上，它写的每个文件都带一份只列出你和 `SYSTEM` 的访问控制表，并且经 DPAPI 密封：一份没有你账户密码的硬盘拷贝就是噪声。
+
+**记得备份。** 里面的身份没有第二个地方能恢复，丢了它就等于丢掉这个端点所在的每一条 channel：
+
+```bash
+kusanagi export > backup.ksnb        # 恢复密钥往标准错误印一次
+cat key.txt backup.ksnb | kusanagi --root ~/.restored import
+```
 
 ## 在程序里调用
 
@@ -144,6 +158,8 @@ s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 
 对象存储从 `KUSANAGI_S3_ACCESS_KEY` 和 `KUSANAGI_S3_SECRET_KEY` 读取凭据。
 
+**一个桶属于一个账户，而那个账户是一条没有人加密过的关系边。** 桶要有人付钱，背后连着邮箱和支付方式；于是服务商看到写入从 Bob 的地址进入 Alice 的桶，拿到的不是两个 IP，而是「Bob 的 IP ↔ Alice 的账户」，不需要做任何密码分析。而 Bob 要往那里写，就得持有 Alice 的凭据——那也是删掉整个桶的凭据。**所以桶最好不属于你们中的任何一方，或者由第三方跑 `kusanagi host`**，不拥有它的那一方走代理。按 key 前缀分权限帮不上忙：前缀就是宿主看得见的分组，而地址正是为了否认这种分组才派生出来的。
+
 **kusanagi 不隐藏你的 IP 地址**，上面也没有一句话这样声称：宿主知道它，而替你搬运数据包的人在连接建立之前就读到了 DNS 查询与 TLS 服务器名。把 `KUSANAGI_PROXY` 指向一个 SOCKS5 或 HTTP CONNECT 代理——Tor 客户端、VPN、公司出口都行——所有请求就都从那里出去。**读不懂的值当场被拒，不会被忽略。**
 
 ```bash
@@ -163,7 +179,7 @@ export KUSANAGI_PROXY=socks5://127.0.0.1:9050
 | 哪些消息属于同一场对话——从它**存下来的东西**看 | **看不到。** 每个地址都是 `KDF(共享秘密 ‖ 作者 ‖ 高度)`，地址从不重复使用。 |
 | 哪些消息属于同一场对话——从它**被请求的东西**看 | **轮询时看不到。** 一次轮询只点名一个地址。详见下文。 |
 | 一共存了多少个对象 | **看得到。** |
-| 每个对象多大 | **看不到。** 每个 drop 恒为 4 096 字节，无论装什么。 |
+| 每个对象多大 | **看不到。** 每个 drop 恒为 131 072 字节，无论装什么。 |
 | 每次请求什么时候到达 | **看得到。** |
 
 读取方若每次都从高度零开始走，就会把这场对话的全部地址按顺序、在同一个连接上、一口气报给主机——地址本身推导得再无关，读取顺序还是把分组关系直接交了出去，主机不需要密码分析，一份访问日志就够。所以端点会记下每条流验证到哪里，一次轮询只问一个地址就停。
@@ -203,13 +219,13 @@ export KUSANAGI_PROXY=socks5://127.0.0.1:9050
 
 | 缺什么 | 为什么 |
 |---|---|
-| 一条 channel 容纳三方以上 | 一条 channel 就是一对端点。多方需要成员名册，而名册正是这套设计要藏起来的关系图。 |
+| 一条 channel 容纳三方以上 | 一条 channel 就是一对端点。小群组走扇出——每一对关系一条 channel，五个人就写五次——不需要名册也不需要群密钥；名册买到的是一千人，那是另一个问题。 |
 | 隐藏你发了多少、什么时候发 | 填充和抖动没有真实审查者可以对着失败，无法验证。 |
 | 对哑对象存储隐藏对象数量 | 需要长轮询，而普通桶不提供。 |
 | 长轮询 | 顺带能堵住上面说的活动边缘泄露。 |
-| 分块的共享工作区 | 另一个问题。目前单条消息上限 64 KiB。 |
+| 分块的共享工作区 | 另一个问题。目前单条消息上限 126 348 字节。 |
 | MCP 前端 | 动词集合是一个枚举，第二个前端是纯增量工作。 |
-| 后量子套件 | 等经典套件定下来之后干净地加上去。 |
+| 隐藏端点的 IP 地址 | 不归这个项目解决。把 `KUSANAGI_PROXY` 指向 SOCKS5 或 HTTP CONNECT 代理，让为此而生的网络去做。 |
 | 安全审计 | **没做。** 这个仓库之外没有任何人审过这里的密码学。 |
 
 ## 参与开发
@@ -220,7 +236,7 @@ just demo         # 在一个用完即删的目录里跑通整个故事
 just adversary    # Haskell 反例猎手，装了 GHC 才跑
 ```
 
-`just check` 是每一次改动的收工条件。它会跑 177 个测试，其中包括两个端点通过真实 TCP 对话。
+`just check` 是每一次改动的收工条件。它会跑整套测试——写下这句话时是 278 个，其中包括两个端点通过真实 TCP 对话——外加 rustfmt、`-D warnings` 的 clippy、行数预算与 `cargo-deny`。
 
 动第一行代码之前先读 `AGENTS.md`。每个 crate 都有一份 `<crate>-SPEC.md`，它先于代码改动。
 

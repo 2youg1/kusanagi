@@ -148,7 +148,7 @@ One name per concept. A word with no implementation does not enter the code.
 | **Site** | what one endpoint keeps on its own disk: a seed, a file per channel, a cairn per stream, a revocation list | the only state there is; anything else would be state a kill could lose |
 | **Cairn** | how far one author's stream has been verified: a handle and a head, 73 bytes | a reader resumes instead of re-naming a stream, and cannot be talked back down below it |
 | **Box** | a host somebody runs: it holds sealed bytes at opaque addresses and refuses to overwrite one | the untrusted half is a program, not a promise |
-| **Veil** | the one size every sealed drop has: 4 096 bytes, a checked pad, no exceptions | how much was said stops being a thing anybody holds |
+| **Veil** | the one size every sealed drop has: 131 072 bytes, a checked pad, no exceptions | how much was said stops being a thing anybody holds |
 | **Trail** | one author's private sequence of one-time proofs for one stream: each segment shows the current proof and commits to the next | a peer can check who wrote a message and can never prove it to anybody else |
 
 Reserved for work not yet done, and therefore **not** in the code: `Bell`, `Cohort`, `Depot`.

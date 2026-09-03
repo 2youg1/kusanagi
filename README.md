@@ -12,7 +12,7 @@ who wrote them.
 ```bash
 # on Alice's machine
 kusanagi invite --name bob --waypoint http://box.example:8443
-# prints: kusanagi1:0100cff7...
+# prints: kusanagi1:0101cff7...
 
 # on Bob's machine — piped, never pasted as an argument
 pbpaste | kusanagi join --name alice
@@ -44,8 +44,10 @@ cd kusanagi
 cargo build --release      # produces target/release/kusanagi
 ```
 
-You need Rust 1.97 or later. There are no other dependencies, no C toolchain, and
-no runtime.
+You need Rust 1.97 or later and whatever C compiler your Rust toolchain already
+requires — `ring`, which is what supplies TLS, builds a little C during the
+build. On Windows that is the Build Tools the MSVC toolchain needs anyway. There
+is no runtime and nothing to install beside the binary.
 
 ## Try it in five minutes
 
@@ -64,7 +66,16 @@ kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8443
 ```bash
 pbpaste | kusanagi --root ~/.bob join --name alice
 # or:  kusanagi --root ~/.bob join --name alice < invitation.txt
+# PowerShell:  Get-Clipboard | kusanagi --root ~/.bob join --name alice
 ```
+
+**On Windows, prefer the file.** The clipboard there is a log rather than a
+buffer: `Win+V` history is kept by default, "sync across devices" uploads it to a
+Microsoft account, and any foreground application can read what is on it right
+now. PowerShell keeps its own copy of every command line, text included, in
+`%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt` —
+which is the same reason no channel name and no message body is ever an argument
+here. Every flag that takes a name accepts `-` and reads it from stdin instead.
 
 **The invitation is read from stdin and cannot be given as an argument.** It
 carries the channel secret, and on Linux any account on the machine can read
@@ -84,7 +95,8 @@ kusanagi --root ~/.bob   send --to alice "bob heard you"
 kusanagi --root ~/.alice read --from bob
 ```
 
-Every read verifies the whole chain: each message is checked against its author's
+Every read verifies from where this endpoint last got to; the first read of a
+stream verifies from genesis. Each message is checked against its author's
 signature and against the message before it. If any check fails you get an error
 instead of a list. There is no partial read.
 
@@ -113,15 +125,33 @@ who has never seen this repository.
 | `invite --name N --waypoint W [--for SECS] [--can send,read]` | Open a channel and mint one invitation. |
 | `join --name N` | Accept an invitation, read from stdin. It is never an argument: see step 2. |
 | `send --to N ["text"]` | Append one message. Without the text, the payload is read from stdin. |
-| `read --from N [--after H] [--mine]` | Read the peer's messages, verified from the start. `--after H` returns only what follows height `H`. `--mine` reads your own. |
+| `read --from N [--after H] [--mine]` | Read the peer's messages, verified from wherever this endpoint last got to. `--after H` returns only what follows height `H`. `--mine` reads your own. |
 | `channels` | List the channels here, what each one still permits, and until when. |
 | `revoke --from N` | Cut a peer off, immediately and permanently. |
 | `forget --channel N` | Drop a channel from this endpoint. |
 | `doctor <WAYPOINT>` | Measure what a host actually does, and certify it. |
-| `host --bind ADDR --dir PATH` | Act as a host for other people's messages. |
+| `host --bind ADDR --dir PATH --cap BYTES` | Act as a host for other people's messages, holding at most `--cap` (1 GiB by default). |
+| `export` | Seal this endpoint into one archive on stdout. The key that opens it goes to stderr, **once**. |
+| `import` | Restore an archive into an empty `--root`. The key is the first line of stdin and the archive is the rest. |
 
-Every command accepts `--json`. Every failure carries a stable error code and a
-command that recovers from it, including a mistyped argument.
+Every command accepts `--json`, and every JSON answer carries `"contract": 1`.
+Every failure carries a stable error code and a command that recovers from it,
+including a mistyped argument. The codes are catalogued in
+[`docs/codes.md`](docs/codes.md), which a test keeps equal to the code.
+
+**`--root` defaults to your own profile directory** — `%LOCALAPPDATA%\kusanagi`
+on Windows, `$XDG_DATA_HOME/kusanagi` elsewhere — rather than to a directory
+relative to wherever the program was started. On Windows every file it writes
+carries an access list naming only you and `SYSTEM`, and is sealed with DPAPI, so
+a copy of the drive without your account's password is noise.
+
+**Back it up.** The identity in there is not recoverable from anywhere else, and
+losing it loses every channel this endpoint is in:
+
+```bash
+kusanagi export > backup.ksnb        # the recovery key is printed to stderr, once
+cat key.txt backup.ksnb | kusanagi --root ~/.restored import
+```
 
 ## Using it from a program
 
@@ -181,6 +211,17 @@ s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 Buckets read credentials from `KUSANAGI_S3_ACCESS_KEY` and
 `KUSANAGI_S3_SECRET_KEY`.
 
+**A bucket belongs to an account, and that account is a relationship edge nobody
+encrypted.** The bucket is billed to somebody, with an email address and a card
+behind it, so a provider watching writes arrive from Bob's address into Alice's
+bucket has "Bob's IP ↔ Alice's account" without doing any cryptanalysis at all.
+And to write there Bob must hold Alice's credentials, which are also the
+credentials to delete the whole bucket. **So prefer a bucket that belongs to
+neither of you, or a third party running `kusanagi host`**, and whichever party
+does not own it should go through a proxy. Splitting permissions by key prefix
+does not help: a prefix is a grouping the host can see, which is the thing
+addresses are derived to deny it.
+
 **kusanagi does not hide your IP address**, and nothing above claims to: the host
 learns it, and whoever carries your packets reads the DNS query and the TLS server
 name before the connection. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy
@@ -208,7 +249,7 @@ The host is not trusted and does not have to be. Here is exactly what it learns.
 | Which messages belong to one conversation, from what it **stores** | **Hidden.** Every address is `KDF(shared secret ‖ author ‖ height)`. No address is ever reused. |
 | Which messages belong to one conversation, from what it is **asked for** | **Hidden while polling.** A poll names one address. See below. |
 | How many objects it holds | **Visible.** |
-| How large each one is | **Hidden.** Every drop is exactly 4 096 bytes, whatever it carries. |
+| How large each one is | **Hidden.** Every drop is exactly 131 072 bytes, whatever it carries. |
 | When each request arrived | **Visible.** |
 
 A reader that started at height zero on every read would ask the host for every
@@ -274,13 +315,13 @@ Listed so that each absence is a decision rather than an oversight.
 
 | Missing | Why |
 |---|---|
-| More than two parties in one channel | One channel is one pair. Group membership needs a roster, and a roster is the relationship graph this design exists to hide. |
+| More than two parties in one channel | One channel is one pair. A small group is fan-out — one channel per pair, five members means five writes — which needs no roster and no group key; what a roster buys is a thousand members, and that is a different problem. |
 | Hiding how much you send and when | Padding and jitter are untestable without a real censor to fail against. |
 | Hiding the number of objects from a dumb object store | Needs long-polling support that a plain bucket does not have. |
 | Long-polling | Would also close the live-edge leak described above. |
-| Chunked shared workspaces | A separate problem. One message is capped at 64 KiB today. |
+| Chunked shared workspaces | A separate problem. One message is capped at 126 348 bytes today. |
 | MCP front end | The verb set is one enum, so a second front end is additive work. |
-| Post-quantum suite | A clean addition once the classical suite is settled. |
+| Hiding an endpoint IP address | Not this project's to solve. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy and the network built for it does the work. |
 | A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |
 
 ## Working on it
@@ -291,8 +332,9 @@ just demo         # the whole story in a throwaway directory
 just adversary    # the Haskell counterexample hunter, if you have GHC
 ```
 
-`just check` is the closing condition for every change. It runs 177 tests,
-including two endpoints talking over real TCP.
+`just check` is the closing condition for every change. It runs the whole test
+suite — 278 tests as of this writing, including two endpoints talking over real
+TCP — plus rustfmt, clippy at `-D warnings`, the line budget and `cargo-deny`.
 
 Read `AGENTS.md` before your first edit. Each crate has a `<crate>-SPEC.md` that
 is written before its code changes.
