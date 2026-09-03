@@ -22,16 +22,20 @@
 
 mod archive;
 mod at_rest;
+mod cairns;
 mod channel;
 mod error;
 mod invite;
 mod naming;
 mod permissions;
+mod records;
 mod revoked;
+mod roster;
 mod site;
 
 pub use archive::{export, import};
 pub use channel::{Channel, Peer, Standing};
 pub use error::SiteError;
 pub use invite::{Invite, Offer};
+pub use roster::Roster;
 pub use site::Site;

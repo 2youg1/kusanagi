@@ -13,7 +13,7 @@
 
 use crate::fence::Fence;
 use crate::report::Outcome;
-use crate::rows::{Entry, Measured, Summary};
+use crate::rows::{Delivery, Entry, Grouping, Landed, Measured, Summary};
 
 /// Renders one outcome as prose.
 pub fn render(outcome: &Outcome, fence: Fence) -> String {
@@ -21,10 +21,28 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
         Outcome::Identity { handle, site } => {
             format!("this endpoint is {handle}\n  site  {site}")
         }
-        Outcome::Channels { channels } if channels.is_empty() => {
+        Outcome::Channels { channels, groups } if channels.is_empty() && groups.is_empty() => {
             "no channels yet; `kusanagi invite` starts one".to_owned()
         }
-        Outcome::Channels { channels } => listing(channels),
+        Outcome::Channels { channels, groups } => {
+            let mut said = listing(channels);
+            for group in groups {
+                let name = &group.name;
+                said.push_str("\n\ngroup `");
+                said.push_str(name);
+                said.push('`');
+                said.push_str(&members(group));
+            }
+            said
+        }
+        Outcome::Grouped { group } => format!(
+            "group `{}` now stands for {} channel(s){}\n\
+             sending to it writes one drop per member, and nothing is shared between them.",
+            group.name,
+            group.members.len(),
+            members(group)
+        ),
+        Outcome::FannedOut { group, delivered } => fanned(group, delivered),
         Outcome::Invited {
             name,
             invite,
@@ -89,6 +107,46 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             format!("stopped hosting {directory} on {address}")
         }
     }
+}
+
+/// The members of one group, one per line, or a sentence saying there are none.
+fn members(group: &Grouping) -> String {
+    if group.members.is_empty() {
+        return "\n  (nobody \u{2014} a message to it goes nowhere)".to_owned();
+    }
+    let mut listed = String::new();
+    for member in &group.members {
+        listed.push_str("\n  ");
+        listed.push_str(member);
+    }
+    listed
+}
+
+/// What each member of a group got, with the failures where they cannot be missed.
+///
+/// The count comes first because it is the one thing a person has to check. A
+/// fan-out that reached four of five people looks like a success at a glance,
+/// and the fifth person is the one who will not know why they were left out.
+fn fanned(group: &str, delivered: &[Delivery]) -> String {
+    let arrived = delivered
+        .iter()
+        .filter(|row| matches!(row.landed, Landed::Sent { .. }))
+        .count();
+    let rows: String = delivered
+        .iter()
+        .map(|row| match &row.landed {
+            Landed::Sent { index, address } => {
+                format!("\n  {:<20} #{index}  {address}", row.member)
+            }
+            Landed::Refused { code, error } => {
+                format!("\n  {:<20} not sent \u{2014} {code}: {error}", row.member)
+            }
+        })
+        .collect();
+    format!(
+        "sent to {arrived} of {} on `{group}`{rows}",
+        delivered.len()
+    )
 }
 
 /// A span of seconds, in the largest unit that still says something.

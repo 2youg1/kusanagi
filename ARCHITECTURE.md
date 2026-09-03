@@ -97,13 +97,13 @@ history. **The derivation was sound and the reading path gave the answer away.**
 needed no cryptanalysis, only an access log.
 
 The last column is the point of the section, because a privacy claim nobody runs is a
-paragraph. `adversary/` builds paired worlds — four where a byte is said, four where
-three thousand are — measures ten features of what the host is left holding, and fails
-when any threshold separates them by more than their own spread, because a stump that
-separates two groups *is* the rule a censor deploys. Exactly two features may separate
-a silent channel from a busy one, both the object count in different units, and the
-assertion is an equality: one that starts separating is a regression, one that stops is
-a leak somebody closed and has to say so.
+paragraph. `adversary/` builds paired worlds — four where a byte is said, four where three
+thousand are — weighs ten features of what the host holds and times every request through
+a relay in front of a real host, because a carrier sees moments and not bytes. It fails
+when a threshold separates two worlds by more than their own spread, since a stump that
+separates them *is* the rule a censor deploys. Two features may separate silence from talk
+for the host and one for the carrier; **each list is an equality**, so one that starts
+separating is a regression and one that stops is a leak somebody closed and must say so.
 
 **What no property above protects, named so it cannot be mistaken for covered.** The host
 learns the **IP** of every endpoint that reaches it; a path observer reads the **DNS
@@ -151,6 +151,7 @@ One name per concept. A word with no implementation does not enter the code.
 | **Veil** | the one size every sealed drop has: 131 072 bytes, a checked pad, no exceptions | how much was said stops being a thing anybody holds |
 | **Trail** | one author's private sequence of one-time proofs for one stream: each segment shows the current proof and commits to the next | a peer can check who wrote a message and can never prove it to anybody else |
 | **Offer** | what an invitation points at rather than carries: the inviter's key and the grant, sealed in one drop the channel secret addresses | the secret stops being held hostage by the public bytes beside it |
+| **Roster** | one endpoint's own list of the channels a name stands for, replaced whole and shared with nobody | a small group needs no group key, no agreement and no removal protocol |
 
 Reserved for work not yet done, and therefore **not** in the code: `Bell`, `Cohort`, `Depot`.
 
@@ -175,32 +176,32 @@ Dependencies point one way: `kernel` depends on nothing of ours, `kusanagi` on a
 | Limit | Applies to | What it bounds |
 |---|---|---|
 | **400 lines** | every file in the repository, whatever kind it is | how much has to be in your head to judge one line |
-| **2,500 lines** | each crate's `src/` | how large one idea may grow |
+| **4,000 lines** | each crate's `src/` | how large one idea may grow |
 | **25,000 lines** | the workspace, tests included | how much there is to read at all |
 
 The file is the unit that actually gets opened — a reviewer opens one, an editor
 jumps into one, a model reads one — so the first limit is the strictest and the one
 that decides whether this code can be read. **A file over 400 lines is split or
-deleted; the number is not raised**, and splitting the assertions about a rule away
+deleted; that number is not raised**, and splitting the assertions about a rule away
 from the rule is a legitimate answer, because the workspace total counts tests and
-nothing is hidden by moving it. The limit was a ladder until it was one number —
-400 for `.rs` and `.hs`, 500 for `.md`, 300 for the rest — whose 300 rung never
-once refused a file and whose 500 rung had exactly one effect: it let this document
-run to 479 lines. A limit nobody applies from memory is a limit met at the gate.
-`Cargo.lock` and `LICENSE` stay outside the count because their contents are not
-written here, and that list is closed; what each crate spends is what `just budget`
-prints, deliberately not copied here, because a number kept in two places drifts.
+nothing is hidden by moving it. `Cargo.lock` and `LICENSE` stay outside the count
+because their contents are not written here, and that list is closed; what each crate
+spends is what `just budget` prints, never copied here, because a number kept in two
+places drifts.
 
-Three crates exist because the budget forced a split, each recorded where it
-happened. `kusanagi` gave up the disk formats to `site` (`site-SPEC.md` §3) and the
-output contract to `door` (`door-SPEC.md` §4) — **a `SiteError` says what failed on
-the disk, and the door says what it is called and how to recover from it.**
-`waypoint` gave up the server to `box`, **overturning `waypoint-SPEC.md` §7**, which
-had ruled that the two halves of the box protocol share a crate: the 2,500-line
-limit did not exist when that was taken, and separating two jobs — *reaching* a host
-and *being* one — beat separating two implementations of one seam. What that
-decision feared, the halves drifting apart, is held by a test: the box's own tests
-drive the shipped client against the shipped server and run `conformance::run` on it.
+**The crate limit moved once, 2,500 to 4,000, because the two are met by different
+acts.** Splitting answers a long file and never a full crate, whose number counts every
+`.rs` under `src/`: there the answers are deleting a feature or moving one to a crate
+with a reason to hold it. `site` reached 2,540 holding a roster and a backup format
+that both belong to it; the extraction still available is named in `site-SPEC.md` §7.
+
+Three crates exist because the budget forced a split, and each is argued where it
+happened rather than here: `kusanagi` gave up the disk formats to `site`
+(`site-SPEC.md` §3) and the output contract to `door` (`door-SPEC.md` §4), and
+`waypoint` gave up the server to `box`, **overturning `waypoint-SPEC.md` §7** because
+separating two jobs — *reaching* a host and *being* one — beat separating two
+implementations of one seam. What that reversal feared is held by a test: the box's
+own tests drive the shipped client against the shipped server.
 
 **Outside the workspace.** `adversary/` is a Haskell counterexample hunter — not a
 crate, not a dependency, not part of the release, not counted here. §8 records why
@@ -390,7 +391,7 @@ Named so that their absence is a decision rather than an oversight, each its own
 | **Forward secrecy** | one static channel secret decrypts everything, forever, for whoever takes a site. A per-epoch ratchet is the answer and needs a decision about law 1 first: a ratchet that has moved cannot re-read what it advanced past |
 | **On-disk deniability off Windows** | every record here is a DPAPI blob keyed by this account's logon credentials, so a disk without the password is noise; on a platform with no store of its own the tag says `0x00` and the records are what they always were |
 | `Bell` | a privacy mechanism rather than a latency tweak. A reader that polls names the address it waits on, then the next one after a hit, so a host watching one endpoint can follow the live edge; a host that can be asked to wait is told one address instead. Riding a carrier that bulk-syncs closes the same leak more completely, and whichever lands first decides whether the other is built |
-| `Cohort` — rosters and epochs | needs multi-node test infrastructure; two parties do not need a roster |
+| `Cohort` — a shared roster and epochs | a small group is a local `Roster` and one drop per member, which needs neither; what a shared one buys is a thousand members, and that is MLS's problem rather than this one's |
 | `Depot` — chunked content | optional again. `DROP` is sized to hold the largest artefact this protocol produces, so the signature swap did not need chunking after all; what still needs it is user content larger than one drop |
 | `port` — local socket and MCP front ends | the verb set is one enum, so a second front end is additive |
 

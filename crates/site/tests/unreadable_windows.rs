@@ -62,19 +62,34 @@ struct Ace {
     inherited: bool,
 }
 
-/// What the access control list on `path` says, plus whether it is protected.
+/// Separates one path's answer from the next inside one PowerShell run.
+const NEXT: &str = "--- next ---";
+
+/// What the access control list on each path says, plus whether it is protected.
 ///
 /// PowerShell rather than a Win32 call, because a test may spawn anything and
 /// the crate under test is not allowed to contain the code that answers this.
-fn acl(path: &Path) -> (bool, Vec<Ace>) {
+///
+/// **Every path in one run.** Starting PowerShell costs about a fifth of a
+/// second and the whole suite runs its tests at once, so a call per file used to
+/// fail intermittently with an empty error stream — an interpreter that would
+/// not start, reported as an access control list that was wrong. One run per
+/// test cannot say that.
+fn acls(paths: &[PathBuf]) -> Vec<(bool, Vec<Ace>)> {
+    let listed = paths
+        .iter()
+        .map(|path| format!("'{}'", path.display().to_string().replace('\'', "''")))
+        .collect::<Vec<String>>()
+        .join(",");
     let script = format!(
-        "$ErrorActionPreference='Stop'; $a = Get-Acl -LiteralPath '{}'; \
-         Write-Output $a.AreAccessRulesProtected; \
-         $a.Access | ForEach-Object {{ \
-           Write-Output ($_.IdentityReference.Translate(\
-             [System.Security.Principal.SecurityIdentifier]).Value \
-             + ' ' + $_.IsInherited) }}",
-        path.display()
+        "$ErrorActionPreference='Stop'; foreach ($p in @({listed})) {{ \
+           Write-Output '{NEXT}'; \
+           $a = Get-Acl -LiteralPath $p; \
+           Write-Output $a.AreAccessRulesProtected; \
+           $a.Access | ForEach-Object {{ \
+             Write-Output ($_.IdentityReference.Translate(\
+               [System.Security.Principal.SecurityIdentifier]).Value \
+               + ' ' + $_.IsInherited) }} }}"
     );
     let output = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
@@ -82,23 +97,37 @@ fn acl(path: &Path) -> (bool, Vec<Ace>) {
         .expect("powershell would not start");
     assert!(
         output.status.success(),
-        "reading the acl of {} failed: {}",
-        path.display(),
+        "reading the access control lists failed ({}): {}",
+        output.status,
         String::from_utf8_lossy(&output.stderr)
     );
     let said = String::from_utf8_lossy(&output.stdout);
-    let mut lines = said.lines().map(str::trim).filter(|line| !line.is_empty());
-    let protected = lines.next().unwrap_or("False").eq_ignore_ascii_case("true");
-    let entries = lines
-        .filter_map(|line| {
-            let (identity, inherited) = line.rsplit_once(' ')?;
-            Some(Ace {
-                identity: identity.trim().to_owned(),
-                inherited: inherited.trim().eq_ignore_ascii_case("true"),
-            })
+    let answers: Vec<(bool, Vec<Ace>)> = said
+        .split(NEXT)
+        .skip(1)
+        .map(|block| {
+            let mut lines = block.lines().map(str::trim).filter(|line| !line.is_empty());
+            let protected = lines.next().unwrap_or("False").eq_ignore_ascii_case("true");
+            let entries = lines
+                .filter_map(|line| {
+                    let (identity, inherited) = line.rsplit_once(' ')?;
+                    Some(Ace {
+                        identity: identity.trim().to_owned(),
+                        inherited: inherited.trim().eq_ignore_ascii_case("true"),
+                    })
+                })
+                .collect();
+            (protected, entries)
         })
         .collect();
-    (protected, entries)
+    assert_eq!(
+        answers.len(),
+        paths.len(),
+        "powershell answered for {} of {} paths",
+        answers.len(),
+        paths.len()
+    );
+    answers
 }
 
 /// This account's own SID.
@@ -161,8 +190,7 @@ fn nobody_else_is_named() {
     let paths = everything(site.root());
     assert!(paths.len() > 3, "the site wrote nothing to check");
 
-    for path in &paths {
-        let (_, entries) = acl(path);
+    for (path, (_, entries)) in paths.iter().zip(acls(&paths)) {
         for ace in &entries {
             assert!(
                 !OUTSIDERS.contains(&ace.identity.as_str()),
@@ -186,8 +214,8 @@ fn the_protection_is_the_site_s_own() {
         "could not read this account's sid"
     );
 
-    for path in everything(site.root()) {
-        let (protected, entries) = acl(&path);
+    let paths = everything(site.root());
+    for (path, (protected, entries)) in paths.iter().zip(acls(&paths)) {
         assert!(
             protected,
             "{} inherits its access control list, so it is as open as whatever \

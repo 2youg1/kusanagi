@@ -84,6 +84,28 @@ pub enum Request {
         /// Which channel.
         name: String,
     },
+    /// Replace the roster of a group, creating it if there is none.
+    ///
+    /// Whole rather than incremental: a group is these channels, and there is
+    /// no add or remove to disagree with that. An empty roster is a group that
+    /// reaches nobody, which is how one is taken out of use.
+    Group {
+        /// What the group is called here.
+        name: String,
+        /// The channels it stands for.
+        members: Vec<String>,
+    },
+    /// Append one segment to every member of a group.
+    ///
+    /// One drop per member, each on its own channel under its own key. The cost
+    /// is linear and so is the privacy: a member learns nothing about the others,
+    /// because there is nothing shared for them to learn.
+    Fanout {
+        /// Which group.
+        group: String,
+        /// What every member's segment carries.
+        payload: Vec<u8>,
+    },
     /// Delete one channel from this endpoint, keeping nothing.
     ///
     /// Local and one-sided: the peer is not told, the host keeps every byte it

@@ -11,6 +11,7 @@
 //! the one that enforces a revocation, because it needs no cooperation from the
 //! peer or from the host.
 
+use kusanagi_door::{Delivery, Landed};
 use kusanagi_grant::Ability;
 use kusanagi_kernel::{Instant, PutOutcome, Segment, Signer, Waypoint as _};
 use kusanagi_seal::{Fit, derive, seal};
@@ -32,12 +33,78 @@ const fn reach(after: Option<u64>) -> Reach {
     }
 }
 
+/// What appending one segment produced, before anybody decides how to say it.
+///
+/// The verb and the fan-out want the same three facts and report them in two
+/// different shapes, so the facts are a value and neither shape is the other's
+/// special case.
+pub(crate) struct Appended {
+    index: u64,
+    id: String,
+    address: String,
+}
+
 pub(crate) fn send(
     site: &Site,
     name: &str,
     payload: &[u8],
     now: Instant,
 ) -> Result<Outcome, Complaint> {
+    let written = appended(site, name, payload, now)?;
+    Ok(Outcome::Sent {
+        name: name.to_owned(),
+        index: written.index,
+        id: written.id,
+        address: written.address,
+    })
+}
+
+/// Appends one segment to every member of a group, and reports each separately.
+///
+/// **One member's failure is not the send's failure.** A host that is down, a
+/// channel that was forgotten, or a grant that was revoked stops that member
+/// from hearing this and stops nothing else; collapsing the five results into
+/// one would either hide a person who did not receive it or claim four people
+/// did not when they did. The caller reads the rows.
+///
+/// # Errors
+///
+/// [`Complaint::UnknownGroup`] when there is no such group. That is the one
+/// failure of the fan-out itself rather than of a member.
+pub(crate) fn fanout(
+    site: &Site,
+    group: &str,
+    payload: &[u8],
+    now: Instant,
+) -> Result<Outcome, Complaint> {
+    let roster = site.roster(group).map_err(|error| match error {
+        kusanagi_site::SiteError::UnknownChannel { name } => Complaint::UnknownGroup { name },
+        other => other.into(),
+    })?;
+    let delivered = roster
+        .members
+        .iter()
+        .map(|member| Delivery {
+            member: member.clone(),
+            landed: match appended(site, member, payload, now) {
+                Ok(written) => Landed::Sent {
+                    index: written.index,
+                    address: written.address,
+                },
+                Err(refusal) => Landed::Refused {
+                    code: refusal.code(),
+                    error: refusal.to_string(),
+                },
+            },
+        })
+        .collect();
+    Ok(Outcome::FannedOut {
+        group: group.to_owned(),
+        delivered,
+    })
+}
+
+fn appended(site: &Site, name: &str, payload: &[u8], now: Instant) -> Result<Appended, Complaint> {
     let me = signer(site)?;
     let channel = site.channel(name)?;
     channel.standing.permits(
@@ -95,8 +162,7 @@ pub(crate) fn send(
         }
     }
 
-    Ok(Outcome::Sent {
-        name: name.to_owned(),
+    Ok(Appended {
         index: segment.index(),
         id: segment.id().to_string(),
         address: address.to_string(),

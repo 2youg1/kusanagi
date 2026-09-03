@@ -33,6 +33,7 @@ use zeroize::Zeroize as _;
 
 use crate::channel::Channel;
 use crate::error::SiteError;
+use crate::roster::Roster;
 use crate::site::Site;
 
 /// What every archive begins with, so that a wrong file is refused as one.
@@ -44,7 +45,7 @@ const VERSION: u8 = 1;
 /// What one entry in an archive is.
 ///
 /// A byte rather than a name, and an exhaustive match on the way back in, so an
-/// archive from a build that learned a fifth kind is refused rather than
+/// archive from a build that learned a sixth kind is refused rather than
 /// half-restored.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -57,6 +58,8 @@ enum Kind {
     Cairn = 3,
     /// One revoked step identifier.
     Revoked = 4,
+    /// One group's roster, in the form `roster.rs` writes.
+    Group = 5,
 }
 
 impl Kind {
@@ -67,6 +70,7 @@ impl Kind {
             Self::Channel => 2,
             Self::Cairn => 3,
             Self::Revoked => 4,
+            Self::Group => 5,
         }
     }
 
@@ -76,6 +80,7 @@ impl Kind {
             2 => Some(Self::Channel),
             3 => Some(Self::Cairn),
             4 => Some(Self::Revoked),
+            5 => Some(Self::Group),
             _ => None,
         }
     }
@@ -136,6 +141,13 @@ pub fn export(site: &Site, recovery: &[u8; 32], nonce: [u8; 12]) -> Result<Vec<u
 
     for step in site.revocations()?.iter() {
         put(&mut plain, Kind::Revoked, step.as_bytes())?;
+    }
+
+    // A roster is not recomputable from anything: it is a decision its owner
+    // made, and an archive that dropped it would restore a site that had
+    // forgotten who it talks to at once.
+    for roster in site.groups()? {
+        put(&mut plain, Kind::Group, &roster.to_bytes())?;
     }
 
     let key = backup_key(recovery, nonce);
@@ -234,6 +246,11 @@ fn restore(site: &Site, plain: &[u8]) -> Result<(), SiteError> {
                 let id = <[u8; 32]>::try_from(bytes.as_slice())
                     .map_err(|_| malformed("a step identifier is 32 bytes"))?;
                 site.revoke(StepId::from_bytes(id))?;
+            }
+            Kind::Group => {
+                let text = String::from_utf8_lossy(&bytes);
+                let named = text.lines().next().unwrap_or_default().trim().to_owned();
+                site.enrol(&Roster::from_bytes(&bytes, &named)?)?;
             }
         }
     }

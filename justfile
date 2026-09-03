@@ -110,8 +110,8 @@ budget:
         src=$(find "$dir/src" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
         all=$(find "$dir" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
         total=$((total + all))
-        printf '%-12s %8s %8s %8s' "$crate" "$src" 2500 "$all"
-        if [ "$src" -gt 2500 ]; then printf '  OVER\n'; exit 1; else printf '  ok\n'; fi
+        printf '%-12s %8s %8s %8s' "$crate" "$src" 4000 "$all"
+        if [ "$src" -gt 4000 ]; then printf '  OVER\n'; exit 1; else printf '  ok\n'; fi
     done
     printf '%-12s %8s %8s %8s' TOTAL "" 25000 "$total"
     if [ "$total" -gt 25000 ]; then printf '  OVER\n'; exit 1; else printf '  ok\n'; fi

@@ -322,7 +322,7 @@ Listed so that each absence is a decision rather than an oversight.
 
 | Missing | Why |
 |---|---|
-| More than two parties in one channel | One channel is one pair. A small group is fan-out — one channel per pair, five members means five writes — which needs no roster and no group key; what a roster buys is a thousand members, and that is a different problem. |
+| More than two parties in one channel | One channel is one pair. A small group is fan-out: `kusanagi group --name team` names the channels, `kusanagi send --to-group team` writes one drop on each, and the report says per member what arrived. The roster is this endpoint's own list, held by nobody else, so there is no group key, no agreement about membership, and removing somebody is writing the list without them. What a *shared* roster buys is a thousand members, and that is a different problem. |
 | Hiding how much you send and when | Padding and jitter are untestable without a real censor to fail against. |
 | Hiding the number of objects from a dumb object store | Needs long-polling support that a plain bucket does not have. |
 | Long-polling | Would also close the live-edge leak described above. |

@@ -18,7 +18,7 @@ use serde::Serialize;
 
 use crate::fence::Fence;
 use crate::prose;
-use crate::rows::{Carried, Entry, Measured, Summary};
+use crate::rows::{Carried, Delivery, Entry, Grouping, Measured, Summary};
 
 /// The version of the shape a machine reads.
 ///
@@ -48,10 +48,25 @@ pub enum Outcome {
         /// Where the site lives.
         site: String,
     },
-    /// Every channel here.
+    /// Every channel here, and every group of them.
     Channels {
         /// One row per channel.
         channels: Vec<Summary>,
+        /// One row per group. A group is a list of the channels above it.
+        groups: Vec<Grouping>,
+    },
+    /// A group's roster was replaced by this one.
+    Grouped {
+        /// The group as it now stands.
+        group: Grouping,
+    },
+    /// One segment was appended for every member of a group.
+    FannedOut {
+        /// Which group.
+        group: String,
+        /// One row per member, in roster order. **Read every row**: a member
+        /// that failed is a member who has not heard this.
+        delivered: Vec<Delivery>,
     },
     /// An invitation was minted.
     Invited {

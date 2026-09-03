@@ -130,6 +130,16 @@ pub enum Complaint {
         /// The name that was asked for.
         name: String,
     },
+    /// No group by that name has been made here.
+    ///
+    /// Apart from [`Complaint::UnknownChannel`] because the two are recovered
+    /// from differently: a missing channel is somebody to be invited, and a
+    /// missing group is a roster to be written.
+    #[error("there is no group called `{name}` here")]
+    UnknownGroup {
+        /// The name that was asked for.
+        name: String,
+    },
     /// A channel by that name already exists.
     #[error("a channel called `{name}` is already here")]
     ChannelExists {
@@ -293,6 +303,7 @@ impl Complaint {
             Self::NoIdentity => "kusanagi.no_identity",
             Self::NoRoot { .. } => "kusanagi.no_root",
             Self::UnknownChannel { .. } => "kusanagi.unknown_channel",
+            Self::UnknownGroup { .. } => "kusanagi.unknown_group",
             Self::ChannelExists { .. } => "kusanagi.channel_exists",
             Self::NoPeerYet { .. } => "kusanagi.no_peer_yet",
             Self::DropTaken { .. } => "kusanagi.drop_taken",

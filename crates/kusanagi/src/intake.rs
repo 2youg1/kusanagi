@@ -151,6 +151,49 @@ pub fn addressed(given: String, text: Option<String>) -> Result<(String, Vec<u8>
     split_name(&fed)
 }
 
+/// How much of stdin a roster may take before it is not a roster.
+///
+/// A name is at most 32 characters and a newline, so this is room for about a
+/// hundred and twenty members — far past the size at which fanning out one drop
+/// per member is the right shape at all. `ARCHITECTURE.md` §8 sends a thousand
+/// people to a group key scheme, not to this.
+const ROSTER_ROOM: u64 = 4_096;
+
+/// A group name and the channels it stands for, both from stdin.
+///
+/// The members arrive on the pipe for the same reason every other name does: a
+/// roster **is** the relationship graph — one command line would name everybody
+/// this endpoint talks to at once, to every account on the machine and to the
+/// shell's history file.
+///
+/// # Errors
+///
+/// [`Complaint::Argument`] when stdin is a terminal, and [`Complaint::BadName`]
+/// when the first line is missing while the group name was to come from there.
+pub fn enrolled(given: String) -> Result<(String, Vec<String>), Complaint> {
+    let fed = piped(
+        "the group name and its members",
+        "pipe the members in, one per line: printf 'alice\\nbob' | kusanagi group --name NAME",
+        ROSTER_ROOM,
+    )?;
+    let (name, rest) = if given == ON_STDIN {
+        split_name(&fed)?
+    } else {
+        (given, fed)
+    };
+    let members = String::from_utf8(rest)
+        .map_err(|_| Complaint::BadName {
+            name: name.clone(),
+            reason: "the member list is not text".to_owned(),
+        })?
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect();
+    Ok((name, members))
+}
+
 /// How large an archive this door will read.
 ///
 /// A site of a hundred channels is a few hundred kilobytes: a channel record

@@ -48,11 +48,14 @@ use kusanagi_chain::Cairn;
 use kusanagi_grant::{Revocations, StepId};
 use kusanagi_kernel::{Handle, Signer};
 
+use crate::cairns;
 use crate::channel::Channel;
 use crate::error::SiteError;
 use crate::naming;
 use crate::permissions;
+use crate::records;
 use crate::revoked;
+use crate::roster::{self, Roster};
 
 /// One endpoint's local state.
 #[derive(Debug, Clone)]
@@ -196,51 +199,64 @@ impl Site {
 
     /// How far one author's stream on one channel has been verified.
     ///
-    /// **Every way of failing to read a cairn is reported as not having one**,
-    /// and that is one rule rather than a swallowed error. A cairn is the only
-    /// thing on this disk that can be recomputed — walking the stream from height
-    /// zero rebuilds it exactly — so falling back is always correct, while any
-    /// other answer would let a torn write, an older build's record, or a
-    /// permission fault stop an endpoint from reading a channel at all.
-    ///
-    /// What that gives up is a signal: an endpoint whose cairns are being deleted
-    /// walks from genesis every time and does not complain. It is given up
-    /// because refusing would not buy it back — whoever can corrupt a cairn can
-    /// delete it, and a deleted cairn is indistinguishable from a channel that
-    /// has never been read.
+    /// Missing, unreadable and undecodable are one answer here; `cairns` owns
+    /// that rule and says why.
     ///
     /// # Errors
     ///
     /// [`SiteError::BadName`] when `name` is not usable as one. That is a caller
     /// mistake rather than a state of the disk, so it is not a miss.
     pub fn cairn(&self, name: &str, author: &Handle) -> Result<Option<Cairn>, SiteError> {
-        let path = self.cairn_path(name, author)?;
-        Ok(permissions::read(&path, "read a cairn")
-            .ok()
-            .flatten()
-            .and_then(|bytes| Cairn::from_bytes(&bytes).ok()))
+        Ok(cairns::read(
+            &self.root,
+            &self.filed_or_unknown(name)?,
+            author,
+        ))
     }
 
     /// Writes down how far `cairn`'s author has been verified on this channel.
-    ///
-    /// The file is named after the author inside the cairn, so a record cannot
-    /// end up describing a stream other than the one it is filed under.
-    ///
-    /// Unlike reading, a failure here is reported. A miss on read is a cost; a
-    /// disk that refuses writes is a fact about this endpoint that its operator
-    /// has to learn from something, and staying quiet would mean every later read
-    /// pays a full walk with nothing ever saying why.
     ///
     /// # Errors
     ///
     /// [`SiteError::BadName`] when `name` is not usable as one, and
     /// [`SiteError::Local`] when the record cannot be written.
     pub fn mark(&self, name: &str, cairn: &Cairn) -> Result<(), SiteError> {
-        let path = self.cairn_path(name, &cairn.author())?;
-        if let Some(parent) = path.parent() {
-            permissions::create_dir(parent, "create the cairn directory")?;
-        }
-        permissions::write(&path, &cairn.to_bytes(), "write a cairn")
+        cairns::write(&self.root, &self.filed_or_unknown(name)?, cairn)
+    }
+
+    /// One group's roster.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::UnknownChannel`] when there is no group of that name, and
+    /// [`SiteError::BadRecord`] when the record does not decode.
+    pub fn roster(&self, name: &str) -> Result<Roster, SiteError> {
+        roster::read(&self.root, &self.filed_or_unknown(name)?, name)?.ok_or_else(|| {
+            SiteError::UnknownChannel {
+                name: name.to_owned(),
+            }
+        })
+    }
+
+    /// Replaces one group's roster, creating the group if there was none.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::NoIdentity`] when this endpoint has nothing to file it
+    /// under, and [`SiteError::Local`] when the file cannot be written.
+    pub fn enrol(&self, roster: &Roster) -> Result<(), SiteError> {
+        let filed = self.filed(&roster.name)?.ok_or(SiteError::NoIdentity)?;
+        roster::write(&self.root, &filed, roster)
+    }
+
+    /// Every group here, with its members, in a stable order.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::Local`] when the directory cannot be listed, and
+    /// [`SiteError::BadRecord`] when a record does not decode.
+    pub fn groups(&self) -> Result<Vec<Roster>, SiteError> {
+        roster::all(&self.root)
     }
 
     /// Deletes one channel record.
@@ -274,8 +290,8 @@ impl Site {
                 // The cairns go with it. They are recomputable and therefore not
                 // worth a failure of their own, but leaving them behind would let
                 // a later channel of the same name inherit a stranger's heights.
-                if let Ok(cairns) = self.cairn_dir(name) {
-                    fs::remove_dir_all(cairns).ok();
+                if let Ok(filed) = self.filed_or_unknown(name) {
+                    fs::remove_dir_all(cairns::dir(&self.root, &filed)).ok();
                 }
                 Ok(())
             }
@@ -291,43 +307,13 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`SiteError::Local`] when the directory cannot be listed or a record
-    /// cannot be read, and [`SiteError::BadRecord`] when one does not decode.
-    /// A record this build cannot read is reported rather than skipped: a
-    /// channel that quietly stops being listed is a channel its owner believes
-    /// they no longer have.
+    /// [`SiteError::Local`] when a record cannot be read, and
+    /// [`SiteError::BadRecord`] when one does not decode.
     pub fn names(&self) -> Result<Vec<String>, SiteError> {
-        let dir = self.root.join("channels");
-        let entries = match fs::read_dir(&dir) {
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(source) => {
-                return Err(SiteError::Local {
-                    action: "list the channels",
-                    source,
-                });
-            }
-            Ok(entries) => entries,
-        };
-
-        let mut names = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|source| SiteError::Local {
-                action: "list the channels",
-                source,
-            })?;
-            // A filed name is 64 hexadecimal characters and never starts with a
-            // dot. The one thing that produces a dotted name here is a staged
-            // record left behind by a write this process did not live to finish.
-            if entry.file_name().to_string_lossy().starts_with('.') {
-                continue;
-            }
-            let Some(bytes) =
-                permissions::read(&entry.path(), "read a channel while listing them")?
-            else {
-                continue;
-            };
-            names.push(Channel::from_bytes(&bytes)?.name);
-        }
+        let mut names = records::each(&self.root, "channels", "list the channels")?
+            .iter()
+            .map(|bytes| Channel::from_bytes(bytes).map(|channel| channel.name))
+            .collect::<Result<Vec<String>, SiteError>>()?;
         names.sort();
         Ok(names)
     }
@@ -360,24 +346,16 @@ impl Site {
     /// A site with no identity has no channels, so asking for one by name is
     /// answered the same way as asking for one that was never joined.
     fn channel_path(&self, name: &str) -> Result<PathBuf, SiteError> {
-        let filed = self.filed(name)?.ok_or_else(|| SiteError::UnknownChannel {
-            name: name.to_owned(),
-        })?;
-        Ok(self.root.join("channels").join(filed))
+        Ok(self
+            .root
+            .join("channels")
+            .join(self.filed_or_unknown(name)?))
     }
 
-    /// A handle renders as 64 hexadecimal characters, which needs no checking
-    /// against [`naming::check`]: it cannot be empty, cannot escape a directory,
-    /// and cannot collide with another author.
-    fn cairn_path(&self, name: &str, author: &Handle) -> Result<PathBuf, SiteError> {
-        Ok(self.cairn_dir(name)?.join(author.to_string()))
-    }
-
-    /// Where one channel's cairns sit, under the same filed name as its record.
-    fn cairn_dir(&self, name: &str) -> Result<PathBuf, SiteError> {
-        let filed = self.filed(name)?.ok_or_else(|| SiteError::UnknownChannel {
+    /// What `name` is filed as, when a site with no identity means no such thing.
+    fn filed_or_unknown(&self, name: &str) -> Result<String, SiteError> {
+        self.filed(name)?.ok_or_else(|| SiteError::UnknownChannel {
             name: name.to_owned(),
-        })?;
-        Ok(self.root.join("cairns").join(filed))
+        })
     }
 }

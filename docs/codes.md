@@ -63,6 +63,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `kusanagi.not_the_peer` | a segment on the peer's stream was signed by somebody else | keep the bytes and report it |
 | `kusanagi.own_invitation` | this invitation was minted by this endpoint | hand it to the endpoint you mean to admit |
 | `kusanagi.unknown_channel` | no channel by that name is here | run `kusanagi channels` to see what is here |
+| `kusanagi.unknown_group` | no group by that name has been made here | run `kusanagi channels` to see the groups, or write the roster with `kusanagi group --name NAME` |
 | `locator.bad_proxy` | `KUSANAGI_PROXY` does not name a proxy | `socks5://host:port` or `http://host:port` |
 | `locator.bucket_incomplete` | a bucket locator does not name a bucket | `s3://ENDPOINT/BUCKET[?region=R]` |
 | `locator.credentials_missing` | a bucket was named without credentials | set `KUSANAGI_S3_ACCESS_KEY` and `KUSANAGI_S3_SECRET_KEY` |

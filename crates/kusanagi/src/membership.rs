@@ -14,13 +14,14 @@
 use kusanagi_grant::{Ability, Grant, Scope};
 use kusanagi_kernel::{Instant, PutOutcome, Reader, Segment, Signer, VerifyingKey, Waypoint as _};
 use kusanagi_seal::{Fit, Secret, derive, offer, open as open_sealed, seal};
-use kusanagi_site::{Channel, Invite, Offer, Peer, Site, Standing};
+use kusanagi_site::{Channel, Invite, Offer, Peer, Roster, Site, Standing};
 use kusanagi_waypoint::{Conditional as _, Locator, Place, TtlOutcome};
 
 use crate::assembly::{open, signer};
 use crate::walk::peek;
 use crate::world::fresh_seed;
 use kusanagi_door::Complaint;
+use kusanagi_door::Grouping;
 use kusanagi_door::Outcome;
 use zeroize::Zeroize as _;
 
@@ -294,6 +295,34 @@ pub(crate) fn revoke(site: &Site, name: &str) -> Result<Outcome, Complaint> {
 /// read; forgetting is this machine dropping a key, which the peer cannot
 /// observe and the host cannot be asked to help with. Doing both from one verb
 /// would mean a caller who wanted one always got the other.
+/// Replaces one group's roster, after checking every member is a channel here.
+///
+/// **Checked now rather than at fan-out time**, because a roster naming a
+/// channel that does not exist is a roster that will fail for that member on
+/// every send, and the person writing it is the one who can fix it. A member
+/// that is forgotten later still fails at fan-out, and that is a row in the
+/// report rather than a refusal of the whole send.
+pub(crate) fn group(site: &Site, name: &str, members: &[String]) -> Result<Outcome, Complaint> {
+    for member in members {
+        if !site.holds(member)? {
+            return Err(Complaint::UnknownChannel {
+                name: member.clone(),
+            });
+        }
+    }
+    let roster = Roster {
+        name: name.to_owned(),
+        members: members.to_vec(),
+    };
+    site.enrol(&roster)?;
+    Ok(Outcome::Grouped {
+        group: Grouping {
+            name: roster.name,
+            members: roster.members,
+        },
+    })
+}
+
 pub(crate) fn forget(site: &Site, name: &str) -> Result<Outcome, Complaint> {
     let channel = site.channel(name)?;
     site.forget(name)?;

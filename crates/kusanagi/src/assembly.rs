@@ -31,11 +31,12 @@ use kusanagi_waypoint::{Access, Locator, Place, Proxy, probe};
 
 use kusanagi_site::Site;
 
-use crate::membership::{forget, invite, join, revoke};
+use crate::membership::{forget, group, invite, join, revoke};
 use crate::request::Request;
-use crate::traffic::{read, send};
+use crate::traffic::{fanout, read, send};
 use crate::world::{SystemClock, fresh_seed};
 use kusanagi_door::Complaint;
+use kusanagi_door::Grouping;
 use kusanagi_door::Outcome;
 use zeroize::Zeroize as _;
 
@@ -58,6 +59,8 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
         } => invite(site, name, waypoint, *lifetime, *abilities, now),
         Request::Join { invite, name } => join(site, invite, name, now),
         Request::Send { name, payload } => send(site, name, payload, now),
+        Request::Group { name, members } => group(site, name, members),
+        Request::Fanout { group, payload } => fanout(site, group, payload, now),
         Request::Read { name, after, whose } => read(site, name, *after, *whose, now),
         Request::Revoke { name } => revoke(site, name),
         Request::Forget { name } => forget(site, name),
@@ -211,7 +214,15 @@ fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
         let me = signer(site)?.handle();
         channels.push(Outcome::summarise(&name, &channel, &me, now, &revoked));
     }
-    Ok(Outcome::Channels { channels })
+    let groups = site
+        .groups()?
+        .into_iter()
+        .map(|roster| Grouping {
+            name: roster.name,
+            members: roster.members,
+        })
+        .collect();
+    Ok(Outcome::Channels { channels, groups })
 }
 
 /// Opens what a locator names, with what the environment supplies to reach it.

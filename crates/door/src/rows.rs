@@ -28,6 +28,51 @@ fn abbreviate(handle: &Handle) -> String {
     handle.to_string().chars().take(12).collect()
 }
 
+/// One group as it is reported: what it is called, and who is in it.
+#[derive(Serialize, Debug)]
+pub struct Grouping {
+    /// What this endpoint calls the group.
+    pub name: String,
+    /// The channels a message to it fans out to.
+    pub members: Vec<String>,
+}
+
+/// What one member of a group got.
+///
+/// **A fan-out has no single result.** Five members are five channels, five
+/// hosts and five chances to fail, and one unreachable host must not decide
+/// whether the other four heard anything. So the answer is a row per member,
+/// and partial delivery is reported as what it is rather than collapsed into a
+/// failure or hidden behind a success.
+#[derive(Serialize, Debug)]
+pub struct Delivery {
+    /// The channel it went on.
+    pub member: String,
+    /// What happened there.
+    #[serde(flatten)]
+    pub landed: Landed,
+}
+
+/// How one member's copy ended up.
+#[derive(Serialize, Debug)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum Landed {
+    /// It was appended to that member's stream.
+    Sent {
+        /// Its height on that stream.
+        index: u64,
+        /// Where it was left.
+        address: String,
+    },
+    /// It was not, and this is the same code the verb alone would have given.
+    Refused {
+        /// The stable code of the failure.
+        code: &'static str,
+        /// What went wrong, in the words the single-channel verb would use.
+        error: String,
+    },
+}
+
 /// One segment as it is reported.
 ///
 /// Two fields, and one of them used to be four. What went: `id` and `address`

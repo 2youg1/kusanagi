@@ -114,6 +114,11 @@ impl Complaint {
             Self::UnknownChannel { .. } | Self::NoPeerYet { .. } => {
                 "run `kusanagi channels` to see what is here".to_owned()
             }
+            // A group is made by writing its roster, so the way out of a missing
+            // one is to write it rather than to look for it.
+            Self::UnknownGroup { .. } => "run `kusanagi channels` to see the groups here, or \
+                 make this one: printf 'alice\\nbob' | kusanagi group --name NAME"
+                .to_owned(),
             Self::NoIdentity => {
                 "run `kusanagi id` to create this endpoint's identity, then try again".to_owned()
             }
