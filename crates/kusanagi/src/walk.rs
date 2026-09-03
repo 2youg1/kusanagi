@@ -30,7 +30,7 @@ use kusanagi_kernel::{ChainHead, DropAddr, Segment, SegmentError, VerifyingKey, 
 use kusanagi_seal::{Stream, derive, open};
 use kusanagi_site::Site;
 
-use crate::complaint::Complaint;
+use kusanagi_door::Complaint;
 
 /// One segment, and the address it was found at.
 pub struct Held {

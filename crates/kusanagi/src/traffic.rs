@@ -17,11 +17,11 @@ use kusanagi_seal::{derive, seal};
 use kusanagi_site::{Channel, Site};
 
 use crate::assembly::{open, signer};
-use crate::complaint::Complaint;
 use crate::membership::greet;
-use crate::report::Outcome;
 use crate::request::Whose;
-use crate::walk::{Reach, track};
+use crate::walk::{Reach, Walked, track};
+use kusanagi_door::Complaint;
+use kusanagi_door::Outcome;
 
 /// What a `read` owes its caller: everything, or only what sits above the height
 /// the caller says it already holds.
@@ -136,12 +136,26 @@ pub(crate) fn read(
 
     let stream = channel.secret.stream(&peer.handle());
     let theirs = track(site, name, &place, &stream, &peer.key, reach(after))?;
-    Ok(Outcome::read(
+    Ok(reported(name, &peer.handle().to_string(), &theirs, after))
+}
+
+/// Turns a walk into the answer for it, dropping what the caller already holds.
+///
+/// The filter is here rather than in `door` because `--after` is a property of
+/// the request: the door renders the segments it is handed and has no way to
+/// perform a walk, which is what keeps the output contract free of the machinery
+/// that produces it.
+fn reported(name: &str, author: &str, walked: &Walked, after: Option<u64>) -> Outcome {
+    Outcome::read(
         name,
-        &peer.handle().to_string(),
-        &theirs,
-        after,
-    ))
+        author,
+        walked.head().map(|head| head.index()),
+        walked
+            .held()
+            .iter()
+            .filter(|held| after.is_none_or(|floor| held.segment.index() > floor))
+            .map(|held| (held.segment.index(), held.segment.payload())),
+    )
 }
 
 /// Reports this endpoint's own stream, verified the same way a peer's is.
@@ -173,5 +187,5 @@ fn mine(
         &me.verifying_key(),
         reach(after),
     )?;
-    Ok(Outcome::read(name, &me.handle().to_string(), &ours, after))
+    Ok(reported(name, &me.handle().to_string(), &ours, after))
 }

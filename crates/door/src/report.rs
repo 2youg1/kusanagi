@@ -19,8 +19,6 @@ use kusanagi_site::{Channel, Standing};
 
 use crate::prose;
 
-use crate::walk::Walked;
-
 /// A handle rendered short enough to read, for listings.
 ///
 /// Shortening is a rendering decision, so it lives with the renderings and not
@@ -310,24 +308,32 @@ impl Outcome {
         }
     }
 
-    /// Reports a verified stream, from `after` upwards.
+    /// Reports a verified stream: its head, and the segments to show.
     ///
-    /// The height reported is always the verified head, whatever `after` hides:
-    /// one call then answers both of a caller's questions — how far the stream
-    /// goes, and what of it is new.
+    /// `height` is always the verified head, whatever the caller filtered out of
+    /// `segments`: one call then answers both of a caller's questions — how far
+    /// the stream goes, and what of it is new.
+    ///
+    /// The segments arrive as `(index, payload)` rather than as the walk they
+    /// came from, because a walk is a thing this crate must not be able to
+    /// perform. Which of them to show is the verb's decision and stays with the
+    /// verb; how to render them is this crate's and stays here.
     #[must_use]
-    pub fn read(name: &str, author: &str, walked: &Walked, after: Option<u64>) -> Self {
+    pub fn read<'a>(
+        name: &str,
+        author: &str,
+        height: Option<u64>,
+        segments: impl IntoIterator<Item = (u64, &'a [u8])>,
+    ) -> Self {
         Self::Read {
             name: name.to_owned(),
             author: author.to_owned(),
-            height: walked.head().map(|head| head.index()),
-            segments: walked
-                .held()
-                .iter()
-                .filter(|held| after.is_none_or(|floor| held.segment.index() > floor))
-                .map(|held| Entry {
-                    index: held.segment.index(),
-                    carried: Carried::of(held.segment.payload()),
+            height,
+            segments: segments
+                .into_iter()
+                .map(|(index, payload)| Entry {
+                    index,
+                    carried: Carried::of(payload),
                 })
                 .collect(),
         }

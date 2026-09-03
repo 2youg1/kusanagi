@@ -14,7 +14,7 @@
 
 use kusanagi_kernel::{Clock, Instant};
 
-use crate::complaint::Complaint;
+use kusanagi_door::Complaint;
 
 /// The clock of the machine this is running on.
 #[derive(Debug, Clone, Copy)]

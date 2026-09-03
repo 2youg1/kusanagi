@@ -18,10 +18,10 @@ use kusanagi_site::{Channel, Invite, Peer, Site, Standing};
 use kusanagi_waypoint::{Locator, Place};
 
 use crate::assembly::{open, signer};
-use crate::complaint::Complaint;
-use crate::report::Outcome;
 use crate::walk::peek;
 use crate::world::fresh_seed;
+use kusanagi_door::Complaint;
+use kusanagi_door::Outcome;
 use zeroize::Zeroize as _;
 
 /// The height of the introduction stream that carries a newcomer's greeting.

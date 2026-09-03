@@ -12,23 +12,20 @@
 //! a shell script nobody runs.
 
 mod assembly;
-mod complaint;
 mod membership;
-mod prose;
-mod report;
 mod request;
 mod traffic;
 mod walk;
 mod world;
 
 pub use assembly::run;
-pub use complaint::Complaint;
-pub use report::Outcome;
 pub use request::{Request, Whose};
 pub use walk::{Held, Reach, Walked, peek, track, walk};
 pub use world::{SystemClock, fresh_seed};
 
-// What an endpoint keeps on its own disk is a crate of its own, and a caller of
-// this one should not have to know that. These are re-exported rather than
-// re-declared so that there is one definition of a channel record, not two.
+// What an endpoint keeps on its own disk is a crate of its own, and so is what a
+// verb answers; a caller of this one should not have to know that. These are
+// re-exported rather than re-declared so that there is one definition of a
+// channel record and one of an outcome, not two.
+pub use kusanagi_door::{Carried, Complaint, Entry, Measured, Outcome, Summary};
 pub use kusanagi_site::{Channel, Invite, Peer, Site, SiteError, Standing};

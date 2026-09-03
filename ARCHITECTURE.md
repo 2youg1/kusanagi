@@ -163,6 +163,7 @@ kernel      identifiers, identity, signed segments, canonical bytes, seams
   waypoint  directory / memory / HTTP / S3, conformance, probe — how to reach a host
     box     the box server — how to be one
   site      one endpoint's own disk: identity, channel records, invitations
+  door      what a verb answers and how a failure recovers
 kusanagi    the verbs and the one assembly point
 ```
 
@@ -189,17 +190,16 @@ run to 479 lines. A limit nobody applies from memory is a limit met at the gate.
 written here, and that list is closed; what each crate spends is what `just budget`
 prints, deliberately not copied here, because a number kept in two places drifts.
 
-Two crates exist because the budget forced a split, and each is recorded where it
-happened. `kusanagi` gave up the disk formats to `site` on the boundary in
-`crates/site/site-SPEC.md` §3 — **a `SiteError` says what failed on the disk, and
-the door says what it is called and how to recover from it.** `waypoint` gave up
-the server to `box`, **overturning `waypoint-SPEC.md` §7**, which had ruled that
-the two halves of the box protocol share a crate: the reason that did not exist
-when it was taken is the 2,500-line limit, and separating two jobs — *reaching* a
-host and *being* one — beat separating two implementations of one seam. What that
-old decision feared, the halves drifting apart, is held by a test rather than by a
-directory: the box's own tests drive the shipped client against the shipped server
-over a real socket and run `conformance::run` against it.
+Three crates exist because the budget forced a split, each recorded where it
+happened. `kusanagi` gave up the disk formats to `site` (`site-SPEC.md` §3) and the
+output contract to `door` (`door-SPEC.md` §4) — **a `SiteError` says what failed on
+the disk, and the door says what it is called and how to recover from it.**
+`waypoint` gave up the server to `box`, **overturning `waypoint-SPEC.md` §7**, which
+had ruled that the two halves of the box protocol share a crate: the 2,500-line
+limit did not exist when that was taken, and separating two jobs — *reaching* a host
+and *being* one — beat separating two implementations of one seam. What that
+decision feared, the halves drifting apart, is held by a test: the box's own tests
+drive the shipped client against the shipped server and run `conformance::run` on it.
 
 **Outside the workspace.** `adversary/` is a Haskell counterexample hunter — not a
 crate, not a dependency, not part of the release, not counted here. §8 records why

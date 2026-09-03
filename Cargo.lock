@@ -430,6 +430,7 @@ dependencies = [
  "getrandom 0.3.4",
  "kusanagi-box",
  "kusanagi-chain",
+ "kusanagi-door",
  "kusanagi-grant",
  "kusanagi-kernel",
  "kusanagi-seal",
@@ -456,6 +457,21 @@ name = "kusanagi-chain"
 version = "0.0.1"
 dependencies = [
  "kusanagi-kernel",
+ "thiserror",
+]
+
+[[package]]
+name = "kusanagi-door"
+version = "0.0.1"
+dependencies = [
+ "kusanagi-chain",
+ "kusanagi-grant",
+ "kusanagi-kernel",
+ "kusanagi-seal",
+ "kusanagi-site",
+ "kusanagi-waypoint",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

@@ -30,12 +30,12 @@ use kusanagi_waypoint::{Access, Locator, Place, Proxy, probe};
 
 use kusanagi_site::Site;
 
-use crate::complaint::Complaint;
 use crate::membership::{forget, invite, join, revoke};
-use crate::report::Outcome;
 use crate::request::Request;
 use crate::traffic::{read, send};
 use crate::world::{SystemClock, fresh_seed};
+use kusanagi_door::Complaint;
+use kusanagi_door::Outcome;
 use zeroize::Zeroize as _;
 
 /// Carries out one request.

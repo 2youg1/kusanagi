@@ -80,11 +80,9 @@
 ## 7 模块边界
 
 ```
-lib.rs        模块索引
+lib.rs        模块索引与再导出
 request.rs    Request —— 动词集合的唯一权威
 walk.rs       peek / walk —— 读一条流并逐段检查
-report.rs     Outcome —— 一个值，两种渲染
-complaint.rs  Complaint —— 失败 + 稳定码 + 恢复命令
 world.rs      时钟与熵的唯一采样点
 assembly.rs   十个动词的组装
 main.rs       clap ↔ Request
@@ -92,8 +90,10 @@ intake.rs     动词从 stdin 收下的一切（属二进制，不属 lib）
 ```
 
 磁盘那一半已拆出为 `kusanagi-site`（`Site` / `Channel` / `Invite`），见
-`crates/site/site-SPEC.md`。本 crate 依赖全部六个内部 crate，加 `clap`、`getrandom`、
-`serde`、`serde_json`、`thiserror`。
+`crates/site/site-SPEC.md`；**输出契约那一半已拆出为 `kusanagi-door`**（`Outcome` /
+`Complaint` 及其两种渲染），见 `crates/door/door-SPEC.md`，本文 §12 只留指向。
+本 crate 依赖全部七个内部 crate，加 `clap` 与 `getrandom`；`serde` / `serde_json` /
+`thiserror` 随输出契约一并搬走。
 
 ### 行数预算：拆分已完成
 
@@ -104,6 +104,10 @@ intake.rs     动词从 stdin 收下的一切（属二进制，不属 lib）
 `Complaint` 说这叫 `kusanagi.local`、以及「检查 `--root` 指向一个可写目录」。
 恢复是用动词说的，而动词只有前端有；合成一个类型就等于把 `kusanagi channels` 这句话
 写进一个没有动词的 crate。拆分照此执行，`src/` 由 2,424 降到 1,494。
+
+第二次拆分（`kusanagi-door`）在 `src/` 到 2 485 / 2 500 时执行：三个纯渲染文件 857 行
+只依赖各 crate 的公开类型，搬走它们让 `src/` 由 2 485 降到 1 639，后面十项动词才有地方落。
+唯一的倒转是 `Outcome::read` 不再认识 `Walked`（见 `door-SPEC.md` §3）。
 
 剩下的一条缝仍不建议现在切：把 `main.rs`（约 240 行）拆成前端 crate 买到的是
 **最不占脑子的那 240 行**，预算存在是为了「一个想法能装进脑子」，搬走 clap 胶水
@@ -228,17 +232,12 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 ## 12 错误处理
 
-`Complaint` 十八个变体，每个带稳定码与**恢复命令**。「格式不对」是三个变体而不是一个——
-`BadName`（你打的名字）、`BadInvitation`（你贴的那行）、`BadRecord`（你盘上的文件）——
-三者**共用已公开的稳定码 `kusanagi.malformed`**，因为码是脚本匹配的东西，
-而恢复命令必须各说各的：把名字打错的人被告知去拷贝邀请码，是把他送进另一个错误。
-（同样由键盘性质找出。）四条与众不同：
+**权威已迁至 `crates/door/door-SPEC.md` §12。** `Complaint` 与它的十八个变体、稳定码与
+恢复命令都住在 `kusanagi-door`；本 crate 只负责把失败交给它。这里不复述——两处理由就是
+两个权威。
 
-- `kusanagi.argument` 是唯一把恢复文字**随变体带进来**的（`instead` 字段）。其他变体的恢复由失败种类推出，而一个参数错在哪釬只有写下那个旗标的地方知道——这与 `complaint.rs` 开头的理由是同一条，只是又往上一层。
-
-- `seal.rejected` / `chain.*` / `segment.*` / `not_the_peer` 的恢复建议是「留着这些字节并报告」——它们不是瞬时故障，而是损坏或干预。
-- `grant.*` 的建议是「去要一份新的邀请」，因为本端无法自行修复权限。
-- `waypoint.*` 的建议是 `kusanagi doctor <waypoint>`，把诊断交给会实测的那个动词。
+本层仍持有的一条：动词在读取路径上把 `SegmentError::NotTheAuthor` 提升为
+`Complaint::NotThePeer`（`walk.rs`），因为「这不是我认识的那个人」只有认识对端的那一层说得出。
 
 ## 13 依赖选型
 
@@ -246,7 +245,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 |---|---|
 | `clap` 4 | 只在 `main.rs`；派生宏换来的帮助文本与错误信息值这一个依赖 |
 | `getrandom` 0.3 | 直接问操作系统要熵，中间不放生成器，就没有需要正确播种、重播种、fork 后重置的东西 |
-| `serde` + `serde_json` | **只用于 `--json` 输出**。任何被哈希或签名的东西一律手写编码 |
+| `kusanagi-door` | 输出契约；`serde` / `serde_json` / `thiserror` 现在是它的依赖，不是本 crate 的 |
 
 ## 14 硬编码声明
 
