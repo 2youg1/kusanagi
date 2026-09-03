@@ -140,7 +140,12 @@ pub(crate) enum Verb {
     /// Measure what a host actually does before trusting it with anything.
     Doctor {
         /// The waypoint to measure.
-        waypoint: String,
+        #[arg(required_unless_present = "here", conflicts_with = "here")]
+        waypoint: Option<String>,
+        /// Measure this machine instead: where the site is, how its records are
+        /// sealed, whether a proxy is set, and what this binary hashes to.
+        #[arg(long)]
+        here: bool,
     },
     /// Seal this endpoint's identity, channels and progress into one archive.
     ///
@@ -244,6 +249,19 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
                 });
             }
         },
+        Verb::Doctor { waypoint, here } => match waypoint {
+            Some(waypoint) => Request::Doctor { waypoint },
+            // `required_unless_present` has already refused the empty case, so
+            // reaching here means `--here` was given.
+            None if here => Request::Here,
+            None => {
+                return Err(Complaint::Argument {
+                    what: "doctor",
+                    reason: "was given nothing to measure".to_owned(),
+                    instead: "pass a waypoint to measure a host, or --here for this machine",
+                });
+            }
+        },
         Verb::Group { name } => {
             let (name, members) = intake::enrolled(name)?;
             Request::Group { name, members }
@@ -261,7 +279,6 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
         Verb::Forget { name } => Request::Forget {
             name: intake::channel(name)?,
         },
-        Verb::Doctor { waypoint } => Request::Doctor { waypoint },
         Verb::Export => Request::Export,
         Verb::Import => {
             let (recovery, archive) = intake::restored()?;

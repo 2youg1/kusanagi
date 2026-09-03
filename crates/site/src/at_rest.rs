@@ -49,6 +49,19 @@ const HERE: u8 = DPAPI;
 #[cfg(not(windows))]
 const HERE: u8 = PLAIN;
 
+/// What this build seals with, as one word a report can print.
+///
+/// Named rather than derived from the tag byte by the caller: the mapping from a
+/// store to its number lives in this file, and a second reader of that byte is a
+/// second place to get it wrong.
+#[must_use]
+pub const fn store() -> &'static str {
+    match HERE {
+        DPAPI => "dpapi",
+        _ => "plain",
+    }
+}
+
 /// Seals `plain` for this platform's disk, tag first.
 ///
 /// # Errors

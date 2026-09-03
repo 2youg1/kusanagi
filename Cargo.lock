@@ -368,6 +368,7 @@ dependencies = [
 name = "kusanagi"
 version = "0.0.1"
 dependencies = [
+ "blake3",
  "clap",
  "getrandom 0.3.4",
  "kusanagi-box",

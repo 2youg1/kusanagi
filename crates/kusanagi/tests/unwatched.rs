@@ -25,12 +25,14 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::arithmetic_side_effects,
+    clippy::unwrap_in_result,
     reason = "test code"
 )]
 
 mod common;
 
-use std::cell::RefCell;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::{Endpoint, invite_line, scratch};
 use kusanagi::{Reach, Request, Site, track};
@@ -46,24 +48,39 @@ const HEIGHT: usize = 12;
 /// does it: it is called an access log.
 struct Watching {
     inner: DirWaypoint,
-    asked: RefCell<Vec<DropAddr>>,
+    asked: Mutex<Vec<DropAddr>>,
+    /// How many reads were open at once, at the busiest moment.
+    ///
+    /// A serial walk never gets above one. That number is the whole of what a
+    /// window changes from the host's side, so it is the number the test asserts
+    /// on rather than the order the addresses arrived in — which is decided by a
+    /// scheduler and would make this a test about the scheduler.
+    open: AtomicUsize,
+    busiest: AtomicUsize,
 }
 
 impl Watching {
     fn new(root: &std::path::Path) -> Self {
         Self {
             inner: DirWaypoint::new(root),
-            asked: RefCell::new(Vec::new()),
+            asked: Mutex::new(Vec::new()),
+            open: AtomicUsize::new(0),
+            busiest: AtomicUsize::new(0),
         }
+    }
+
+    /// The most reads this host had in flight at one time.
+    fn busiest(&self) -> usize {
+        self.busiest.load(Ordering::SeqCst)
     }
 
     /// Everything asked for since the last [`Self::forget`].
     fn asked(&self) -> Vec<DropAddr> {
-        self.asked.borrow().clone()
+        self.asked.lock().unwrap().clone()
     }
 
     fn forget(&self) {
-        self.asked.borrow_mut().clear();
+        self.asked.lock().unwrap().clear();
     }
 }
 
@@ -73,8 +90,16 @@ impl Waypoint for Watching {
     }
 
     fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
-        self.asked.borrow_mut().push(*addr);
-        self.inner.get(addr)
+        self.asked.lock().unwrap().push(*addr);
+        let now = self.open.fetch_add(1, Ordering::SeqCst) + 1;
+        self.busiest.fetch_max(now, Ordering::SeqCst);
+        // Long enough that a batch issued together is still together when the
+        // last of it arrives. Without it this measures how fast a local
+        // directory is, which is not what a host looks like.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let found = self.inner.get(addr);
+        self.open.fetch_sub(1, Ordering::SeqCst);
+        found
     }
 }
 
@@ -107,10 +132,26 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     // cost is what catching up costs, and it is not what this file is about.
     let caught_up = track(&site, "alice", &watching, &stream, &peer.key, Reach::Whole).unwrap();
     assert_eq!(caught_up.held().len(), HEIGHT);
-    assert_eq!(
-        watching.asked().len(),
-        HEIGHT + 1,
-        "showing the whole stream reads the whole stream"
+    let catching_up = watching.asked().len();
+    assert!(
+        (HEIGHT..=HEIGHT + kusanagi::WINDOW).contains(&catching_up),
+        "catching up asked for {catching_up} addresses of a stream of {HEIGHT}"
+    );
+    // **More than the stream holds, on purpose.** A catch-up asks in windows, so
+    // the last window runs past the live edge and the host is shown addresses
+    // above the highest segment there is. That is the difference between knowing
+    // where a stream ends and knowing it to within a window.
+    assert!(
+        catching_up > HEIGHT,
+        "the walk stopped exactly at the live edge, which tells the host where it is"
+    );
+    // And it asked for them together. A host that sees *N*, then *N+1* after it
+    // answered *N*, is being handed the shape of a chain by the reading pattern;
+    // one that sees eight arrive at once is not.
+    assert!(
+        watching.busiest() > 1,
+        "a catch-up asked for one address at a time, so the access log still \
+         reads as a chain"
     );
 
     // The poll an agent actually runs in a loop. Nothing has changed, and bob has

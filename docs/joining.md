@@ -175,6 +175,16 @@ wrote. Object stores disagree about this and the disagreement fails open, so
 lifetimes; that is an absence with a name, and it costs you bandwidth rather than
 safety. `BROKEN` is a failure: the host claims something and does not do it.
 
+## 5b Check your own side
+
+```bash
+kusanagi doctor --here
+```
+
+Where the site is, whether it sits under your profile directory, which store
+seals its records, whether a proxy is set, and what this binary hashes to. It
+reaches nothing and reveals nothing: paste it into a bug report as it stands.
+
 ## 6 Run a host, if you want to be one
 
 A host holds sealed bytes at opaque addresses. It cannot read them, cannot tell

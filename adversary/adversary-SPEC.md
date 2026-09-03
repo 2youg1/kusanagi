@@ -248,6 +248,7 @@ render    :: Text -> Actions World -> Text           -- 轨迹 → 一个 Rust #
 | `process`、`directory`、`filepath`、`temporary` | 起进程、造场地 |
 | `tasty` + `tasty-quickcheck` | 把三组性质编成一棵可选择运行的树 |
 | `bytestring`、`text`、`containers` | 基础件 |
+| `-threaded -with-rtsopts=-N4` | **这套测试从来没并发过。** tasty 问运行时有几个 capability，而没有 `-threaded` 时答案永远是 1，所以十六核机器上也是一条一条跑。实测：`-j1` 76.68s，`-j4` 70.06s。并发度取 4 而不是 16，因为每条性质都在起真的二进制，十六个同时跑量的是调度器而不是产品，而 `Tempo` 恰好是会注意到这件事的那一条 | **隔离是构造上的**：一个世界一个临时目录（`withSystemTempDirectory`），一个中继一个由操作系统分配的端口，没有任何共享可写状态。`-threaded` 另一半价值在 U8：Windows 非线程运行时下一次阻塞的 socket 读会拦住整个运行时 |
 | `network` | U8 需要一个真实的套接字，而 `base` 没有。**中继必须在产品外面**：宿主自己记下请求时刻就是一份日志，而 §3 第 0 行正是说宿主什么都不学到。adversary 不进发布物、不进 `cargo deny`，它的供应链不是产品的供应链 |
 
 **不引入**：任何 FFI、任何绑定 Rust 类型的东西、任何需要改 Rust 代码才能工作的东西。

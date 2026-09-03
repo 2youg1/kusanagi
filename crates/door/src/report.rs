@@ -144,6 +144,32 @@ pub enum Outcome {
         /// One row per capability.
         capabilities: Vec<Measured>,
     },
+    /// What this machine is doing with what this endpoint holds.
+    ///
+    /// Every line of the documentation that says "you should" has a field here,
+    /// so that checking is running a command rather than reading and believing.
+    /// **Nothing in it is a secret**: a path, three yes-or-no answers, and a
+    /// hash of a file anybody who has the binary can hash themselves.
+    Here {
+        /// Where this endpoint keeps its identity and channels.
+        site: String,
+        /// Whether the site sits under this user's profile directory, where the
+        /// inherited access control list already excludes other accounts.
+        /// Absent where the question has no meaning.
+        under_profile: Option<bool>,
+        /// Which store seals every record: `dpapi` or `plain`.
+        at_rest: &'static str,
+        /// Whether an outgoing proxy is configured. **The value is not shown**,
+        /// because a proxy address is a fact about how somebody is trying to
+        /// stay unobserved.
+        proxy: bool,
+        /// The BLAKE3 of the running binary, as the binary itself computes it.
+        ///
+        /// The one number in a verification procedure that needs no second
+        /// tool: whoever hands over a build hands over this, and whoever
+        /// receives it runs `doctor --here` and compares.
+        binary: String,
+    },
     /// Everything this endpoint holds, sealed.
     Exported {
         /// The key that opens it, in hexadecimal. **Shown once, here.**

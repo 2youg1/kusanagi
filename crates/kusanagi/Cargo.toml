@@ -22,6 +22,7 @@ kusanagi-box.workspace = true
 kusanagi-chain.workspace = true
 kusanagi-grant.workspace = true
 kusanagi-seal.workspace = true
+blake3.workspace = true
 zeroize.workspace = true
 kusanagi-door.workspace = true
 kusanagi-site.workspace = true

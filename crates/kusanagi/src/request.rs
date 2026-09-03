@@ -119,6 +119,13 @@ pub enum Request {
         /// The waypoint to measure.
         waypoint: String,
     },
+    /// Measure this machine instead of a host.
+    ///
+    /// Apart from [`Request::Doctor`] rather than an option on it, because the
+    /// two answer different questions and produce different reports: one is
+    /// about somebody else's promise and needs the network, the other is about
+    /// this side and needs nothing.
+    Here,
     /// Be a host for other people's drops.
     Host {
         /// The address to listen on.

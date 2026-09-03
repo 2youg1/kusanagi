@@ -100,6 +100,13 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
              it the archive is noise.",
             archive.len()
         ),
+        Outcome::Here {
+            site,
+            under_profile,
+            at_rest,
+            proxy,
+            binary,
+        } => machine(site, *under_profile, at_rest, *proxy, binary),
         Outcome::Imported { site, channels } => {
             format!("restored {channels} channel(s) into {site}")
         }
@@ -107,6 +114,43 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             format!("stopped hosting {directory} on {address}")
         }
     }
+}
+
+/// What this machine is doing, with each answer said rather than abbreviated.
+///
+/// A report somebody is meant to act on has to say which answer is the wrong
+/// one. `false` under a heading is a value; "another account may be able to read
+/// it" is an instruction.
+fn machine(
+    site: &str,
+    under_profile: Option<bool>,
+    at_rest: &str,
+    proxy: bool,
+    binary: &str,
+) -> String {
+    let profile = match under_profile {
+        Some(true) => "yes, so no other account inherits access to it",
+        Some(false) => {
+            "NO \u{2014} another account may be able to read it; put --root under \
+             your profile directory"
+        }
+        None => "not a question on this platform",
+    };
+    let sealed = if at_rest == "plain" {
+        "whoever takes this disk reads these records"
+    } else {
+        "sealed to this account's logon credentials"
+    };
+    let through = if proxy {
+        "set, and every request goes through it"
+    } else {
+        "not set, so this machine's address reaches the host directly"
+    };
+    format!(
+        "this machine\n  site           {site}\n  under profile  {profile}\n  \
+         at rest        {at_rest} \u{2014} {sealed}\n  proxy          {through}\n  \
+         binary         {binary}"
+    )
 }
 
 /// The members of one group, one per line, or a sentence saying there are none.

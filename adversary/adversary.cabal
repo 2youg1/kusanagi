@@ -58,6 +58,17 @@ test-suite adversary
   main-is:          Main.hs
   hs-source-dirs:   test
   default-language: GHC2021
+
+  -- Without `-threaded` the runtime has one capability, tasty asks it how many
+  -- there are, and every property runs after the last one however many cores the
+  -- machine has. Isolation is by construction here -- one temporary directory
+  -- per world, one operating-system-assigned port per relay -- so the only thing
+  -- that was serialising this suite was a missing flag.
+  --
+  -- `-N4` rather than `-N`: every property spawns the real binary, and sixteen of
+  -- them at once measures the scheduler rather than the product. The timing
+  -- experiment in `Kusanagi.Tempo` is the one that would notice.
+  ghc-options:      -threaded -rtsopts "-with-rtsopts=-N4"
   build-depends:
     , base
     , bytestring

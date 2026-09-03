@@ -21,9 +21,21 @@
 //! holds, starts from the cairn this endpoint wrote last time instead — which
 //! makes a poll name one address rather than all of them.
 //!
-//! What that does not close is the first catch-up, which still walks what it has
-//! never seen, and the live edge, which a host can follow as it advances. Both
-//! are recorded in `ARCHITECTURE.md` §3 rather than fixed here.
+//! What a resumed walk does not close is the first catch-up, which still visits
+//! what it has never seen. **The order it visits them in is closed here.** A
+//! catch-up fetches a bounded window at once instead of one address after the
+//! next, so a host sees several requests in flight together rather than a chain
+//! of request-then-next-request; the window is bounded, so law 2 holds and
+//! memory does not grow with the stream, and **verification stays strictly in
+//! order** — only the fetching is not.
+//!
+//! The window starts at one and doubles to [`WINDOW`], which is what keeps a poll
+//! costing one request: an endpoint that is up to date asks for one address,
+//! finds nothing, and stops. An endpoint a hundred segments behind asks in
+//! eights. The ramp also blurs the live edge by up to a window, because a batch
+//! that runs past the end of the stream has already asked for what is not there
+//! — `ARCHITECTURE.md` §3 records that edge as followable, and this makes
+//! following it approximate rather than exact.
 
 use kusanagi_chain::{Cairn, Verifier};
 use kusanagi_kernel::{ChainHead, DropAddr, Segment, SegmentError, VerifyingKey, Waypoint};
@@ -122,7 +134,7 @@ pub enum Reach {
 pub fn track(
     site: &Site,
     name: &str,
-    waypoint: &impl Waypoint,
+    waypoint: &(impl Waypoint + Sync),
     stream: &Stream,
     author: &VerifyingKey,
     reach: Reach,
@@ -235,7 +247,7 @@ pub fn peek(
 /// segments do not form a chain — which, on a resumed walk, is also what a host
 /// that revised a drop this endpoint already read comes out as.
 pub fn walk(
-    waypoint: &impl Waypoint,
+    waypoint: &(impl Waypoint + Sync),
     stream: &Stream,
     author: &VerifyingKey,
     name: &str,
@@ -253,27 +265,92 @@ pub fn walk(
         return Ok(Walked { verifier, held });
     };
 
-    for index in start..u64::MAX {
+    let mut index = start;
+    let mut width = 1;
+    loop {
+        for found in fetch(waypoint, stream, author, name, index, width)? {
+            let Some(segment) = found else {
+                return Ok(Walked { verifier, held });
+            };
+            verifier.accept(&segment)?;
+            held.push(Held {
+                address: derive(stream, segment.index()).0,
+                segment,
+            });
+        }
+        let Some(next) = u64::try_from(width)
+            .ok()
+            .and_then(|step| index.checked_add(step))
+        else {
+            return Ok(Walked { verifier, held });
+        };
+        index = next;
+        width = width.saturating_mul(2).min(WINDOW);
+    }
+}
+
+/// The most addresses one walk asks for at once.
+///
+/// Bounded because law 2 says memory does not grow with the work: a window is a
+/// constant number of drops held at once whatever the height of the stream. Eight
+/// because it is enough for the requests to overlap on any real link and small
+/// enough that a walk which runs past the end of a stream wastes eight requests
+/// rather than a hundred.
+pub const WINDOW: usize = 8;
+
+/// Fetches `width` consecutive addresses at once, and returns them in order.
+///
+/// **In flight together, delivered in order.** The concurrency is what a host
+/// sees; the ordering is what the verifier needs. Doing it the other way round —
+/// verifying whatever arrived first — would be a chain check that depends on
+/// network timing, which is not a chain check.
+///
+/// # Errors
+///
+/// The first failure among the batch, by address order rather than by arrival,
+/// so that two runs against the same host report the same thing.
+fn fetch(
+    waypoint: &(impl Waypoint + Sync),
+    stream: &Stream,
+    author: &VerifyingKey,
+    name: &str,
+    from: u64,
+    width: usize,
+) -> Result<Vec<Option<Segment>>, Complaint> {
+    let indices: Vec<u64> = (0..width)
+        .filter_map(|step| from.checked_add(u64::try_from(step).ok()?))
+        .collect();
+    let collected: Vec<Result<Option<Segment>, Complaint>> = std::thread::scope(|scope| {
+        let running: Vec<_> = indices
+            .iter()
+            .map(|index| scope.spawn(move || peek(waypoint, stream, *index, author)))
+            .collect();
+        running
+            .into_iter()
+            .map(|handle| {
+                handle.join().unwrap_or_else(|_| {
+                    Err(Complaint::Local {
+                        action: "read a drop",
+                        source: std::io::Error::other("a reader did not finish"),
+                    })
+                })
+            })
+            .collect()
+    });
+
+    let mut found = Vec::with_capacity(collected.len());
+    for outcome in collected {
         // A genuine segment by somebody else is the host answering with a drop
         // from a stream nobody asked for. The decoder catches it, and it is
         // reported as what it is rather than as a malformed segment.
-        let found = match peek(waypoint, stream, index, author) {
+        match outcome {
             Err(Complaint::Segment(SegmentError::NotTheAuthor { .. })) => {
                 return Err(Complaint::NotThePeer {
                     name: name.to_owned(),
                 });
             }
-            other => other?,
-        };
-        let Some(segment) = found else {
-            break;
-        };
-        verifier.accept(&segment)?;
-        held.push(Held {
-            address: derive(stream, index).0,
-            segment,
-        });
+            other => found.push(other?),
+        }
     }
-
-    Ok(Walked { verifier, held })
+    Ok(found)
 }

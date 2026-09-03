@@ -20,7 +20,7 @@ mod world;
 
 pub use assembly::{HOST_ADDRESS, default_host_dir, default_root, run};
 pub use request::{Request, Whose};
-pub use walk::{Held, Reach, Walked, peek, track, walk};
+pub use walk::{Held, Reach, WINDOW, Walked, peek, track, walk};
 pub use world::{SystemClock, fresh_fence, fresh_seed};
 
 // What an endpoint keeps on its own disk is a crate of its own, and so is what a

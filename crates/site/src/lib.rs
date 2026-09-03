@@ -34,6 +34,7 @@ mod roster;
 mod site;
 
 pub use archive::{export, import};
+pub use at_rest::store;
 pub use channel::{Channel, Peer, Standing};
 pub use error::SiteError;
 pub use invite::{Invite, Offer};
