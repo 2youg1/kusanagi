@@ -39,7 +39,9 @@
 
 ## 4 现状分析
 
-阶段 0 无权限模型。本 crate 是第一版。与之配套的前提改动是 `kernel::Handle` 由「名字的哈希」变为 Ed25519 公钥——没有它，grant 里的 subject 只是一个声称，`permits` 就只能约束自愿遵守的软件。该改动记在 `ARCHITECTURE.md` §8。
+阶段 0 无权限模型。本 crate 是第一版。前提是身份可证：没有签名，grant 里的 subject 只是一个声称，`permits` 就只能约束自愿遵守的软件。
+
+**一节里带的是签发者的公钥与接受者的名字，这个不对称是规则。** 一份 grant 要说服一个两边都不认识的人——这就是「离线可验证的凭证」的含义——所以每一跳必须自带验自己签名所需的东西。subject 在这一节里不证明任何事，因此只被命名；持有人出示 grant 时一并出示自己的公钥，`permits` 是让名字与钥匙对上的那一处。与之对照，一个 *segment* 不带公钥，因为它只需说服已经被引荐给作者的那一个人（`kernel-SPEC.md` §10 步骤 6）。该改动记在 `ARCHITECTURE.md` §8。
 
 ## 5 权威信源
 
@@ -63,7 +65,7 @@ revocation.rs   Revocations
 error.rs        GrantError
 ```
 
-依赖：`kernel`（`Handle`、`Signer`、`Signature`、`Instant`、`Reader`）、`blake3`、`thiserror`。不依赖 `waypoint`、`seal`、`chain`。
+依赖：`kernel`（`Handle`、`VerifyingKey`、`Signer`、`Signature`、`Instant`、`Reader`）、`blake3`、`thiserror`。不依赖 `waypoint`、`seal`、`chain`。
 
 ## 8 接口先行
 
@@ -96,7 +98,9 @@ impl Grant {
 ```
 签发：root 用自己的 Signer 对 (root, subject, scope, parent=None) 签名 → 一节链
 衰减：持有者用自己的 Signer 对 (holder, next, held.meet(request), parent=上一节 id) 签名 → 追加一节
-验证：从根开始逐节走：根匹配 → 父链接匹配 → issuer == 上一节 subject → scope ⊑ 上一节
+验证：从根开始逐节走：根匹配 → 父链接匹配 → `issuer()` == 上一节 subject → scope ⊑ 上一节
+
+`Step::issuer()` 产出的是 handle，即存储的公钥的 BLAKE3，所以这三道比较全部发生在名字上，与签名算法无关；公钥只在 `check_signature` 里被用一次。
       → 签名有效 → 未被撤销；走完后检查最末 scope 是否过期
 ```
 
@@ -142,7 +146,7 @@ impl Grant {
 | 依赖 | 理由 | 替代方案与代价 |
 |---|---|---|
 | `blake3` | `StepId` 的域分隔哈希，与全仓同源 | 无 |
-| `kernel` 的 `Signer`/`Handle` | 签名能力已在 kernel 定型，此处不引入第二套身份 | 自带一套密钥类型即第二权威 |
+| `kernel` 的 `Signer`/`Handle`/`VerifyingKey` | 签名能力已在 kernel 定型，此处不引入第二套身份 | 自带一套密钥类型即第二权威 |
 | `proptest`（dev） | 对任意链采样衰减性质 | 见 §16 关于 `kani` 的说明 |
 
 ## 14 硬编码声明

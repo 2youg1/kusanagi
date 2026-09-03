@@ -9,7 +9,7 @@
 //! no arithmetic on attacker-supplied sizes.
 //!
 //! ```text
-//! issuer      32 bytes  the handle that signed this step
+//! issuer      32 bytes  the verifying key that signed this step
 //! subject     32 bytes  the handle it was signed over to
 //! abilities    1 byte   the ability bitset
 //! expires_at   8 bytes  big endian, seconds since the Unix epoch
@@ -17,8 +17,16 @@
 //! parent      32 bytes  the identifier of the step above; zeroes at the root
 //! signature   64 bytes  by the issuer, over everything above
 //! ```
+//!
+//! **A step carries the issuer's key and the subject's name, and the asymmetry
+//! is the rule rather than an accident.** A grant has to convince somebody who
+//! has never met either party — that is what an offline-verifiable credential
+//! is — so each hop must carry enough to check its own signature. A subject
+//! proves nothing here and is therefore only named; whoever presents the grant
+//! presents their key alongside it, and
+//! [`Grant::permits`](crate::Grant::permits) is where the two are made to agree.
 
-use kusanagi_kernel::{Handle, Instant, Reader, Signature, Signer, identifier};
+use kusanagi_kernel::{Handle, Instant, Reader, Signature, Signer, VerifyingKey, identifier};
 
 use crate::error::GrantError;
 use crate::scope::{Abilities, Scope};
@@ -43,7 +51,7 @@ identifier! {
 /// One signed hop of a delegation.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Step {
-    issuer: Handle,
+    issuer: VerifyingKey,
     subject: Handle,
     scope: Scope,
     parent: Option<StepId>,
@@ -58,9 +66,9 @@ impl Step {
         scope: Scope,
         parent: Option<StepId>,
     ) -> Self {
-        let body = body(&issuer.handle(), subject, &scope, parent.as_ref());
+        let body = body(&issuer.verifying_key(), subject, &scope, parent.as_ref());
         Self {
-            issuer: issuer.handle(),
+            issuer: issuer.verifying_key(),
             subject: *subject,
             scope,
             parent,
@@ -70,8 +78,14 @@ impl Step {
 
     /// Who signed this step.
     #[must_use]
-    pub const fn issuer(&self) -> Handle {
-        self.issuer
+    pub fn issuer(&self) -> Handle {
+        self.issuer.handle()
+    }
+
+    /// The key that checks this step's signature.
+    #[must_use]
+    pub const fn issuer_key(&self) -> &VerifyingKey {
+        &self.issuer
     }
 
     /// Who received it.
@@ -134,7 +148,7 @@ impl Step {
     /// knows which position in which chain it sat at, so the check belongs to
     /// `Grant::verify` where that position is known.
     pub(crate) fn read(reader: &mut Reader<'_>) -> Result<Self, GrantError> {
-        let issuer = Handle::from_bytes(reader.take_array::<32>()?);
+        let issuer = VerifyingKey::from_bytes(reader.take_array::<32>()?);
         let subject = Handle::from_bytes(reader.take_array::<32>()?);
         let abilities = Abilities::from_bits(reader.take_byte()?)?;
         let expires_at = Instant::from_unix_seconds(reader.take_u64()?);
@@ -161,7 +175,12 @@ impl Step {
     }
 }
 
-fn body(issuer: &Handle, subject: &Handle, scope: &Scope, parent: Option<&StepId>) -> Vec<u8> {
+fn body(
+    issuer: &VerifyingKey,
+    subject: &Handle,
+    scope: &Scope,
+    parent: Option<&StepId>,
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(BODY_BYTES);
     out.extend_from_slice(issuer.as_bytes());
     out.extend_from_slice(subject.as_bytes());

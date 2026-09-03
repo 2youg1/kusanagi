@@ -16,25 +16,41 @@
 //! carried in the invitation. So a channel begins half-known and completes itself
 //! the first time its owner reads.
 //!
+//! **Two of these fields are keys rather than names, and it is the same reason
+//! in both cases: this endpoint has to check a signature with them.** A segment
+//! names its author and carries no key, so reading a stream means holding the
+//! author's key beforehand — the peer's, for everything they will ever write,
+//! and the one-time bearer's, for the greeting that says who the peer is. The
+//! root is a name, because a grant carries the keys that check it.
+//!
 //! ```text
 //! version         1 byte
 //! secret         32 bytes
-//! root           32 bytes   the authority every grant here descends from
-//! introduction   32 bytes   the one-time handle whose stream carries the greeting
+//! root           32 bytes   the handle every grant here descends from
+//! introduction   32 bytes   the one-time key whose stream carries the greeting
 //! locator_len     2 bytes   big endian, then that many utf-8 bytes
 //! standing        1 byte    0 = root, 1 = granted, then a length-prefixed grant
 //! has_peer        1 byte
-//! peer           32 bytes   zeroes when absent
+//! peer           32 bytes   the peer's verifying key; zeroes when absent
 //! peer_standing   1 byte    as above
 //! ```
+//!
+//! The two key fields are `VerifyingKey::WIDTH` wide, so a change of signature
+//! scheme is a change of record version.
 
 use kusanagi_grant::{Ability, Grant, GrantError, Revocations};
-use kusanagi_kernel::{Handle, Instant, Reader};
+use kusanagi_kernel::{Handle, Instant, Reader, VerifyingKey};
 use kusanagi_seal::Secret;
 
 use crate::error::SiteError;
 
-const VERSION: u8 = 1;
+/// The record this build writes and reads.
+///
+/// Version 2 names its peer by verifying key where version 1 named it by handle.
+/// The two are the same width and neither decodes as the other, which is exactly
+/// why the version byte moves: a silent reinterpretation would leave an endpoint
+/// verifying every segment against 32 bytes that are not a key.
+const VERSION: u8 = 2;
 const STANDING_ROOT: u8 = 0;
 const STANDING_GRANTED: u8 = 1;
 
@@ -122,10 +138,18 @@ impl Standing {
 /// The other end of a conversation, once it has said who it is.
 #[derive(Clone, Debug)]
 pub struct Peer {
-    /// The handle that signs the peer's segments.
-    pub handle: Handle,
+    /// The key that checks the peer's segments.
+    pub key: VerifyingKey,
     /// Why the peer is allowed here.
     pub standing: Standing,
+}
+
+impl Peer {
+    /// What the peer is called: the name their stream is derived through.
+    #[must_use]
+    pub fn handle(&self) -> Handle {
+        self.key.handle()
+    }
 }
 
 /// One conversation, as this endpoint knows it.
@@ -135,8 +159,9 @@ pub struct Channel {
     pub secret: Secret,
     /// The authority every grant on this channel descends from.
     pub root: Handle,
-    /// The one-time handle whose stream carries the introduction.
-    pub introduction: Handle,
+    /// The one-time key that signs the introduction, and whose handle the
+    /// introduction stream is derived through.
+    pub introduction: VerifyingKey,
     /// Where the bytes live.
     pub locator: String,
     /// Why this endpoint is allowed here.
@@ -163,7 +188,7 @@ impl Channel {
             }
             Some(peer) => {
                 out.push(1);
-                out.extend_from_slice(peer.handle.as_bytes());
+                out.extend_from_slice(peer.key.as_bytes());
                 peer.standing.write(&mut out);
             }
         }
@@ -188,17 +213,17 @@ impl Channel {
 
         let secret = Secret::from_bytes(reader.take_array::<32>().map_err(malformed)?);
         let root = Handle::from_bytes(reader.take_array::<32>().map_err(malformed)?);
-        let introduction = Handle::from_bytes(reader.take_array::<32>().map_err(malformed)?);
+        let introduction = VerifyingKey::from_bytes(reader.take_array::<32>().map_err(malformed)?);
         let locator = take_text(&mut reader)?;
         let standing = Standing::read(&mut reader)?;
 
         let has_peer = reader.take_byte().map_err(malformed)?;
-        let handle = Handle::from_bytes(reader.take_array::<32>().map_err(malformed)?);
+        let key = VerifyingKey::from_bytes(reader.take_array::<32>().map_err(malformed)?);
         let peer_standing = Standing::read(&mut reader)?;
         let peer = match has_peer {
             0 => None,
             1 => Some(Peer {
-                handle,
+                key,
                 standing: peer_standing,
             }),
             other => {
@@ -279,11 +304,11 @@ mod tests {
         Channel {
             secret: Secret::from_bytes([7; 32]),
             root: root.handle(),
-            introduction: guest.handle(),
+            introduction: guest.verifying_key(),
             locator: "http://box.example:8443".to_owned(),
             standing: Standing::Root,
             peer: with_peer.then(|| Peer {
-                handle: guest.handle(),
+                key: guest.verifying_key(),
                 standing: Standing::Granted(Grant::issue(&root, &guest.handle(), scope)),
             }),
         }
@@ -305,8 +330,8 @@ mod tests {
         let decoded = Channel::from_bytes(&original.to_bytes()).unwrap();
         assert_eq!(decoded.to_bytes(), original.to_bytes());
         assert_eq!(
-            decoded.peer.map(|peer| peer.handle),
-            original.peer.map(|peer| peer.handle)
+            decoded.peer.map(|peer| peer.handle()),
+            original.peer.map(|peer| peer.handle())
         );
     }
 

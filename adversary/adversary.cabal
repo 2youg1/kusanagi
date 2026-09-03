@@ -30,6 +30,7 @@ library
     Kusanagi.Keyboard
     Kusanagi.Lying
     Kusanagi.Model
+    Kusanagi.Naming
     Kusanagi.Regression
     Kusanagi.Veil
 

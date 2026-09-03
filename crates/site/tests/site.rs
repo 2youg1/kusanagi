@@ -34,7 +34,7 @@ fn channel() -> Channel {
     Channel {
         secret: Secret::from_bytes([7; 32]),
         root: root.handle(),
-        introduction: Signer::from_seed(&[2; 32]).handle(),
+        introduction: Signer::from_seed(&[2; 32]).verifying_key(),
         locator: "./drops".to_owned(),
         standing: Standing::Root,
         peer: None,

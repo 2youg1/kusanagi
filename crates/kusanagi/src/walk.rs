@@ -26,7 +26,7 @@
 //! are recorded in `ARCHITECTURE.md` §3 rather than fixed here.
 
 use kusanagi_chain::{Cairn, Verifier};
-use kusanagi_kernel::{ChainHead, DropAddr, Handle, Segment, Waypoint};
+use kusanagi_kernel::{ChainHead, DropAddr, Segment, SegmentError, VerifyingKey, Waypoint};
 use kusanagi_seal::{Stream, derive, open};
 use kusanagi_site::Site;
 
@@ -124,18 +124,19 @@ pub fn track(
     name: &str,
     waypoint: &impl Waypoint,
     stream: &Stream,
-    author: &Handle,
+    author: &VerifyingKey,
     reach: Reach,
 ) -> Result<Walked, Complaint> {
+    let named = author.handle();
     let from = match reach {
         Reach::Whole => None,
-        Reach::Head => site.cairn(name, author)?,
+        Reach::Head => site.cairn(name, &named)?,
         // A cairn above the caller's floor cannot be resumed from: the segments
         // between the floor and the cairn are ones the caller asked to see, and a
         // resumed walk would never fetch them. Falling back to the whole stream
         // costs requests; getting this wrong would silently drop segments.
         Reach::Above(floor) => site
-            .cairn(name, author)?
+            .cairn(name, &named)?
             .filter(|cairn| cairn.head().index() <= floor),
     };
     let walked = walk(waypoint, stream, author, name, from)?;
@@ -145,7 +146,7 @@ pub fn track(
     // gets to lie by omission — hand back a shorter chain that verifies
     // perfectly, and a reader with no memory believes it.
     if from.is_none()
-        && let Some(recorded) = site.cairn(name, author)?
+        && let Some(recorded) = site.cairn(name, &named)?
     {
         confirm(&walked, &recorded, name)?;
     }
@@ -197,22 +198,28 @@ fn confirm(walked: &Walked, recorded: &Cairn, name: &str) -> Result<(), Complain
 
 /// Reads one drop, if anything is there.
 ///
+/// `author` is whose signature the segment must carry. It is a parameter rather
+/// than something read out of the bytes because a segment names its author
+/// without carrying the key that checks the name: the key comes from the channel
+/// record, which is to say from having been introduced.
+///
 /// # Errors
 ///
 /// [`Complaint::Waypoint`] when the host fails, [`Complaint::Sealed`] when the
 /// bytes do not open under this address's key, and [`Complaint::Segment`] when
-/// what comes out is not a segment.
+/// what comes out is not a segment by `author`.
 pub fn peek(
     waypoint: &impl Waypoint,
     stream: &Stream,
     index: u64,
+    author: &VerifyingKey,
 ) -> Result<Option<Segment>, Complaint> {
     let (address, key) = derive(stream, index);
     let Some(sealed) = waypoint.get(&address)? else {
         return Ok(None);
     };
     let plain = open(&key, &sealed)?;
-    Ok(Some(Segment::from_canonical_bytes(&plain)?))
+    Ok(Some(Segment::from_canonical_bytes(&plain, author)?))
 }
 
 /// Walks a stream from `from` until the first empty address.
@@ -230,7 +237,7 @@ pub fn peek(
 pub fn walk(
     waypoint: &impl Waypoint,
     stream: &Stream,
-    author: &Handle,
+    author: &VerifyingKey,
     name: &str,
     from: Option<Cairn>,
 ) -> Result<Walked, Complaint> {
@@ -247,14 +254,20 @@ pub fn walk(
     };
 
     for index in start..u64::MAX {
-        let Some(segment) = peek(waypoint, stream, index)? else {
+        // A genuine segment by somebody else is the host answering with a drop
+        // from a stream nobody asked for. The decoder catches it, and it is
+        // reported as what it is rather than as a malformed segment.
+        let found = match peek(waypoint, stream, index, author) {
+            Err(Complaint::Segment(SegmentError::NotTheAuthor { .. })) => {
+                return Err(Complaint::NotThePeer {
+                    name: name.to_owned(),
+                });
+            }
+            other => other?,
+        };
+        let Some(segment) = found else {
             break;
         };
-        if segment.author() != *author {
-            return Err(Complaint::NotThePeer {
-                name: name.to_owned(),
-            });
-        }
         verifier.accept(&segment)?;
         held.push(Held {
             address: derive(stream, index).0,

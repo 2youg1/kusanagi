@@ -261,7 +261,7 @@ impl Outcome {
         // The peer is asked the one question a read of their stream asks.
         let peer_refused = channel.peer.as_ref().and_then(|peer| {
             peer.standing
-                .permits(&channel.root, &peer.handle, Ability::Send, now, revoked)
+                .permits(&channel.root, &peer.handle(), Ability::Send, now, revoked)
                 .err()
                 .map(|error| error.code())
         });
@@ -273,7 +273,7 @@ impl Outcome {
                 Standing::Root => "root",
                 Standing::Granted(_) => "granted",
             },
-            peer: channel.peer.as_ref().map(|peer| abbreviate(&peer.handle)),
+            peer: channel.peer.as_ref().map(|peer| abbreviate(&peer.handle())),
             can,
             expires_at,
             expires_in,

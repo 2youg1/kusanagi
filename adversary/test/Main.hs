@@ -55,6 +55,7 @@ import Kusanagi.Keyboard
   , typingOf
   )
 import Kusanagi.Model
+import Kusanagi.Naming qualified as Naming
 import Kusanagi.Regression (coherent, render, sequenced)
 
 main :: IO ()
@@ -78,9 +79,15 @@ properties door =
     , testProperty "a corrupted object is refused, not believed" (tampering door)
     , testProperty "genuine bytes at the wrong address are not a segment" (transplanting door)
     , testProperty "a host cannot talk a reader down from a height" (vanishing door)
+    , testCase
+        "one identity answers to one name on both sides"
+        (weighing door Naming.bothEndsAgreeOnWhoTheOtherIs)
     , testGroup
         "what a host measures without a key"
         [ testCase "every drop is the same size" (weighing door Veil.sameSizeAlways)
+        , testCase
+            "everything the host holds is one size, the introduction included"
+            (weighing door Veil.everyObjectIsOneSize)
         , testCase "no two drops are the same bytes" (weighing door Veil.neverTheSameBytesTwice)
         , testCase "no two drops share structure" (weighing door Veil.noSharedStructure)
         , testCase

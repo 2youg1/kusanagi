@@ -10,6 +10,7 @@
 |---|---|---|
 | U1 身份 | `Site::identity` / `Site::adopt` | 写一次不被覆盖；第二次 adopt 返回第一次的 handle |
 | U2 通道记录 | `Channel` / `Standing` / `Peer` 与其磁盘格式 | 有无 peer 两种形态各自往返；尾随字节与陌生版本被拒 |
+| U8 对端的钥匙 | `Peer::key` / `Channel::introduction` 存 `VerifyingKey` | 一条流只能用记录里的公钥读；记录版本为 2，版本 1 被拒而不是重新解释 |
 | U3 名字校验 | `Site::channel_path` 内的 `check_name` | 能逃出目录的名字被拒，而不是被转义 |
 | U4 撤销表 | `Site::revocations` / `Site::revoke` | 重复撤销不重复计数；跨进程可见 |
 | U5 邀请 | `Invite` 的 `kusanagi1:` 一行文本形式 | 往返恒等；缺前缀、改套件字节各得错误 |
@@ -62,12 +63,14 @@
 `Site` 已进入 `ARCHITECTURE.md` §4 词表。`Channel`、`Standing`、`Peer`、`Invite` 沿用原义，
 一名一义；`SiteError` 是本 crate 唯一的失败类型。
 
+**一份记录里哪些字段是名字、哪些是钥匙，只有一条判据：本端点是否要拿它去验一个签名。** `root` 是名字，因为验 grant 的公钥就在 grant 自己里；`peer.key` 与 `introduction` 是钥匙，因为一个 segment 只报作者的名字、不带验它的公钥（`kernel-SPEC.md` §10 步骤 6）。`Peer::handle()` 是从钥匙算出来的，不单存一份——否则一条记录里就有两个可以不一致的真相。
+
 ## 7 模块边界
 
 ```
 lib.rs      模块索引
 site.rs     Site —— identity / channels / revoked 三份磁盘状态
-channel.rs  Channel / Standing / Peer 与其磁盘格式
+channel.rs  Channel / Standing / Peer 与其磁盘格式（版本 2）
 invite.rs   Invite 与 kusanagi1: 文本形式
 error.rs    SiteError —— 本机失败的三种形状
 ```

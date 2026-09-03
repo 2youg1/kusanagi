@@ -53,7 +53,14 @@ pub(crate) fn send(
     // Only the head is needed, so this walk owes the caller no segment and may
     // resume from the cairn: sending the thousandth segment asks the host for one
     // address rather than announcing the previous nine hundred and ninety-nine.
-    let mine = track(site, name, &place, &stream, &me.handle(), Reach::Head)?;
+    let mine = track(
+        site,
+        name,
+        &place,
+        &stream,
+        &me.verifying_key(),
+        Reach::Head,
+    )?;
 
     // The height still comes from the waypoint rather than from a local count:
     // the cairn moves the walk's starting point and proves the join to it, so a
@@ -120,13 +127,13 @@ pub(crate) fn read(
     // The peer's own authority is checked before their bytes are read, so a
     // revoked peer's stream is refused rather than displayed with a warning.
     peer.standing
-        .permits(&channel.root, &peer.handle, Ability::Send, now, &revoked)?;
+        .permits(&channel.root, &peer.handle(), Ability::Send, now, &revoked)?;
 
-    let stream = channel.secret.stream(&peer.handle);
-    let theirs = track(site, name, &place, &stream, &peer.handle, reach(after))?;
+    let stream = channel.secret.stream(&peer.handle());
+    let theirs = track(site, name, &place, &stream, &peer.key, reach(after))?;
     Ok(Outcome::read(
         name,
-        &peer.handle.to_string(),
+        &peer.handle().to_string(),
         &theirs,
         after,
     ))
@@ -153,6 +160,13 @@ fn mine(
 ) -> Result<Outcome, Complaint> {
     let place = open(&channel.locator, now)?;
     let stream = channel.secret.stream(&me.handle());
-    let ours = track(site, name, &place, &stream, &me.handle(), reach(after))?;
+    let ours = track(
+        site,
+        name,
+        &place,
+        &stream,
+        &me.verifying_key(),
+        reach(after),
+    )?;
     Ok(Outcome::read(name, &me.handle().to_string(), &ours, after))
 }

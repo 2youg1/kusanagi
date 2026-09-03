@@ -317,7 +317,15 @@ Reopening one of these requires a reason that did not exist when it was taken.
 
 - **Identity is a hash, not a key.** `Handle` is `BLAKE3(public key)`, 32 bytes,
   so address derivation, cairn filenames and the segment layout do not depend on
-  which signature scheme is in use.
+  which signature scheme is in use. **A name therefore checks nothing**, and the
+  key travels only where a signature is checked: a grant carries the issuer's key
+  in every step, because a credential must convince a stranger, and a channel
+  record carries the peer's key, because a stream only has to convince the one
+  endpoint that was introduced to its author. A segment names its author and
+  carries no key, so `Segment::from_canonical_bytes` is told whose signature it
+  expects — which is the check a caller used to have to remember to make
+  afterwards, and the reason a stranger holding the ciphertext can verify
+  nothing at all.
 - **The signature scheme is ML-DSA-44 (FIPS 204).** Integer-only arithmetic, so
   a constant-time implementation is reachable, and a standard that is final. The
   invitation is a blob to send as a file or a QR code rather than a line to
@@ -446,9 +454,9 @@ version of its own.
 | **Windows file permissions** | `0600` has no counterpart; restricting a file there means writing an ACL, which needs an API this workspace cannot reach without `unsafe` or a crate that brings one |
 | `Bell` | a privacy mechanism rather than a latency tweak. A reader that polls names the address it waits on, then the next one after a hit, so a host watching one endpoint can follow the live edge; a host that can be asked to wait is told one address instead. Riding a carrier that bulk-syncs closes the same leak more completely, and whichever lands first decides whether the other is built |
 | `Cohort` — rosters and epochs | needs multi-node test infrastructure; two parties do not need a roster |
-| `Depot` — chunked content | now load-bearing rather than optional: a drop carries 3 935 bytes, so anything larger needs chunking rather than a bigger envelope |
+| `Depot` — chunked content | now load-bearing rather than optional, and it is what ML-DSA-44 waits on: a drop carries 3 935 bytes, so anything larger — including a post-quantum introduction — needs chunking rather than a bigger envelope |
 | `port` — local socket and MCP front ends | the verb set is one enum, so a second front end is additive |
-| ML-DSA-44, replacing Ed25519 | the scheme is chosen (§8) and unbuilt. Two changes go with it: `Handle` becomes `BLAKE3(public key)` so nothing else moves, and the invitation stops being a pasteable line. Confidentiality needs none of this — it rests on a pre-shared secret through BLAKE3 and ChaCha20-Poly1305 with no public-key exchange anywhere, so harvest-now-decrypt-later does not apply to what this network carries |
+| ML-DSA-44, replacing Ed25519 | the scheme is chosen (§8) and **blocked on `Depot`, not merely unbuilt.** A public key is 1 312 bytes and a signature 2 420, so one grant step is 3 806 bytes and a greeting — the newcomer's key plus a two-hop grant — is about 8 900. A drop carries 3 935 bytes today and would carry 1 579 once a genesis segment holds an ML-DSA signature, so the introduction stops fitting in one drop by a factor of five. Chunking lands first, then the swap; `Handle` no longer moves with it, because it is already a hash. Confidentiality needs none of this — it rests on a pre-shared secret through BLAKE3 and ChaCha20-Poly1305 with no public-key exchange anywhere, so harvest-now-decrypt-later does not apply to what this network carries |
 
 ---
 

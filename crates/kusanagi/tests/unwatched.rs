@@ -99,21 +99,13 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     let site = Site::at(bob.site_root());
     let channel = site.channel("alice").unwrap();
     let peer = channel.peer.as_ref().expect("bob has met alice");
-    let stream = channel.secret.stream(&peer.handle);
+    let stream = channel.secret.stream(&peer.handle());
 
     let watching = Watching::new(&host);
 
     // The first read shows the whole stream, so it fetches the whole stream. That
     // cost is what catching up costs, and it is not what this file is about.
-    let caught_up = track(
-        &site,
-        "alice",
-        &watching,
-        &stream,
-        &peer.handle,
-        Reach::Whole,
-    )
-    .unwrap();
+    let caught_up = track(&site, "alice", &watching, &stream, &peer.key, Reach::Whole).unwrap();
     assert_eq!(caught_up.held().len(), HEIGHT);
     assert_eq!(
         watching.asked().len(),
@@ -124,15 +116,7 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     // The poll an agent actually runs in a loop. Nothing has changed, and bob has
     // already verified all of it.
     watching.forget();
-    let polled = track(
-        &site,
-        "alice",
-        &watching,
-        &stream,
-        &peer.handle,
-        Reach::Head,
-    )
-    .unwrap();
+    let polled = track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
     assert_eq!(
         polled.head(),
         caught_up.head(),
@@ -153,25 +137,9 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     for round in HEIGHT..HEIGHT * 2 {
         alice.send("bob", &format!("round {round}"));
     }
-    track(
-        &site,
-        "alice",
-        &watching,
-        &stream,
-        &peer.handle,
-        Reach::Head,
-    )
-    .unwrap();
+    track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
     watching.forget();
-    track(
-        &site,
-        "alice",
-        &watching,
-        &stream,
-        &peer.handle,
-        Reach::Head,
-    )
-    .unwrap();
+    track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
     assert_eq!(
         watching.asked().len(),
         revealed.len(),
@@ -201,33 +169,17 @@ fn a_poll_names_the_one_address_it_is_waiting_on_and_no_other() {
     let site = Site::at(bob.site_root());
     let channel = site.channel("alice").unwrap();
     let peer = channel.peer.as_ref().expect("bob has met alice");
-    let stream = channel.secret.stream(&peer.handle);
+    let stream = channel.secret.stream(&peer.handle());
 
     let watching = Watching::new(&host);
-    track(
-        &site,
-        "alice",
-        &watching,
-        &stream,
-        &peer.handle,
-        Reach::Whole,
-    )
-    .unwrap();
+    track(&site, "alice", &watching, &stream, &peer.key, Reach::Whole).unwrap();
 
     // "At most two" is a bound; this is the fact. A poll asks for the height
     // above the one it has verified, and asks for nothing else — so a host sees
     // one address it has never been shown before, carrying no relation to any
     // address it has seen.
     watching.forget();
-    track(
-        &site,
-        "alice",
-        &watching,
-        &stream,
-        &peer.handle,
-        Reach::Head,
-    )
-    .unwrap();
+    track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
     let (expected, _) = derive(&stream, u64::try_from(HEIGHT).unwrap());
     assert_eq!(
         watching.asked(),
@@ -261,9 +213,9 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
     // that it resumed is the next one, and this is the assertion that it marked.
     let site = Site::at(alice.site_root());
     let channel = site.channel("bob").unwrap();
-    let stream = channel.secret.stream(&alice_handle(&site));
+    let stream = channel.secret.stream(&alice_key(&site).handle());
     let cairn = site
-        .cairn("bob", &alice_handle(&site))
+        .cairn("bob", &alice_key(&site).handle())
         .unwrap()
         .expect("sending left no record of where it got to");
     assert_eq!(cairn.head().index(), u64::try_from(HEIGHT - 1).unwrap());
@@ -278,7 +230,7 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
         "bob",
         &watching,
         &stream,
-        &alice_handle(&site),
+        &alice_key(&site),
         Reach::Head,
     )
     .unwrap();
@@ -292,10 +244,10 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
     std::fs::remove_dir_all(&ground).ok();
 }
 
-/// This endpoint's own handle, which is the author of its own stream.
-fn alice_handle(site: &Site) -> kusanagi_kernel::Handle {
+/// This endpoint's own key, which checks the author of its own stream.
+fn alice_key(site: &Site) -> kusanagi_kernel::VerifyingKey {
     site.identity()
         .unwrap()
         .expect("an endpoint that has sent has an identity")
-        .handle()
+        .verifying_key()
 }

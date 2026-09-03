@@ -21,7 +21,7 @@
 //! ```text
 //! version         1 byte    = 1
 //! suite           1 byte    = 0, the baseline: BLAKE3, ChaCha20-Poly1305, Ed25519
-//! inviter        32 bytes   the root authority for this channel
+//! inviter        32 bytes   the inviter's verifying key; its handle roots the channel
 //! secret         32 bytes   the channel secret
 //! bearer_seed    32 bytes   the one-time signing key
 //! locator_len     2 bytes   big endian
@@ -29,11 +29,17 @@
 //! grant_len       2 bytes   big endian
 //! grant           M bytes   inviter -> bearer
 //! ```
+//!
+//! The inviter arrives as a key rather than a name because the acceptor will
+//! read their stream, and a segment names its author without carrying the key
+//! that checks it. The grant's root step carries the same key, and
+//! [`Grant::verify`] is what makes the two agree — an invitation naming one
+//! inviter and rooting its grant in another is refused when it is accepted.
 
 use core::fmt;
 
 use kusanagi_grant::Grant;
-use kusanagi_kernel::{Handle, Hex, Reader, Signer, unhex};
+use kusanagi_kernel::{Hex, Reader, Signer, VerifyingKey, unhex};
 use kusanagi_seal::Secret;
 
 use crate::channel::{put_block, take_block, take_text};
@@ -66,7 +72,7 @@ const PREFIX: &str = "kusanagi1:";
 #[derive(Clone, Debug)]
 pub struct Invite {
     /// Who issued it, and the root of every grant on the channel.
-    pub inviter: Handle,
+    pub inviter: VerifyingKey,
     /// The channel secret.
     pub secret: Secret,
     /// The one-time key the grant was issued to.
@@ -111,7 +117,7 @@ impl Invite {
             });
         }
 
-        let inviter = Handle::from_bytes(reader.take_array::<32>().map_err(mangled)?);
+        let inviter = VerifyingKey::from_bytes(reader.take_array::<32>().map_err(mangled)?);
         let secret = Secret::from_bytes(reader.take_array::<32>().map_err(mangled)?);
         let bearer_seed = reader.take_array::<32>().map_err(mangled)?;
         let locator = take_text(&mut reader)?;
@@ -171,7 +177,7 @@ mod tests {
         let bearer_seed = [2_u8; 32];
         let bearer = Signer::from_seed(&bearer_seed);
         Invite {
-            inviter: inviter.handle(),
+            inviter: inviter.verifying_key(),
             secret: Secret::from_bytes([3; 32]),
             bearer_seed,
             locator: "http://box.example:8443".to_owned(),
@@ -191,7 +197,7 @@ mod tests {
         assert!(!text.contains(char::is_whitespace));
 
         let parsed = Invite::parse(&text).unwrap();
-        assert_eq!(parsed.inviter, original.inviter);
+        assert_eq!(parsed.inviter.as_bytes(), original.inviter.as_bytes());
         assert_eq!(parsed.secret.as_bytes(), original.secret.as_bytes());
         assert_eq!(parsed.bearer_seed, original.bearer_seed);
         assert_eq!(parsed.locator, original.locator);

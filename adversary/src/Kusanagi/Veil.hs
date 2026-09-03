@@ -31,6 +31,7 @@
 -- host's layout changed.
 module Kusanagi.Veil
   ( sameSizeAlways
+  , everyObjectIsOneSize
   , neverTheSameBytesTwice
   , noSharedStructure
   , theSameSentenceTwiceSharesNothing
@@ -89,6 +90,39 @@ sameSizeAlways door ground writer reader =
           )
   where
     lengths = [1, 7, 60, 500, 3000]
+
+-- | Everything the host is holding is one size, including what nobody reported.
+--
+-- The properties above judge the drops a sender named, which keeps a greeting or
+-- any other protocol traffic out of the sample so that it cannot dilute them.
+-- This one takes the opposite side deliberately: a host does not know which
+-- objects were announced, so what it weighs is the whole store. An introduction
+-- that is shorter than a message — or a build that grows one without growing the
+-- other — marks the first object of every conversation, and the first object of
+-- a conversation is the one that says a conversation began.
+everyObjectIsOneSize :: Door -> Ground -> FilePath -> FilePath -> IO (Either String ())
+everyObjectIsOneSize door ground writer reader = do
+  opened <- open door ground writer reader
+  case opened of
+    Left reason -> pure (Left reason)
+    Right () -> do
+      _ <- say door writer (Text.replicate 300 "x")
+      _ <- say door reader "a short answer"
+      held <- stored ground
+      let bodies = map snd held
+      pure $ case (length bodies, nub (sort (map ByteString.length bodies))) of
+        (0, _) -> Left "the host is holding nothing after a conversation"
+        (_, [_]) ->
+          case [reason | (left, right) <- pairs bodies, Just reason <- [apart left right]] of
+            [] -> Right ()
+            reasons -> Left (unlines reasons)
+        (_, sizes) ->
+          Left
+            ( "the host is holding objects of sizes "
+                <> show sizes
+                <> "; one of them is the introduction, and a size that stands out "
+                <> "marks where every conversation begins"
+            )
 
 -- | No two drops are the same bytes.
 --

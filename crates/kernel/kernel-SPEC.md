@@ -13,8 +13,8 @@ kernel 要独立完成、独立验收的七个最小单元：
 | U1 文本编码 | `Hex` / `unhex`，全网唯一的字节-文本规则 | 逐字节往返；大写、奇数长度各得具名错误 |
 | U2 有界读取 | `Reader` | 越界读取返回 `Incomplete` 而不是 panic；失败的读取不消耗游标 |
 | U3 定长标识符 | `Digest<N>` 与 `identifier!` | 渲染、解析、比较、哈希一套实现供全部标识符类型复用 |
-| U4 身份 | `Handle` / `Signer` / `Signature` | 种子决定身份；签名只在自己的 handle 下验证通过 |
-| U5 段 | `Segment` 及其规范字节（含签名） | 同一段编码两次字节相同；解码即验签 |
+| U4 身份 | `Handle` / `VerifyingKey` / `Signer` / `Signature` | 种子决定身份；`Handle` 是公钥的 BLAKE3，不是公钥；签名只在自己的 `VerifyingKey` 下验证通过 |
+| U5 段 | `Segment` 及其规范字节（含签名） | 同一段编码两次字节相同；解码即验签，验签用的公钥由调用方交来 |
 | U6 段标识 | `SegmentId` | 任一字段改变则 id 改变 |
 | U7 两个 seam | `Waypoint` / `Clock`（含 `FixedClock`） | 见 `waypoint-SPEC.md`；`FixedClock` 是 `Clock` 的第二实现 |
 
@@ -28,15 +28,18 @@ kernel **不**负责：链的规则（`chain`）、地址派生（`seal`）、�
 4. `from_canonical_bytes(to_canonical_bytes(s)) == s`。
 5. 截断、超长、尾随字节、payload 长度撒谎、未知 tag、genesis 带高度——六种畸形输入各得一个具名错误，均不 panic。
 6. **规范字节逐位翻转，无一能解码成功**（`every_flipped_payload_byte_breaks_the_signature`）。
-7. 把段的作者字段换成另一个 handle，解码得 `NotAuthentic`（`a_segment_cannot_be_re_authored`）。
+7. 把段的作者字段换成另一个 handle，解码得 `NotTheAuthor`（`a_segment_cannot_be_re_authored`）。
 8. `Signer` 的 `Debug` 不打印种子。
+9. **`Handle` 里没有公钥。** 全网唯一一处从公钥到 handle 的映射是 `VerifyingKey::handle`，且不可逆；`Handle` 上不存在 `verify`。
+10. 用另一个人的公钥解码一个段，得 `NotTheAuthor{expected, found}` 而不是 `NotAuthentic`——「你拿错了钥匙」与「这个签名是假的」是两件事。
 
 ## 3 假设与歧义
 
 | 歧义 | 假设 | 何时失效 |
 |---|---|---|
-| `Handle` 是什么 | Ed25519 验证公钥的 32 字节 | 换签名算法时失效；宽度若变，线路格式随之变 |
-| 非法曲线点能否成为 `Handle` | 能——解析 handle 是文本操作，保持无误；真伪只在 `verify` 那一刻判定 | 永不失效；这样的 handle 什么也验证不了 |
+| `Handle` 是什么 | `BLAKE3("kusanagi.handle.v1" ‖ 公钥)` 的 32 字节 | 永不失效——换签名算法只换公钥的宽度，handle 恒为 32 字节 |
+| 段里带的是名字还是钥匙 | **名字。** 公钥只出现在必须当场验签的地方 | 永不失效；见 §10 步骤 6 |
+| 非法曲线点能否成为 `VerifyingKey` | 能——`from_bytes` 是无误的字节封装，真伪只在 `verify` 那一刻判定 | 永不失效；这样的公钥什么也验证不了 |
 | payload 是否有结构 | 不透明字节，kernel 永不解释 | 永不失效 |
 | 是否需要序列化框架 | 不需要，规范字节由手写编码器产生 | 见 §10 步骤 2 |
 | 时间从哪来 | 由 `Clock` 传入，kernel 自己不读 | 永不失效 |
@@ -68,7 +71,8 @@ kernel **不**负责：链的规则（`chain`）、地址派生（`seal`）、�
 | `SegmentId` | —— | 段的内容地址 |
 | `DropAddr` | Drop | 恰好落一个 Segment 的不透明地址 |
 | `Waypoint` | Waypoint | 能按 key 存取字节的东西 |
-| `Handle` / `Signer` / `Signature` | —— | 公钥 / 私钥 / 签名 |
+| `Handle` | —— | 身份的**名字**：公钥的 BLAKE3，32 字节，与签名算法无关 |
+| `VerifyingKey` / `Signer` / `Signature` | —— | 公钥 / 私钥 / 签名 |
 | `Instant` / `Clock` | —— | 时刻 / 时刻的来源 |
 
 ## 7 模块边界
@@ -77,8 +81,9 @@ kernel **不**负责：链的规则（`chain`）、地址派生（`seal`）、�
 lib.rs        仅模块索引与 crate 级文档
 wire.rs       Hex / unhex / Reader / Incomplete —— 字节与文本的唯一权威
 digest.rs     Digest<N> 与 identifier! 宏
-identity.rs   Handle / Signer / Signature / NotAuthentic
-segment.rs    Segment / SegmentId / ChainHead / Link / 规范字节
+identity.rs   Handle / VerifyingKey / Signer / Signature / NotAuthentic
+segment.rs    Segment / SegmentId / 规范字节
+payload.rs    Payload 与三个尺寸常量：一个段能装多少
 address.rs    DropAddr（只声明，不派生）
 clock.rs      Instant / Clock / FixedClock
 waypoint.rs   Waypoint trait、PutOutcome、WaypointError
@@ -86,7 +91,9 @@ waypoint.rs   Waypoint trait、PutOutcome、WaypointError
 
 kernel 无内部依赖；外部依赖只有 `blake3`、`ed25519-dalek`、`thiserror`。
 
-**`identity.rs` 三型同居一文件**是因为它们互相依赖：`Signer::handle()` 产出 `Handle`，`Handle::verify` 消费 `Signature`。拆开只会在文件之间制造一个环。
+**`identity.rs` 四型同居一文件**是因为它们互相依赖：`Signer::verifying_key()` 产出 `VerifyingKey`，`VerifyingKey::handle()` 产出 `Handle`，`VerifyingKey::verify` 消费 `Signature`。拆开只会在文件之间制造一个环。
+
+**`payload.rs` 从 `segment.rs` 分出来**是因为 `segment.rs` 撞上了 400 行的单文件上限，而「一个段能装多少」本身是个完整的概念：`MAX_SEGMENT` 由 `seal::veil` 的信封定死，`MAX_PAYLOAD` 由它减出来，`Payload` 是把这条上限确立一次的那个类型。上限不上调，文件就得拆。
 
 ## 8 接口先行
 
@@ -95,8 +102,9 @@ pub struct Hex<'a>(pub &'a [u8]);                     // Display 即渲染，不
 pub fn unhex(text: &str) -> Result<Vec<u8>, HexError>;
 pub struct Reader<'a> { /* 私有 */ }                  // take / take_array / take_byte / take_u32 / take_u64
 
-pub struct Handle(Digest<32>);                        // verify(&self, msg, &Signature) -> Result<(), NotAuthentic>
-pub struct Signer(SigningKey);                        // from_seed / seed / handle / sign；无 Clone
+pub struct Handle(Digest<32>);                        // 只是名字：没有 verify
+pub struct VerifyingKey([u8; 32]);                    // handle(&self) -> Handle；verify(&self, msg, &Signature)
+pub struct Signer(SigningKey);                        // from_seed / verifying_key / handle / sign；无 Clone
 pub struct Signature(Digest<64>);
 
 pub enum Link { Genesis, Follows { index: NonZeroU64, previous: SegmentId } }
@@ -105,7 +113,8 @@ pub struct Segment { /* 私有字段 */ }
 impl Segment {
     pub fn genesis(signer: &Signer, payload: Vec<u8>) -> Result<Self, SegmentError>;
     pub fn extend(signer: &Signer, payload: Vec<u8>, head: ChainHead) -> Result<Self, SegmentError>;
-    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, SegmentError>;  // 含验签
+    pub fn from_canonical_bytes(bytes: &[u8], author: &VerifyingKey)
+        -> Result<Self, SegmentError>;                // 含验签
 }
 
 pub struct Instant(u64);
@@ -119,7 +128,7 @@ pub trait Waypoint {
 }
 ```
 
-**用类型消灭的非法状态**：`Link` 使「index 为 0 却带前驱」与「index 非 0 却无前驱」写不出来；`ChainHead` 无公开构造器，因此「链高与前驱 id 不相干」的配对无法构造；`Segment` 只有两个构造器且都签名，加上解码即验签，**未签名的段不存在**；`PutOutcome` 使「已存在」成为正常结果而非布尔或错误；`Signer` 不实现 `Clone`。
+**用类型消灭的非法状态**：`Link` 使「index 为 0 却带前驱」与「index 非 0 却无前驱」写不出来；`ChainHead` 无公开构造器，因此「链高与前驱 id 不相干」的配对无法构造；`Segment` 只有两个构造器且都签名，加上解码即验签，**未签名的段不存在**；`PutOutcome` 使「已存在」成为正常结果而非布尔或错误；`Signer` 不实现 `Clone`。`Handle` 没有 `verify`，因此**「拿一个名字去验签」写不出来**——从前那个签名可以只对着段自己带的那 32 字节验证通过、而调用方从不表态期待谁的写法，现在编译不过。
 
 **为什么 `extend(head)` 而不是 `follows(&previous)`**：后者要求调用方持有整个前驱段，百万段的链就把百万段拖进内存，直接撞上「内存不随工作量增长」。`ChainHead` 只带 40 字节，且因无公开构造器，拿到一个就等于拿到「这个段确实存在过」的证据。安全性没降低，内存从 O(n) 降到 O(1)。
 
@@ -142,7 +151,7 @@ kernel 只提供这条路上的名词与两次转换，不驱动流程。
 tag          1   0 = Genesis, 1 = Follows
 index        8   大端；tag = 0 时恒为 0
 previous    32   仅 tag = 1
-author      32
+author      32   作者的 handle——名字，不是公钥
 payload_len  4   大端
 payload      payload_len
 signature   64   作者对以上全部（前缀域分隔后）的签名
@@ -153,6 +162,14 @@ signature   64   作者对以上全部（前缀域分隔后）的签名
 **步骤 4：两个域分隔前缀。** `kusanagi.segment.v2` 用于 id，`kusanagi.segment.v2.sign` 用于签名。分开是为了让「一个段的标识符」永远不可能被误当成「作者签署过的东西」，两个方向都不行。
 
 **步骤 5：`Payload` 缓存长度。** `len` 与 `bytes.len()` 是同一事实，在构造时确立一次且此后不可变，这让 `to_canonical_bytes` 保持全函数——否则段的身份在每个调用点都成了一个可失败的问题。
+
+**步骤 6：段里带名字，公钥由调用方交来。** `author` 字段是 handle，恒为 32 字节；`from_canonical_bytes` 多收一个 `&VerifyingKey`，先核对 `key.handle() == author`，再验签。三个后果，都是要的：
+
+1. **线路格式与签名算法脱钩。** 换成 ML-DSA-44 时公钥从 32 字节变成 1 312 字节，而段的布局、地址派生与 cairn 文件名一个字节都不动。Trail 落地后的 `v3` 追随段根本不带签名，届时它若还背着一份公钥，就是每条消息白付 1 280 字节。
+2. **解码方必须说出它期待谁。** 从前解码只证明「有人签了这串字节」，期待谁是调用方各自记得去比的一步；现在这一步在解码器里，忘不掉。
+3. **一个段只对已经认识作者的人自证。** 陌生人拿到密文也没有公钥可验——这与 Trail 要达到的可否认性同向，而不是相反。
+
+公钥从哪来，是 kernel 之外的事：`grant` 的每一步自带签发者的公钥（一份凭证必须能说服陌生人），`site` 的 channel 记录存着对端的公钥（一条流只需说服认识的那一个人）。
 
 ## 11 边界枚举
 
@@ -166,7 +183,8 @@ signature   64   作者对以上全部（前缀域分隔后）的签名
 | 完整段之后多 1 字节 | `TrailingBytes { count: 1 }` |
 | payload 超过 `MAX_PAYLOAD` | 构造时 `PayloadTooLarge` |
 | 前驱高度为 `u64::MAX` | `ChainExhausted` |
-| 任意一位被翻转 | 解码失败（`Truncated`/`UnknownTag`/`NotAuthentic` 之一） |
+| 任意一位被翻转 | 解码失败（`Truncated`/`UnknownTag`/`NotTheAuthor`/`NotAuthentic` 之一） |
+| 用别人的公钥解码一个完好的段 | `NotTheAuthor { expected, found }`，且不做验签 |
 | `Digest::from_str` 收到大写 | `Hex(Charset)`——**不做大小写归一化** |
 
 并发：全部为值语义、无内部可变性。
@@ -178,8 +196,8 @@ signature   64   作者对以上全部（前缀域分隔后）的签名
 | `HexError` | `unhex` | `hex.odd_length` / `hex.charset` |
 | `Incomplete` | `Reader` | 由调用方包装 |
 | `DigestParseError` | `Digest::from_str` | `digest.length` / `digest.width` / 转发 `hex.*` |
-| `NotAuthentic` | `Handle::verify` | `identity.not_authentic` |
-| `SegmentError` | 构造与解码 | `segment.*`（九个） |
+| `NotAuthentic` | `VerifyingKey::verify` | `identity.not_authentic` |
+| `SegmentError` | 构造与解码 | `segment.*`（十个） |
 | `WaypointError` | 适配器实现 | `waypoint.io` / `waypoint.overwrite_not_refused` / `waypoint.unusable_address` |
 
 kernel 内部不做恢复——一切失败都是调用方的输入问题，一律 `Result` 上抛。恢复命令由 CLI 层附加，因为只有那一层知道用户敲了什么。
@@ -198,7 +216,8 @@ kernel 内部不做恢复——一切失败都是调用方的输入问题，一�
 
 | 硬编码 | 意图 | 后续影响 |
 |---|---|---|
-| `b"kusanagi.segment.v2"` | 段 id 的域分隔前缀 | 布局变更须同步升版，否则两种格式的 id 相撞 |
+| `b"kusanagi.handle.v1"` | handle 派生的域分隔前缀。哈希而非 `derive_key`：handle 是公开标识符，不是密钥材料 | 改它则全网身份、地址与 cairn 文件名一起换代 |
+| `b"kusanagi.segment.v2"` | 段 id 的域分隔前缀。**作者字段从公钥改成 handle 没有升版**：域分隔前缀区分的是*布局*，而布局一个字节没动；且旧字节要被当成新段读通，需要一个 BLAKE3 原像。`v3` 留给 Trail | 布局变更须同步升版，否则两种格式的 id 相撞 |
 | `b"kusanagi.segment.v2.sign"` | 签名域 | 同上 |
 | `MAX_SEGMENT = 4_076` | 一个段的规范字节最长多长。**这才是被选定的那个数**：`kusanagi_seal::veil` 把每个密封 drop 固定在 4 096 字节，减去 16 字节认证 tag 与 4 字节长度前缀，剩下的就是它 | 两边一旦错开，`veil.rs` 里的 `const _: () = assert!(…)` 使整个 workspace 编译不过 |
 | `MAX_PAYLOAD = 3_935` | 单段载荷上限，**是减出来的不是选出来的**：`MAX_SEGMENT` 减去 141 字节固定开销。更大的负载属于尚不存在的分块机制 | 超限一律拒绝而非静默切分 |
@@ -211,7 +230,7 @@ kernel 内部不做恢复——一切失败都是调用方的输入问题，一�
 
 ## 16 测试与约束
 
-34 个单元测试：`wire` 5、`digest` 5、`identity` 7、`segment` 12、`clock` 3、`address` 1、`waypoint`（由适配器的 conformance 覆盖）。其中两个是承重的：逐位翻转规范字节无一能解码，以及换作者即失去真实性。
+单元测试：`wire` 5、`digest` 5、`identity` 9、`segment` 12、`clock` 3、`address` 1、`waypoint`（由适配器的 conformance 覆盖）。其中三个是承重的：逐位翻转规范字节无一能解码，换作者即失去真实性，以及 handle 里取不出公钥。
 
 约束：非测试代码零 panic 构造；`missing_docs` 必须清零；测试模块以 `#[allow(..., reason = "test code")]` 局部放开。
 

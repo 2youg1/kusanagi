@@ -15,7 +15,7 @@
 //! tag          1 byte   0 = Genesis, 1 = Follows
 //! index        8 bytes  big endian; always 0 when tag = 0
 //! previous    32 bytes  present only when tag = 1
-//! author      32 bytes  the author's handle
+//! author      32 bytes  the author's handle — a name, not a key
 //! payload_len  4 bytes  big endian
 //! payload      payload_len bytes
 //! signature   64 bytes  by the author, over everything above
@@ -25,12 +25,21 @@
 //! built by signing a body or by decoding one whose signature checks out, so
 //! holding a segment is already proof that its author wrote it. There is no
 //! "unverified segment" state for a later caller to forget about.
+//!
+//! **The author field is a name, so decoding takes the key separately.** Nothing
+//! here widens when the signature scheme does: a handle is 32 bytes under any
+//! scheme, and the segment a `Trail` will one day carry has no signature in it
+//! at all, so a key riding along in every segment would be paid for by every
+//! message and used by none of them. The cost is that
+//! [`Segment::from_canonical_bytes`] must be told whose signature it expects —
+//! which is the check a caller used to have to remember to make afterwards.
 
 use core::num::NonZeroU64;
 
 use crate::identifier;
-use crate::identity::{Handle, NotAuthentic, Signature, Signer};
+use crate::identity::{Handle, NotAuthentic, Signature, Signer, VerifyingKey};
 use crate::link::{ChainHead, Link};
+use crate::payload::Payload;
 use crate::wire::{Incomplete, Reader};
 
 /// Domain separation for segment identity.
@@ -49,75 +58,9 @@ const SIGNING_DOMAIN: &[u8] = b"kusanagi.segment.v2.sign";
 const TAG_GENESIS: u8 = 0;
 const TAG_FOLLOWS: u8 = 1;
 
-/// The fixed part of a segment's canonical bytes, in bytes.
-///
-/// tag 1 + index 8 + previous 32 + author 32 + `payload_len` 4 + signature 64. A
-/// genesis segment is 32 bytes shorter because it carries no predecessor, and
-/// the envelope in `seal` hides that difference along with every other one.
-const OVERHEAD: u32 = 141;
-
-/// The largest canonical byte string a segment can have, in bytes.
-///
-/// This is the number `seal` builds its envelope around, so it is stated here as
-/// a length rather than derived at each use. The two are tied by a compile-time
-/// assertion in `kusanagi_seal::veil`: change one without the other and the
-/// workspace stops building.
-pub const MAX_SEGMENT: usize = 4_076;
-
-/// The largest payload a single segment may carry, in bytes.
-///
-/// **This number is not chosen; it is what is left over.** Every sealed drop is
-/// one fixed size, because a size that varies is a measurement a host can take
-/// without any cryptanalysis at all — and a ladder of sizes is still a
-/// measurement, only a coarser one. Fixing the drop at 4 KiB and subtracting the
-/// authentication tag, the length prefix and [`OVERHEAD`] leaves exactly this
-/// much room for what an author actually wants to say.
-///
-/// A payload larger than this is the job of content-addressed chunking, which
-/// does not exist yet; until it does, a larger payload is refused rather than
-/// silently split.
-pub const MAX_PAYLOAD: u32 = 3_935;
-
-const _: () = assert!(
-    MAX_SEGMENT == 4_076 && OVERHEAD + MAX_PAYLOAD == 4_076,
-    "MAX_SEGMENT and MAX_PAYLOAD disagree about how large a segment can be"
-);
-
 identifier! {
     /// The content address of a segment.
     SegmentId, 32
-}
-
-/// A validated payload.
-///
-/// `len` is the same fact as `bytes.len()`, established once in [`Payload::new`]
-/// and thereafter unchangeable because the struct has no mutator and no public
-/// field. Caching it is what keeps [`Segment::to_canonical_bytes`] total: the
-/// alternative is a fallible encoder, which would make the identity of a segment
-/// a fallible question at every call site.
-#[derive(Clone, PartialEq, Eq, Debug)]
-struct Payload {
-    bytes: Box<[u8]>,
-    len: u32,
-}
-
-impl Payload {
-    fn new(bytes: Vec<u8>) -> Result<Self, SegmentError> {
-        let len = u32::try_from(bytes.len()).map_err(|_| SegmentError::PayloadTooLarge {
-            len: bytes.len(),
-            limit: MAX_PAYLOAD,
-        })?;
-        if len > MAX_PAYLOAD {
-            return Err(SegmentError::PayloadTooLarge {
-                len: bytes.len(),
-                limit: MAX_PAYLOAD,
-            });
-        }
-        Ok(Self {
-            bytes: bytes.into_boxed_slice(),
-            len,
-        })
-    }
 }
 
 /// The only thing that crosses a boundary.
@@ -134,7 +77,7 @@ impl Segment {
     ///
     /// # Errors
     ///
-    /// [`SegmentError::PayloadTooLarge`] when the payload exceeds [`MAX_PAYLOAD`].
+    /// [`SegmentError::PayloadTooLarge`] when the payload exceeds [`MAX_PAYLOAD`](crate::MAX_PAYLOAD).
     pub fn genesis(signer: &Signer, payload: Vec<u8>) -> Result<Self, SegmentError> {
         Self::sign(signer, Link::Genesis, payload)
     }
@@ -146,7 +89,7 @@ impl Segment {
     ///
     /// # Errors
     ///
-    /// [`SegmentError::PayloadTooLarge`] when the payload exceeds [`MAX_PAYLOAD`];
+    /// [`SegmentError::PayloadTooLarge`] when the payload exceeds [`MAX_PAYLOAD`](crate::MAX_PAYLOAD);
     /// [`SegmentError::ChainExhausted`] when the predecessor already sits at the
     /// last representable height.
     pub fn extend(
@@ -225,7 +168,7 @@ impl Segment {
     /// The opaque bytes this segment carries.
     #[must_use]
     pub const fn payload(&self) -> &[u8] {
-        &self.payload.bytes
+        self.payload.bytes()
     }
 
     /// Encodes this segment into its one canonical byte string.
@@ -243,12 +186,18 @@ impl Segment {
     /// this segment encodes to produce a different signed message, and are
     /// therefore refused.
     ///
+    /// `author` is whose signature the caller expects, and a segment naming
+    /// anybody else is refused before the signature is looked at. A caller that
+    /// has no expectation cannot call this at all, which is the difference
+    /// between "somebody signed these bytes" and "the peer I am reading signed
+    /// these bytes".
+    ///
     /// # Errors
     ///
     /// Every malformed input has its own variant of [`SegmentError`]; nothing here
     /// panics, and trailing bytes are refused so that one segment keeps exactly
     /// one spelling.
-    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, SegmentError> {
+    pub fn from_canonical_bytes(bytes: &[u8], author: &VerifyingKey) -> Result<Self, SegmentError> {
         let mut reader = Reader::new(bytes);
         let tag = reader.take_byte()?;
         let height = reader.take_u64()?;
@@ -268,7 +217,7 @@ impl Segment {
             other => return Err(SegmentError::UnknownTag { tag: other }),
         };
 
-        let author = Handle::from_bytes(reader.take_array::<32>()?);
+        let named = Handle::from_bytes(reader.take_array::<32>()?);
         let declared = reader.take_u32()?;
         let wanted = usize::try_from(declared)
             .map_err(|_| SegmentError::PayloadUnrepresentable { len: declared })?;
@@ -281,10 +230,21 @@ impl Segment {
             });
         }
 
-        author.verify(&signed_bytes(&body(link, &author, &payload)), &signature)?;
+        // The name first: a segment by somebody else is a different fact from a
+        // forgery, and reporting the forgery would point a reader at the wrong
+        // problem — usually a host serving a drop from a stream they did not ask
+        // for.
+        let expected = author.handle();
+        if named != expected {
+            return Err(SegmentError::NotTheAuthor {
+                expected,
+                found: named,
+            });
+        }
+        author.verify(&signed_bytes(&body(link, &named, &payload)), &signature)?;
         Ok(Self {
             link,
-            author,
+            author: named,
             payload,
             signature,
         })
@@ -306,8 +266,8 @@ fn body(link: Link, author: &Handle, payload: &Payload) -> Vec<u8> {
         }
     }
     out.extend_from_slice(author.as_bytes());
-    out.extend_from_slice(&payload.len.to_be_bytes());
-    out.extend_from_slice(&payload.bytes);
+    out.extend_from_slice(&payload.declared_len());
+    out.extend_from_slice(payload.bytes());
     out
 }
 
@@ -347,7 +307,7 @@ pub enum SegmentError {
     /// A following segment declared height zero.
     #[error("a following segment sits above height 0")]
     FollowsIndexZero,
-    /// The payload exceeds [`MAX_PAYLOAD`].
+    /// The payload exceeds [`MAX_PAYLOAD`](crate::MAX_PAYLOAD).
     #[error("payload of {len} byte(s) exceeds the {limit}-byte limit")]
     PayloadTooLarge {
         /// The payload length that was offered.
@@ -360,6 +320,14 @@ pub enum SegmentError {
     PayloadUnrepresentable {
         /// The declared length.
         len: u32,
+    },
+    /// The segment names an author other than the one the caller expected.
+    #[error("this segment was written by {found}, and {expected} was expected")]
+    NotTheAuthor {
+        /// Whose key the caller offered.
+        expected: Handle,
+        /// Whose name the segment carries.
+        found: Handle,
     },
     /// The signature does not cover these bytes under this author.
     #[error("this segment is not signed by the handle it names")]
@@ -381,6 +349,7 @@ impl SegmentError {
             Self::FollowsIndexZero => "segment.follows_index",
             Self::PayloadTooLarge { .. } => "segment.payload_too_large",
             Self::PayloadUnrepresentable { .. } => "segment.payload_unrepresentable",
+            Self::NotTheAuthor { .. } => "segment.not_the_author",
             Self::NotAuthentic(_) => "segment.not_authentic",
             Self::ChainExhausted => "segment.exhausted",
         }
