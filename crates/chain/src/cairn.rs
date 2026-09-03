@@ -20,7 +20,7 @@
 //!
 //! [`Verifier`]: crate::Verifier
 
-use kusanagi_kernel::{ChainHead, Handle, SegmentId};
+use kusanagi_kernel::{ChainHead, Commitment, Handle, SegmentId};
 
 /// The on-disk shape this build writes and reads.
 const VERSION: u8 = 1;
@@ -29,6 +29,7 @@ const VERSION: u8 = 1;
 const HANDLE_WIDTH: usize = 32;
 const ID_WIDTH: usize = 32;
 const INDEX_WIDTH: usize = 8;
+const COMMIT_WIDTH: usize = 32;
 
 /// One author, and the head of everything of theirs that has been verified.
 ///
@@ -53,7 +54,7 @@ pub struct Cairn {
 
 impl Cairn {
     /// The exact width of the encoding, so a caller can reject a file by size.
-    pub const WIDTH: usize = 1 + HANDLE_WIDTH + ID_WIDTH + INDEX_WIDTH;
+    pub const WIDTH: usize = 1 + HANDLE_WIDTH + ID_WIDTH + INDEX_WIDTH + COMMIT_WIDTH;
 
     /// Records a verified position. Crate-private: the only way to obtain a
     /// cairn from outside is [`crate::Verifier::cairn`], which can only produce
@@ -94,6 +95,7 @@ impl Cairn {
         out.extend_from_slice(self.author.as_bytes());
         out.extend_from_slice(self.head.id().as_bytes());
         out.extend_from_slice(&self.head.index().to_be_bytes());
+        out.extend_from_slice(self.head.awaited().as_bytes());
         out
     }
 
@@ -117,15 +119,21 @@ impl Cairn {
             return Err(CairnError::Version { found: *version });
         }
         let (author, rest) = rest.split_at_checked(HANDLE_WIDTH).ok_or_else(malformed)?;
-        let (id, index) = rest.split_at_checked(ID_WIDTH).ok_or_else(malformed)?;
+        let (id, rest) = rest.split_at_checked(ID_WIDTH).ok_or_else(malformed)?;
+        let (index, awaited) = rest.split_at_checked(INDEX_WIDTH).ok_or_else(malformed)?;
 
         let author: [u8; HANDLE_WIDTH] = author.try_into().map_err(|_| malformed())?;
         let id: [u8; ID_WIDTH] = id.try_into().map_err(|_| malformed())?;
         let index: [u8; INDEX_WIDTH] = index.try_into().map_err(|_| malformed())?;
+        let awaited: [u8; COMMIT_WIDTH] = awaited.try_into().map_err(|_| malformed())?;
 
         Ok(Self {
             author: Handle::from_bytes(author),
-            head: ChainHead::recorded(SegmentId::from_bytes(id), u64::from_be_bytes(index)),
+            head: ChainHead::recorded(
+                SegmentId::from_bytes(id),
+                u64::from_be_bytes(index),
+                Commitment::from_bytes(awaited),
+            ),
         })
     }
 }
@@ -168,8 +176,8 @@ impl CairnError {
     reason = "test code"
 )]
 mod tests {
-    use super::Cairn;
-    use kusanagi_kernel::{Segment, Signer};
+    use super::{Cairn, HANDLE_WIDTH, ID_WIDTH, INDEX_WIDTH};
+    use kusanagi_kernel::{Segment, Signer, Trail};
 
     /// A cairn over a chain actually built to `height`, so that the head in it is
     /// a witness rather than an assertion.
@@ -179,9 +187,11 @@ mod tests {
     /// mistake this file has already made once.
     fn cairn_at(height: u8) -> Cairn {
         let signer = Signer::from_seed(&[3_u8; 32]);
-        let mut segment = Segment::genesis(&signer, b"genesis".to_vec()).unwrap();
+        let trail = Trail::from_seed([4_u8; 32]);
+        let mut segment = Segment::genesis(&signer, &trail, b"genesis".to_vec()).unwrap();
         for _ in 0..height {
-            segment = Segment::extend(&signer, b"more".to_vec(), segment.head()).unwrap();
+            segment =
+                Segment::extend(&trail, signer.handle(), b"more".to_vec(), segment.head()).unwrap();
         }
         Cairn::new(signer.handle(), segment.head())
     }
@@ -190,8 +200,10 @@ mod tests {
     /// be built to in a test.
     fn cairn_claiming(height: u64) -> Cairn {
         let mut bytes = cairn_at(0).to_bytes();
-        let start = Cairn::WIDTH - 8;
-        bytes[start..].copy_from_slice(&height.to_be_bytes());
+        // The height sits after the version, the author and the segment id, and
+        // before the commitment that closes the record.
+        let start = 1 + HANDLE_WIDTH + ID_WIDTH;
+        bytes[start..start + INDEX_WIDTH].copy_from_slice(&height.to_be_bytes());
         Cairn::from_bytes(&bytes).unwrap()
     }
 

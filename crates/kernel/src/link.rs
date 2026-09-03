@@ -6,15 +6,24 @@
 //! Where a segment sits in its chain, and the witness that lets the next one say
 //! so.
 //!
-//! Two illegal states are unspellable here rather than validated: a genesis
-//! segment cannot carry a predecessor, and a following segment cannot sit at
-//! index zero. [`ChainHead`] has no public constructor, so the only way to hold
-//! one is to have held the segment it describes — which is what lets a chain of
-//! a million segments be extended for the price of forty bytes.
+//! Four illegal states are unspellable here rather than validated: a genesis
+//! segment cannot carry a predecessor, a following segment cannot sit at index
+//! zero, **a genesis segment cannot carry a reveal, and a following segment
+//! cannot carry a signature.** The last two are what the Trail turns on: the
+//! first segment of a chain is the only one anybody signs, and every segment
+//! after it is authenticated by a proof that convinces its reader and nobody
+//! else. Holding the authenticator inside the link is what stops a decoder, a
+//! constructor or a future caller from producing the other two combinations.
+//!
+//! [`ChainHead`] has no public constructor, so the only way to hold one is to
+//! have held the segment it describes — which is what lets a chain of a million
+//! segments be extended for the price of seventy-two bytes.
 
 use core::num::NonZeroU64;
 
+use crate::identity::Signature;
 use crate::segment::SegmentId;
+use crate::trail::{Commitment, Reveal};
 
 /// A witness that a particular segment exists, and where it sits.
 ///
@@ -27,14 +36,15 @@ use crate::segment::SegmentId;
 pub struct ChainHead {
     id: SegmentId,
     index: u64,
+    awaited: Commitment,
 }
 
 impl ChainHead {
     /// Mints a witness. Crate-private on purpose: outside this crate the only
     /// way to obtain one is [`crate::Segment::head`], which is what makes a
-    /// head a witness rather than a pair of numbers anybody can assert.
-    pub(crate) const fn new(id: SegmentId, index: u64) -> Self {
-        Self { id, index }
+    /// head a witness rather than three fields anybody can assert.
+    pub(crate) const fn new(id: SegmentId, index: u64, awaited: Commitment) -> Self {
+        Self { id, index, awaited }
     }
 
     /// Rebuilds a head from a note this endpoint wrote about a segment it held.
@@ -58,8 +68,8 @@ impl ChainHead {
     /// and every channel secret, so it adds no attacker who was not already able
     /// to read the traffic outright.
     #[must_use]
-    pub const fn recorded(id: SegmentId, index: u64) -> Self {
-        Self { id, index }
+    pub const fn recorded(id: SegmentId, index: u64, awaited: Commitment) -> Self {
+        Self { id, index, awaited }
     }
 
     /// The segment this head witnesses.
@@ -73,22 +83,44 @@ impl ChainHead {
     pub const fn index(&self) -> u64 {
         self.index
     }
+
+    /// The commitment that segment made about the one above it.
+    ///
+    /// Carried here rather than looked up because it is the only thing a reader
+    /// needs in order to accept the next segment, and a reader that resumes from
+    /// a cairn has nothing else left of the segment below.
+    #[must_use]
+    pub const fn awaited(&self) -> Commitment {
+        self.awaited
+    }
 }
 
-/// Where a segment sits in its chain.
+/// Where a segment sits in its chain, and what authenticates it there.
 ///
-/// Two illegal states are unspellable here rather than validated: a genesis
-/// segment cannot carry a predecessor, and a following segment cannot sit at
-/// index zero.
+/// The two shapes carry different authenticators because they answer different
+/// questions. A genesis segment has nothing beneath it to commit to it, so it is
+/// signed — which is also what stops a peer who holds the channel secret from
+/// racing to height zero with a commitment of their own. Every segment above it
+/// shows the proof the segment below promised, and a proof is worth exactly one
+/// height to exactly one reader.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Link {
     /// The first segment of a chain.
-    Genesis,
+    Genesis {
+        /// What this segment promises about height one.
+        commit: Commitment,
+        /// The author's signature over the body.
+        signature: Signature,
+    },
     /// Every later segment.
     Follows {
         /// This segment's height, which is always at least one.
         index: NonZeroU64,
         /// The identity of the segment directly beneath it.
         previous: SegmentId,
+        /// The proof the segment beneath it committed to.
+        reveal: Reveal,
+        /// What this segment promises about the height above it.
+        commit: Commitment,
     },
 }

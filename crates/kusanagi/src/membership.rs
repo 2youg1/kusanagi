@@ -157,7 +157,11 @@ pub(crate) fn join(
 
     let place = open(&invitation.locator, now)?;
     let introduction = invitation.secret.stream(&bearer.handle());
-    let announcement = Segment::genesis(&bearer, greeting(&me.verifying_key(), &mine))?;
+    let announcement = Segment::genesis(
+        &bearer,
+        &introduction.trail(&bearer),
+        greeting(&me.verifying_key(), &mine),
+    )?;
     let (address, key) = derive(&introduction, INTRODUCTION);
     let sealed = seal(&key, &announcement.to_canonical_bytes())?;
 

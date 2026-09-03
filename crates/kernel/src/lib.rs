@@ -23,6 +23,7 @@ mod identity;
 mod link;
 mod payload;
 mod segment;
+mod trail;
 mod waypoint;
 mod wire;
 
@@ -33,5 +34,6 @@ pub use identity::{Handle, NotAuthentic, Signature, Signer, VerifyingKey};
 pub use link::{ChainHead, Link};
 pub use payload::{MAX_PAYLOAD, MAX_SEGMENT};
 pub use segment::{Segment, SegmentError, SegmentId};
+pub use trail::{Commitment, Reveal, Trail};
 pub use waypoint::{PutOutcome, Waypoint, WaypointError};
 pub use wire::{Hex, HexError, Incomplete, Reader, unhex};

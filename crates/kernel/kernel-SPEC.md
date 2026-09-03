@@ -82,7 +82,9 @@ lib.rs        仅模块索引与 crate 级文档
 wire.rs       Hex / unhex / Reader / Incomplete —— 字节与文本的唯一权威
 digest.rs     Digest<N> 与 identifier! 宏
 identity.rs   Handle / VerifyingKey / Signer / Signature / NotAuthentic
-segment.rs    Segment / SegmentId / 规范字节
+trail.rs      Trail / Reveal / Commitment —— 一条流上的一次性证明
+link.rs       Link / ChainHead —— 段在链上的位置与认证它的东西
+segment/      mod.rs 是类型与规范字节，refusal.rs 是失败的分类
 payload.rs    Payload 与三个尺寸常量：一个段能装多少
 address.rs    DropAddr（只声明，不派生）
 clock.rs      Instant / Clock / FixedClock
@@ -148,14 +150,13 @@ kernel 只提供这条路上的名词与两次转换，不驱动流程。
 **步骤 2：规范字节手写，不用序列化框架。** 哈希与签名必须建立在确定的编码上；serde 的字段序与映射顺序不是逐字节确定的。定长大端布局：
 
 ```
-tag          1   0 = Genesis, 1 = Follows
-index        8   大端；tag = 0 时恒为 0
-previous    32   仅 tag = 1
-author      32   作者的 handle——名字，不是公钥
-payload_len  4   大端
-payload      payload_len
-signature   64   作者对以上全部（前缀域分隔后）的签名
+genesis:  tag 1 + index 8 + author 32 + commit 32 + payload_len 4 + payload + signature 64
+follows:  tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32 + payload_len 4 + payload
 ```
+
+两种形状的固定开销都是 141 字节，因此上面的信封只看见一个长度。
+
+**只有链的第一段被签名，且签名不覆盖 payload。** 签的是 `域 ‖ author ‖ commit ‖ 0`：足以阻止持有通道秘密的对端抢占 0 号高度，不足以给任何人定一句话的罪。0 号以上的每一段由下面那一段承诺的一次性证明认证——`reveal` 哈希后必须等于前一段的 `commit`。伪造它、或抢在作者之前写到某个高度，都需要一个 BLAKE3 原像。
 
 **步骤 3：解码时重建 body 再验签。** 解析出字段后重新编码 body 并对其验签，于是**规范性成为真实性的一部分**：一串能解出这个段、却不是这个段所编码出的字节，其签名消息不同，因而被拒。不需要额外的规范性检查。
 
@@ -217,11 +218,11 @@ kernel 内部不做恢复——一切失败都是调用方的输入问题，一�
 | 硬编码 | 意图 | 后续影响 |
 |---|---|---|
 | `b"kusanagi.handle.v1"` | handle 派生的域分隔前缀。哈希而非 `derive_key`：handle 是公开标识符，不是密钥材料 | 改它则全网身份、地址与 cairn 文件名一起换代 |
-| `b"kusanagi.segment.v2"` | 段 id 的域分隔前缀。**作者字段从公钥改成 handle 没有升版**：域分隔前缀区分的是*布局*，而布局一个字节没动；且旧字节要被当成新段读通，需要一个 BLAKE3 原像。`v3` 留给 Trail | 布局变更须同步升版，否则两种格式的 id 相撞 |
-| `b"kusanagi.segment.v2.sign"` | 签名域 | 同上 |
-| `MAX_SEGMENT = 4_076` | 一个段的规范字节最长多长。**这才是被选定的那个数**：`kusanagi_seal::veil` 把每个密封 drop 固定在 4 096 字节，减去 16 字节认证 tag 与 4 字节长度前缀，剩下的就是它 | 两边一旦错开，`veil.rs` 里的 `const _: () = assert!(…)` 使整个 workspace 编译不过 |
-| `MAX_PAYLOAD = 3_935` | 单段载荷上限，**是减出来的不是选出来的**：`MAX_SEGMENT` 减去 141 字节固定开销。更大的负载属于尚不存在的分块机制 | 超限一律拒绝而非静默切分 |
-| `OVERHEAD = 141` | tag 1 + index 8 + previous 32 + author 32 + `payload_len` 4 + signature 64。genesis 段短 32 字节，这个差别同样被信封盖住 | 布局变了这三个数要一起算 |
+| `b"kusanagi.segment.v3"` | 段 id 的域分隔前缀。**作者字段从公钥改成 handle 没有升版**：域分隔前缀区分的是*布局*，而布局一个字节没动；且旧字节要被当成新段读通，需要一个 BLAKE3 原像。`v3` 留给 Trail | 布局变更须同步升版，否则两种格式的 id 相撞 |
+| `b"kusanagi.segment.v3.sign"` | 签名域 | 同上 |
+| `MAX_SEGMENT = 65_516` | 一个段的规范字节最长多长。**这才是被选定的那个数**：`kusanagi_seal::veil` 把每个密封 drop 固定在 65 536 字节，减去 16 字节认证 tag 与 4 字节长度前缀，剩下的就是它 | 两边一旦错开，`veil.rs` 里的 `const _: () = assert!(…)` 使整个 workspace 编译不过 |
+| `MAX_PAYLOAD = 65_375` | 单段载荷上限，**是减出来的不是选出来的**：`MAX_SEGMENT` 减去 141 字节固定开销。更大的负载属于尚不存在的分块机制 | 超限一律拒绝而非静默切分 |
+| `OVERHEAD = 141` | 两种形状恰好相等：genesis 的 32 字节 commit 与 64 字节签名，正好抵掉 follows 的 32 字节 previous、32 字节 reveal 与 32 字节 commit | 布局变了这三个数要一起算 |
 | `DropAddr` 宽 20 字节 | 160 位，抗生日碰撞，且文本键长 40 字符 | 改宽度则全部既存地址失效 |
 
 ## 15 影响面

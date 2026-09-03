@@ -14,10 +14,10 @@
 //! So every sealed drop is exactly [`DROP`] bytes:
 //!
 //! ```text
-//! length      4 bytes   big endian, how much of what follows is the segment
-//! segment     N bytes   the canonical bytes
-//! pad     4076-N bytes  zero
-//!            +16 bytes  the authentication tag ChaCha20-Poly1305 appends
+//! length       4 bytes    big endian, how much of what follows is the segment
+//! segment      N bytes    the canonical bytes
+//! pad     65516-N bytes   zero
+//!             +16 bytes   the authentication tag ChaCha20-Poly1305 appends
 //! ```
 //!
 //! **One size, not a ladder of buckets.** A ladder names a bucket, and every
@@ -40,7 +40,21 @@ use crate::envelope::OpenFailed;
 /// Not a tunable. A build that changes it cannot exchange drops with a build
 /// that has not, and two populations of different sizes are two populations a
 /// host can tell apart, which is the leak this constant exists to close.
-pub const DROP: usize = 4_096;
+///
+/// **64 KiB is derived rather than picked.** The largest artefact this protocol
+/// can produce is an introduction under a post-quantum signature scheme: an
+/// eight-hop ML-DSA-44 grant is 30 449 bytes and the newcomer's key another
+/// 1 312, and a genesis segment carrying a 2 420-byte signature spends 2 497 on
+/// its fixed fields. Everything that can ever have to travel therefore fits in
+/// one drop, so no artefact of this design needs chunking in order to exist.
+///
+/// The cost is paid deliberately: one drop is one message on the wire whatever
+/// the message is, so a conversation that would have been many small objects is
+/// a few large ones. Fewer objects is fewer things for a host to count (property
+/// 3) and fewer requests for anybody on the path to time (property 4b), and the
+/// bandwidth it spends is bandwidth the ruling in `ARCHITECTURE.md` §8 says to
+/// spend.
+pub const DROP: usize = 65_536;
 
 /// What ChaCha20-Poly1305 appends to every ciphertext.
 const TAG: usize = 16;
@@ -174,8 +188,9 @@ mod tests {
 
     #[test]
     fn the_envelope_is_a_whole_number_of_pages() {
-        // A filesystem, an object store and a TLS record all deal in this size,
-        // so a drop is one of something everywhere it is handled.
+        // A filesystem page, an object store part and a TLS record all divide
+        // into this, so a drop is a whole number of something everywhere it is
+        // handled.
         assert_eq!(DROP % 4_096, 0);
     }
 }

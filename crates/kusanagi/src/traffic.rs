@@ -65,9 +65,14 @@ pub(crate) fn send(
     // The height still comes from the waypoint rather than from a local count:
     // the cairn moves the walk's starting point and proves the join to it, so a
     // lost or absent cairn changes what this costs and never what it decides.
+    // The trail is derived here and dropped at the end of this command. It is
+    // never written down: an author recomputes it from a deterministic signature
+    // over their own lane, so a killed process loses nothing and a seized disk
+    // holds no proof of anything.
+    let trail = stream.trail(&me);
     let segment = match mine.head() {
-        None => Segment::genesis(&me, payload.to_vec()),
-        Some(head) => Segment::extend(&me, payload.to_vec(), head),
+        None => Segment::genesis(&me, &trail, payload.to_vec()),
+        Some(head) => Segment::extend(&trail, me.handle(), payload.to_vec(), head),
     }?;
 
     let (address, key) = derive(&stream, segment.index());

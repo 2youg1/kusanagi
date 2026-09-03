@@ -29,7 +29,7 @@
 //! hash primitive in this workspace; adding HKDF would add a second construction
 //! to audit and buy nothing.
 
-use kusanagi_kernel::{DropAddr, Handle};
+use kusanagi_kernel::{DropAddr, Handle, Signer, Trail};
 use zeroize::{Zeroize as _, ZeroizeOnDrop};
 
 use crate::envelope::Key;
@@ -44,6 +44,16 @@ use crate::envelope::Key;
 const STREAM_CONTEXT: &str = "kusanagi 2026-01-01 stream: one author's lane in a channel";
 const ADDRESS_CONTEXT: &str = "kusanagi 2026-01-01 drop address";
 const KEY_CONTEXT: &str = "kusanagi 2026-01-01 drop key and nonce";
+const TRAIL_CONTEXT: &str = "kusanagi 2026-01-01 trail seed for one lane";
+
+/// What an author signs once to obtain the seed of their trail on a lane.
+///
+/// Signed rather than derived from the channel secret alone, because the peer
+/// holds that secret: a trail either end could compute would let either end
+/// write the other's stream. Ed25519 signing is deterministic, so the seed is
+/// the same on every run of every process — which is what keeps law 1 true,
+/// since nothing about a trail is ever written down.
+const TRAIL_DOMAIN: &[u8] = b"kusanagi.trail.seed.v1";
 
 /// The root secret two endpoints share.
 ///
@@ -104,6 +114,32 @@ impl core::fmt::Debug for Secret {
 /// Not comparable and self-erasing, for the reasons [`Secret`] is not and is.
 #[derive(Clone, ZeroizeOnDrop)]
 pub struct Stream([u8; 32]);
+
+impl Stream {
+    /// The trail this author uses on this lane.
+    ///
+    /// Two properties, and the design needs both. **Only the author can compute
+    /// it**, because it starts from a signature only they can make — the channel
+    /// secret is shared, so a seed derived from that alone would let a peer write
+    /// segments in the author's name. And **it is the same on every run**,
+    /// because Ed25519 signs deterministically, so an endpoint that was killed
+    /// mid-conversation recomputes the identical trail rather than losing the
+    /// ability to continue its own stream.
+    #[must_use]
+    pub fn trail(&self, author: &Signer) -> Trail {
+        let mut message = TRAIL_DOMAIN.to_vec();
+        message.extend_from_slice(&self.0);
+        let signature = author.sign(&message);
+        message.zeroize();
+
+        let mut hasher = blake3::Hasher::new_derive_key(TRAIL_CONTEXT);
+        hasher.update(signature.as_bytes());
+        let mut seed = *hasher.finalize().as_bytes();
+        let trail = Trail::from_seed(seed);
+        seed.zeroize();
+        trail
+    }
+}
 
 impl core::fmt::Debug for Stream {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -201,6 +237,37 @@ mod tests {
         let stream = secret().stream(&alice().handle());
         let addresses: BTreeSet<DropAddr> = (0..1_000).map(|i| derive(&stream, i).0).collect();
         assert_eq!(addresses.len(), 1_000, "two heights shared an address");
+    }
+
+    /// A trail is the author's alone, and the same on every run.
+    ///
+    /// The second half is what makes law 1 survive: nothing about a trail is
+    /// written to disk, so a process that is killed must be able to recompute it
+    /// exactly, or the endpoint would lose the ability to extend its own stream.
+    #[test]
+    fn a_trail_belongs_to_one_author_on_one_lane_and_survives_a_kill() {
+        let lane = secret().stream(&alice().handle());
+        assert_eq!(
+            lane.trail(&alice()).reveal(3),
+            lane.trail(&alice()).reveal(3)
+        );
+        assert_ne!(lane.trail(&alice()).reveal(3), lane.trail(&bob()).reveal(3));
+
+        // The peer holds the channel secret and can derive this very lane, so a
+        // seed that came from the secret alone would hand them the author's
+        // stream. It does not: the signature is the author's.
+        let same_lane_other_author = secret().stream(&alice().handle());
+        assert_ne!(
+            lane.trail(&alice()).reveal(3),
+            same_lane_other_author.trail(&bob()).reveal(3)
+        );
+
+        // And a different lane of the same channel is a different trail, so a
+        // reveal published on one lane authenticates nothing on the other.
+        assert_ne!(
+            lane.trail(&alice()).reveal(3),
+            secret().stream(&bob().handle()).trail(&alice()).reveal(3)
+        );
     }
 
     #[test]

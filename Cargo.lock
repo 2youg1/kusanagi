@@ -529,6 +529,7 @@ dependencies = [
  "ed25519-dalek",
  "subtle",
  "thiserror",
+ "zeroize",
 ]
 
 [[package]]

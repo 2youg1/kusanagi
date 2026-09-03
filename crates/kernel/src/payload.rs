@@ -25,24 +25,24 @@ pub(crate) const OVERHEAD: u32 = 141;
 /// a length rather than derived at each use. The two are tied by a compile-time
 /// assertion in `kusanagi_seal::veil`: change one without the other and the
 /// workspace stops building.
-pub const MAX_SEGMENT: usize = 4_076;
+pub const MAX_SEGMENT: usize = 65_516;
 
 /// The largest payload a single segment may carry, in bytes.
 ///
 /// **This number is not chosen; it is what is left over.** Every sealed drop is
 /// one fixed size, because a size that varies is a measurement a host can take
 /// without any cryptanalysis at all — and a ladder of sizes is still a
-/// measurement, only a coarser one. Fixing the drop at 4 KiB and subtracting the
-/// authentication tag, the length prefix and [`OVERHEAD`] leaves exactly this
-/// much room for what an author actually wants to say.
+/// measurement, only a coarser one. Fixing the drop at 64 KiB and subtracting
+/// the authentication tag, the length prefix and [`OVERHEAD`] leaves exactly
+/// this much room for what an author actually wants to say.
 ///
 /// A payload larger than this is the job of content-addressed chunking, which
 /// does not exist yet; until it does, a larger payload is refused rather than
 /// silently split.
-pub const MAX_PAYLOAD: u32 = 3_935;
+pub const MAX_PAYLOAD: u32 = 65_375;
 
 const _: () = assert!(
-    MAX_SEGMENT == 4_076 && OVERHEAD + MAX_PAYLOAD == 4_076,
+    MAX_SEGMENT == 65_516 && OVERHEAD + MAX_PAYLOAD == 65_516,
     "MAX_SEGMENT and MAX_PAYLOAD disagree about how large a segment can be"
 );
 

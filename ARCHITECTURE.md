@@ -96,7 +96,7 @@ become false.
 | 2a | Who talks to whom, in what the host **stores** | computational | **held until the compute is unbounded** | every address is `KDF(secret ‖ author ‖ height)`; no address is ever reused |
 | 2b | Who talks to whom, in what the host is **asked for** | computational | **held for a poll**, leaks on a catch-up | a reader resumes from a cairn, so a poll names one address instead of the stream |
 | 3 | Network size | information-theoretic once built | leaks the number of objects | nothing yet |
-| 4a | Traffic analysis — **how large** | **information-theoretic** | **held** | every sealed drop is exactly 4 096 bytes, whatever it carries, so the observation is a constant |
+| 4a | Traffic analysis — **how large** | **information-theoretic** | **held** | every sealed drop is exactly 65 536 bytes, whatever it carries, so the observation is a constant |
 | 4b | Traffic analysis — **when, and how often** | information-theoretic once built | **leaks** | nothing; cover traffic is §9 and is the largest thing still missing |
 
 Rows 0, 3 and 4b are marked "once built" because the mechanism that closes each
@@ -339,8 +339,19 @@ Reopening one of these requires a reason that did not exist when it was taken.
   Anybody who has read the stream can afterwards fabricate a different one that
   verifies exactly as well, which is what makes a quotation an assertion rather
   than evidence. Both wire shapes carry 141 bytes of overhead, so the envelope
-  above them is unaffected. **§9 carries this row: the shipped format is
-  `kusanagi.segment.v2` and this is not built yet.**
+  above them is unaffected.
+
+  **The genesis signature covers the author and the first commitment, and not
+  the payload.** That omission is the whole mechanism: a signature over what was
+  said is transferable proof of what was said. What is signed is only that this
+  author opened this stream, which is enough to stop a peer racing to height zero
+  and not enough to convict anybody of a sentence. A reader loses nothing,
+  because the bytes arrive inside an envelope sealed under the channel secret at
+  an address derived from it — the only party who can put different words at a
+  height is the peer who already read it, and that is precisely the party who
+  must not be able to prove what the words were.
+  `crates/chain/tests/deniable.rs` forges a whole transcript rather than
+  asserting that one could be forged.
 
 - **The sealed form is the whole segment, not its payload.** A segment carries its
   author in the clear; sealing only the payload would let a host group drops by
@@ -385,8 +396,14 @@ Reopening one of these requires a reason that did not exist when it was taken.
 - **Bell is a waypoint capability, not a protocol requirement.** A host that can
   long-poll needs no Bell and leaks nothing; the cost of the alternative is paid
   only by whoever chose a dumb object store.
-- **Every sealed drop is one size, and the size is not a parameter.** 4 096
+- **Every sealed drop is one size, and the size is not a parameter.** 65 536
   bytes, always, with `MAX_PAYLOAD` derived from what is left rather than chosen.
+  The size itself is derived too: the largest artefact this protocol can produce
+  is an introduction under ML-DSA-44 — an eight-hop grant at 30 449 bytes plus a
+  1 312-byte key, under a genesis segment spending 2 497 on fixed fields — so
+  64 KiB is what makes chunking unnecessary for anything the design can generate.
+  Fewer, larger objects also means fewer things for a host to count and fewer
+  requests for anybody on the path to time.
   A size that varies is a measurement a host takes without any cryptanalysis, and
   a ladder of buckets is the same measurement one step coarser — with boundaries
   that are parameters, and two builds holding different parameters are two
@@ -445,7 +462,6 @@ version of its own.
 
 | Missing | Why it waits |
 |---|---|
-| **Trail** — deniable segments | the largest open item, and the only one whose absence is a live exposure rather than a missing improvement: until it lands, a compromised or coerced peer holds transferable proof of every message you sent them. §8 has the design. What remains is `kusanagi.segment.v3`, a cairn carrying the next commitment, and the two bootstrap paths that deliver a first one |
 | **Cover traffic** — property 4b | the largest gap in §3. An endpoint emits requests only when there is something to say, so the rhythm of a conversation survives everything else here. What closes it is traffic independent of whether anybody is talking — and it has to be traffic whose distribution is the ambient one, because a lone endpoint emitting a fixed beat is more conspicuous than one that says nothing |
 | **Riding a carrier** | the way property 0 closes for a path observer, and the way 4b closes with it. Drops written into a store that already receives opaque high-entropy blobs on a schedule — an encrypted backup repository, a container registry — by invoking the real client rather than imitating it. Nothing here imitates a protocol today, and nothing should start: see §3 on why mimicry loses |
 | **TLS fingerprint** | a `rustls` handshake is identifiable as one (JA3/JA4). Closing it needs handshake mimicry with no clean answer in the Rust ecosystem, and it is second in line behind the carrier, which would make the handshake a real client's |

@@ -5,7 +5,7 @@
 
 //! Deciding whether a sequence of segments is a chain, in constant memory.
 
-use kusanagi_kernel::{ChainHead, Handle, Segment, SegmentId};
+use kusanagi_kernel::{ChainHead, Commitment, Handle, Segment, SegmentId};
 
 use crate::Cairn;
 
@@ -96,6 +96,23 @@ impl Verifier {
                         found: previous,
                     });
                 }
+                // This is where a segment above genesis becomes authentic, and
+                // it is the only place: nothing in the bytes themselves says who
+                // wrote them, so the proof is checked against the promise the
+                // segment below published. Forging one needs a preimage of that
+                // promise; racing to this height before its author needs the
+                // same, because the author has revealed nothing here yet.
+                let shown = segment
+                    .reveal()
+                    .ok_or(ChainError::UnexpectedGenesis)?
+                    .commitment();
+                if shown != seen.head().awaited() {
+                    return Err(ChainError::ProofRefused {
+                        index: segment.index(),
+                        expected: seen.head().awaited(),
+                        found: shown,
+                    });
+                }
             }
         }
 
@@ -171,6 +188,20 @@ pub enum ChainError {
         /// Who wrote the offending segment.
         found: Handle,
     },
+    /// A segment did not show the proof its predecessor committed to.
+    ///
+    /// The one failure that means somebody other than the author wrote a
+    /// well-formed segment. Everything else here is a chain out of order; this
+    /// is a chain being written by the wrong hand.
+    #[error("the segment at height {index} shows a proof this chain never promised")]
+    ProofRefused {
+        /// Where the break was found.
+        index: u64,
+        /// What the segment below promised.
+        expected: Commitment,
+        /// What this segment's proof answers.
+        found: Commitment,
+    },
     /// The chain already sits at the last representable height.
     #[error("this chain cannot be extended any further")]
     Exhausted,
@@ -186,6 +217,7 @@ impl ChainError {
             Self::IndexGap { .. } => "chain.index_gap",
             Self::PreviousMismatch { .. } => "chain.previous_mismatch",
             Self::AuthorChanged { .. } => "chain.author_changed",
+            Self::ProofRefused { .. } => "chain.proof_refused",
             Self::Exhausted => "chain.exhausted",
         }
     }
@@ -202,17 +234,29 @@ impl ChainError {
 )]
 mod tests {
     use super::{ChainError, Verifier, verify};
-    use kusanagi_kernel::{Segment, Signer};
+    use kusanagi_kernel::{Segment, Signer, Trail};
+
+    fn trail() -> Trail {
+        Trail::from_seed([4_u8; 32])
+    }
 
     fn alice() -> Signer {
         Signer::from_seed(&[1_u8; 32])
     }
 
     fn chain_of(length: usize) -> Vec<Segment> {
-        let mut segments = vec![Segment::genesis(&alice(), b"0".to_vec()).unwrap()];
+        let mut segments = vec![Segment::genesis(&alice(), &trail(), b"0".to_vec()).unwrap()];
         for step in 1..length {
             let head = segments.last().unwrap().head();
-            segments.push(Segment::extend(&alice(), step.to_string().into_bytes(), head).unwrap());
+            segments.push(
+                Segment::extend(
+                    &trail(),
+                    alice().handle(),
+                    step.to_string().into_bytes(),
+                    head,
+                )
+                .unwrap(),
+            );
         }
         segments
     }
@@ -243,8 +287,8 @@ mod tests {
 
     #[test]
     fn a_second_genesis_is_refused() {
-        let first = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
-        let second = Segment::genesis(&alice(), b"b".to_vec()).unwrap();
+        let first = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
+        let second = Segment::genesis(&alice(), &trail(), b"b".to_vec()).unwrap();
         assert_eq!(
             verify(&[first, second]).unwrap_err(),
             ChainError::UnexpectedGenesis
@@ -270,9 +314,10 @@ mod tests {
 
     #[test]
     fn a_wrong_predecessor_is_named() {
-        let genesis = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
-        let other = Segment::genesis(&alice(), b"b".to_vec()).unwrap();
-        let forged = Segment::extend(&alice(), b"c".to_vec(), other.head()).unwrap();
+        let genesis = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
+        let other = Segment::genesis(&alice(), &trail(), b"b".to_vec()).unwrap();
+        let forged =
+            Segment::extend(&trail(), alice().handle(), b"c".to_vec(), other.head()).unwrap();
         assert!(matches!(
             verify(&[genesis, forged]).unwrap_err(),
             ChainError::PreviousMismatch { index: 1, .. }
@@ -281,9 +326,10 @@ mod tests {
 
     #[test]
     fn a_changed_author_is_named() {
-        let genesis = Segment::genesis(&alice(), b"a".to_vec()).unwrap();
+        let genesis = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
         let bob = Signer::from_seed(&[2_u8; 32]);
-        let intruder = Segment::extend(&bob, b"b".to_vec(), genesis.head()).unwrap();
+        let intruder =
+            Segment::extend(&trail(), bob.handle(), b"b".to_vec(), genesis.head()).unwrap();
         assert_eq!(
             verify(&[genesis, intruder]).unwrap_err(),
             ChainError::AuthorChanged {
@@ -300,7 +346,7 @@ mod tests {
         verifier.accept(&segments[0]).unwrap();
         let head_before = verifier.head();
 
-        let stranger = Segment::genesis(&alice(), b"stranger".to_vec()).unwrap();
+        let stranger = Segment::genesis(&alice(), &trail(), b"stranger".to_vec()).unwrap();
         assert!(verifier.accept(&stranger).is_err());
         assert_eq!(verifier.head(), head_before);
 
