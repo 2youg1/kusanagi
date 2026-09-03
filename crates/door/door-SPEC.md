@@ -51,7 +51,8 @@ report.rs     Outcome —— 一个值，两种渲染
 rows.rs       Entry / Carried / Summary / Measured —— 答案里的每一行
 prose.rs      同一个值，说给人听
 fence.rs      Fence —— kusanagi 说话到哪里为止，对端从哪里开始
-complaint.rs  Complaint —— 失败 + 稳定码 + 恢复命令
+complaint.rs  Complaint —— 失败是什么形状，叫什么码
+recovery.rs   下一步做什么 —— 下层填不了的那个字段
 ```
 
 `report.rs` 与 `rows.rs` 分开的理由是**它们因不同原因而变**：多一个动词就多一个 `Outcome`，

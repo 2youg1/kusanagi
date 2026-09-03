@@ -18,6 +18,7 @@
 mod complaint;
 mod fence;
 mod prose;
+mod recovery;
 mod report;
 mod rows;
 
