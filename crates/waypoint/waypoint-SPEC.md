@@ -34,7 +34,7 @@
 | 每对象 TTL | S3 没有，只有桶级生命周期规则 | 报告为 `NotOffered`，不是失败 |
 | 盒子是否需要认证 | 不需要 | 见 `docs/box-protocol.md`：宿主知道调用者是谁，就知道了设计承诺它不知道的东西 |
 
-**阶段 0 遗留的假设行已删除。** 旧版本此处写着「MinIO 的行为待 `doctor` 实测替换」；现在 `doctor` 已存在，判断由它当场做出，本文不再复述任何一家宿主的行为。
+**本文不复述任何一家宿主的行为。** 判断由 `doctor` 当场实测做出。
 
 ## 4 现状分析
 
@@ -175,7 +175,7 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 |---|---|
 | `MAX_HEAD = 8 KiB`、`MAX_BODY = 1 MiB`、`IDLE = 30s` | 让恶意调用者无法用一个请求耗尽宿主 |
 | `SHARD_WIDTH = 2` | 目录分片；地址本已均匀，直接取前缀比再哈希一次更省 |
-| `TTL_HEADER = "Cache-Control"`，值为 `max-age=<秒>` | **只用普通流量已经在带的头。** 原来是 `X-Kusanagi-Ttl`，它把本项目的名字明文放在每一个请求里，给宕主、给沿途每一个代理、给它们的每一份日志——包括能看到 TLS 内部的那些。见 `docs/box-protocol.md` |
+| `TTL_HEADER = "Cache-Control"`，值为 `max-age=<秒>` | **只用普通流量已经在带的头。** 一个以本项目命名的头会把它明文放进每一个请求，交给宿主、沿途每一个代理与它们的每一份日志——包括能看到 TLS 内部的那些。见 `docs/box-protocol.md` |
 | 不发 `User-Agent` | 默认会把 HTTP 库的名字与版本送出去，而版本号会把「这可能是谁」的集合缩小。改发浏览器的 UA 被否决：一个浏览器头配上一个显然不是浏览器的 TLS 握手，比沉默更醒目。钉在 `tests/unannounced.rs` |
 
 ## 15 影响面

@@ -44,6 +44,9 @@ chacha20poly1305 = { version = "0.10", default-features = false, features = [
 # Taking it directly adds no crate to audit and extends the same guarantee to the
 # channel secret, the stream and the per-drop key.
 zeroize = { version = "1", features = ["derive"] }
+# Also already in the tree, beneath `curve25519-dalek`. Constant-time equality
+# for every fixed-width identifier, in one place.
+subtle = { version = "2", default-features = false }
 getrandom = "0.3"
 hmac = "0.12"
 sha2 = "0.10"

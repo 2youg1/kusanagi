@@ -36,6 +36,7 @@ use crate::report::Outcome;
 use crate::request::Request;
 use crate::traffic::{read, send};
 use crate::world::{SystemClock, fresh_seed};
+use zeroize::Zeroize as _;
 
 /// Carries out one request.
 ///
@@ -70,10 +71,17 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
 /// step, because a setup step is a thing to forget and this one has no decisions
 /// in it.
 pub(crate) fn signer(site: &Site) -> Result<Signer, Complaint> {
-    match site.identity()? {
-        Some(signer) => Ok(signer),
-        None => Ok(site.adopt(&fresh_seed()?)?),
+    if let Some(signer) = site.identity()? {
+        return Ok(signer);
     }
+    // The seed is bound so that it can be erased. Handing `fresh_seed()?`
+    // straight to a call leaves the bytes in a temporary that lives to the end
+    // of the statement and is never overwritten, which is how an identity seed
+    // ends up in a core dump of a process that had finished with it.
+    let mut seed = fresh_seed()?;
+    let adopted = site.adopt(&seed);
+    seed.zeroize();
+    Ok(adopted?)
 }
 
 fn identity(site: &Site) -> Result<Outcome, Complaint> {
@@ -121,8 +129,11 @@ fn doctor(waypoint: &str, now: Instant) -> Result<Outcome, Complaint> {
     let place = open(waypoint, now)?;
     // A fresh secret every run: the probe writes to real addresses on a real
     // host, and addresses nobody can predict are addresses nothing collides with.
-    let namespace =
-        Secret::from_bytes(fresh_seed()?).stream(&Signer::from_seed(&fresh_seed()?).handle());
+    let mut channel = fresh_seed()?;
+    let mut author = fresh_seed()?;
+    let namespace = Secret::from_bytes(channel).stream(&Signer::from_seed(&author).handle());
+    channel.zeroize();
+    author.zeroize();
     let certificate = probe::examine(&place, &namespace);
     Ok(Outcome::examined(waypoint, place.kind(), &certificate))
 }

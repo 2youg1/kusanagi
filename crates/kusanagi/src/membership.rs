@@ -22,6 +22,7 @@ use crate::complaint::Complaint;
 use crate::report::Outcome;
 use crate::walk::peek;
 use crate::world::fresh_seed;
+use zeroize::Zeroize as _;
 
 /// The height of the introduction stream that carries a newcomer's greeting.
 const INTRODUCTION: u64 = 0;
@@ -43,7 +44,14 @@ pub(crate) fn invite(
     let _: Locator = waypoint.parse()?;
 
     let me = signer(site)?;
-    let secret = Secret::from_bytes(fresh_seed()?);
+    // The seed is bound so that it can be erased. Handing `fresh_seed()?`
+    // straight to a constructor leaves the bytes in a temporary that lives until
+    // the end of the statement and is never overwritten — which is how a channel
+    // secret ends up in a core dump of a process that had already finished with
+    // it.
+    let mut seed = fresh_seed()?;
+    let secret = Secret::from_bytes(seed);
+    seed.zeroize();
     let bearer_seed = fresh_seed()?;
     let bearer = Signer::from_seed(&bearer_seed);
     let expires_at = now.plus_seconds(lifetime);

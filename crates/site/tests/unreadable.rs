@@ -120,10 +120,9 @@ fn a_file_an_older_build_left_open_is_replaced_rather_than_chmodded() {
         "a file left world-readable by an older build stayed that way at {:o}",
         after.permissions().mode()
     );
-    // And it is closed because it is a *different file*, not because anything
-    // chmodded the old one. That distinction is the whole of the rule: a build
-    // that changes the mode of a file it did not create can be aimed at a file
-    // somebody else chose.
+    // It is closed because it is a *different file*, not because anything
+    // chmodded the old one: changing the mode of a file this build did not
+    // create is an operation that can be aimed elsewhere.
     assert_ne!(
         before,
         after.ino(),
@@ -135,13 +134,12 @@ fn a_file_an_older_build_left_open_is_replaced_rather_than_chmodded() {
 
 #[test]
 fn a_symbolic_link_planted_at_a_record_is_replaced_and_never_followed() {
-    // The attack this rules out, in order: somebody who can write into a site
-    // directory replaces a channel record with a link to a file its owner cares
-    // about. A build that opened the path with `create` and `truncate` would
-    // empty that file; one that then called `set_permissions` on the path would
-    // chmod it. Neither operation exists here — a write stages beside the target
-    // and renames over it, and `rename` replaces the name rather than following
-    // where it points.
+    // The attack: somebody who can write into a site directory replaces a
+    // channel record with a link to a file its owner cares about. Opening the
+    // path with `create` and `truncate` would empty that file, and
+    // `set_permissions` on the path would chmod it. A write stages beside the
+    // target and renames over it instead, and `rename` replaces the name rather
+    // than following where it points.
     let site = scratch("symlink");
     site.adopt(&[5; 32]).unwrap();
 

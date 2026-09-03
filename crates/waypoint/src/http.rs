@@ -21,8 +21,7 @@
 //! `If-None-Match` is how any cache asks a conditional question and how S3
 //! spells a write-once write; `Cache-Control: max-age` is how anything asks for
 //! a lifetime. A header named after this product would announce it to every
-//! proxy and every log between the two ends — including the ones that see inside
-//! TLS — and no amount of sealing further down would take that back.
+//! proxy and log between the two ends, including those inside TLS.
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
@@ -34,8 +33,7 @@ const IF_NONE_MATCH: &str = "If-None-Match";
 /// The header carrying a requested lifetime.
 ///
 /// `Cache-Control: max-age=<seconds>`, which is what a browser, a CDN and a
-/// package manager all send. See the module note on why this is not a header of
-/// this project's own.
+/// package manager all send.
 pub const TTL_HEADER: &str = "Cache-Control";
 
 /// A waypoint that is somebody's HTTP box.
@@ -52,14 +50,12 @@ impl HttpWaypoint {
     /// all normal answers in this protocol, and an adapter that could not tell
     /// them apart from a broken connection would have to guess.
     ///
-    /// **No `User-Agent`.** The default would put the name and version of this
-    /// program's HTTP library into every request, where a host, a proxy and any
-    /// log along the path can read it — and a version number narrows the set of
-    /// people it could be. Sending none says less than sending anything, and it
-    /// is unremarkable: plenty of API traffic carries no agent string at all.
-    /// Sending a browser's instead was considered and rejected, because a
-    /// browser header above a TLS handshake that is plainly not a browser's is a
-    /// worse tell than silence.
+    /// **No `User-Agent`.** An agent string puts a library name and version into
+    /// every request, where a host, a proxy and any log on the path can read it,
+    /// and a version narrows the set of people it could be. Sending none says
+    /// less than sending anything, and is unremarkable: plenty of API traffic
+    /// carries no agent string. A borrowed browser header above a handshake that
+    /// is plainly not a browser's would be a worse tell than silence.
     #[must_use]
     pub fn new(base: &str) -> Self {
         let agent = ureq::Agent::config_builder()

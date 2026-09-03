@@ -16,11 +16,35 @@
 use core::fmt;
 use core::str::FromStr;
 
+use subtle::ConstantTimeEq as _;
+
 use crate::wire::{self, Hex};
 
 /// A fixed-width opaque identifier, rendered and parsed as lowercase hexadecimal.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// Equality is constant-time. Every identifier in this workspace is a `Digest`,
+/// so the rule is held in one place rather than five, and an authenticator that
+/// becomes one is compared correctly by construction.
+#[derive(Clone, Copy, Eq, PartialOrd, Ord)]
 pub struct Digest<const N: usize>([u8; N]);
+
+impl<const N: usize> PartialEq for Digest<N> {
+    /// Compares in a time that does not depend on where two identifiers differ.
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_slice().ct_eq(other.0.as_slice()).into()
+    }
+}
+
+impl<const N: usize> core::hash::Hash for Digest<N> {
+    /// Hand-written because `PartialEq` is, and the two have to agree.
+    ///
+    /// Ordering stays derived and stays variable-time. That is deliberate: a
+    /// comparison that answers "which is larger" cannot be made to leak less
+    /// than it already tells its caller, and nothing here orders a secret.
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
 
 impl<const N: usize> Digest<N> {
     /// Wraps `N` raw bytes.

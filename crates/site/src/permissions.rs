@@ -19,26 +19,20 @@
 //!
 //! So every file this crate writes is created `0600` and every directory `0700`.
 //!
-//! **The mode is set at creation and never adjusted afterwards, and that rule is
-//! the security property rather than an implementation detail.** `set_permissions`
-//! takes a path and follows symbolic links, so a build that chmods a file it did
-//! not create hands anybody who can write into a site directory a way to point
-//! that chmod somewhere else — at a key, at an authorised-keys file, at anything
-//! its user owns. "Correcting a file an older build left behind" is exactly the
-//! justification that operation would be given, so there is no such operation
-//! here: a write that replaces an old file replaces the **inode**, and the new
-//! one is `0600` because it was born that way.
+//! **The mode is established at creation and never adjusted afterwards, and that
+//! rule is a security property rather than an implementation detail.**
+//! `set_permissions` takes a path and follows symbolic links, so chmod-ing a
+//! file this build did not create hands anybody who can write into a site
+//! directory a way to aim that chmod at a file its owner cares about.
 //!
-//! Two consequences, both deliberate:
+//! So a write that replaces a record replaces the **inode**: it is staged beside
+//! the target and renamed over it, which acts on the name, so a symbolic link
+//! sitting there is replaced rather than followed and a reader never sees half a
+//! record. `waypoint::dir` makes a drop appear whole in the same shape.
 //!
-//! - Replacing means staging beside the target and renaming over it. `rename`
-//!   acts on the name, so a symbolic link sitting at the target is replaced
-//!   rather than followed, and a reader never sees a half-written record. This
-//!   is the same shape `waypoint::dir` uses to make a drop appear whole.
-//! - A directory an older build created keeps the mode it had. Every file inside
-//!   it is still `0600`, so what such a site exposes is the set of channel names
-//!   and nothing in them. Closing that would mean chmod-ing a directory this
-//!   build did not create, which is the operation above wearing a different hat.
+//! A directory this build did not create keeps the mode it has. Every file
+//! inside it is `0600` regardless, so such a site exposes the set of channel
+//! names and nothing in them.
 //!
 //! **On Windows these functions do nothing, and that is stated rather than
 //! hidden.** The Unix mode bits have no counterpart there; restricting a file
@@ -73,8 +67,8 @@ pub(crate) fn create_dir(path: &Path, action: &'static str) -> Result<(), SiteEr
 
 /// Writes `bytes` to `path`, readable by nobody else, replacing what was there.
 ///
-/// Staged beside the target and renamed over it, so that what is replaced is the
-/// name: this never opens, truncates or chmods whatever was there before, and a
+/// Staged beside the target and renamed over it, so what is replaced is the
+/// name. This never opens, truncates or chmods whatever was there before, and a
 /// symbolic link planted at the target is overwritten rather than followed.
 ///
 /// # Errors

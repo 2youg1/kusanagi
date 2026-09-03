@@ -66,15 +66,6 @@ impl Signer {
         Self(SigningKey::from_bytes(seed))
     }
 
-    /// The seed, for the one caller that has to persist it.
-    ///
-    /// Anything holding these bytes **is** this identity. Nothing but the local
-    /// identity file should ever call this, and nothing should ever log it.
-    #[must_use]
-    pub fn seed(&self) -> [u8; 32] {
-        self.0.to_bytes()
-    }
-
     /// The public half.
     #[must_use]
     pub fn handle(&self) -> Handle {

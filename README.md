@@ -182,17 +182,16 @@ The host is not trusted and does not have to be. Here is exactly what it learns.
 | Which messages belong to one conversation, from what it **stores** | **Hidden.** Every address is `KDF(shared secret ‖ author ‖ height)`. No address is ever reused. |
 | Which messages belong to one conversation, from what it is **asked for** | **Hidden while polling.** A poll names one address. See below. |
 | How many objects it holds | **Visible.** |
-| How large each one is | **Visible**, to the byte. |
+| How large each one is | **Hidden.** Every drop is exactly 4 096 bytes, whatever it carries. |
 | When each request arrived | **Visible.** |
 
-The fourth row used to be broken, and the fix is recent. A reader that started at
-height zero on every read asked the host for every address of the conversation,
-in order, on one connection. The addresses were derived to look unrelated, and
-then the reading order handed the host the grouping anyway. No cryptanalysis was
-needed, only an access log.
+A reader that started at height zero on every read would ask the host for every
+address of the conversation, in order, on one connection — addresses derived to
+look unrelated, with the reading order handing over the grouping anyway. No
+cryptanalysis needed, only an access log. So an endpoint records how far it has
+verified each stream, and a poll asks for one address and stops.
 
-An endpoint now records how far it has verified each stream, so a poll asks for
-one address and stops. Two things are still open, and neither is fixed by that:
+Two things are still open, and neither is closed by that:
 
 - Catching up on a conversation you have never read still names each height you
   fetch.

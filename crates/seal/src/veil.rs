@@ -20,23 +20,16 @@
 //!            +16 bytes  the authentication tag ChaCha20-Poly1305 appends
 //! ```
 //!
-//! **Why one size rather than a ladder of buckets.** A ladder still tells a host
-//! which bucket, and every boundary in it is a number somebody chose — which
-//! makes it a parameter, and a parameter that differs between two builds splits
-//! the people running them into two distinguishable populations. One size has no
-//! boundary to sit near and nothing to tune. PADMÉ (Nikitin et al., PETS 2019)
-//! is the published answer for files whose sizes span orders of magnitude and
-//! bounds the overhead to about 12%; it is the better construction *there* and
-//! the wrong one here, because a segment is capped at 4 KiB in the first place
-//! and the whole range fits in one bucket.
+//! **One size, not a ladder of buckets.** A ladder names a bucket, and every
+//! boundary in it is a parameter; two builds holding different parameters are
+//! two distinguishable populations. One size has no boundary to sit near and
+//! nothing to tune.
 //!
-//! **Why the pad is checked rather than skipped.** Unchecked padding is a
-//! perfect covert channel: it is inside the authenticated envelope, it is exactly
-//! as long as the message is short, and nothing downstream ever looks at it. A
-//! tampered build — or a supply-chain patch nobody reviewed — could exfiltrate an
-//! endpoint's identity seed through it at a few kilobytes a message, and every
-//! test in this workspace would stay green. Refusing a non-zero pad costs one
-//! comparison and closes that.
+//! **The pad is checked.** Unchecked padding is a covert channel: inside the
+//! authenticated envelope, exactly as long as the message is short, and never
+//! looked at again. A tampered build could carry an identity seed out through it
+//! at a few kilobytes a message with every test in this workspace still green.
+//! Refusing a non-zero pad costs one comparison.
 
 use kusanagi_kernel::{MAX_SEGMENT, Reader};
 
@@ -181,9 +174,8 @@ mod tests {
 
     #[test]
     fn the_envelope_is_a_whole_number_of_pages() {
-        // Not a requirement, but the reason 4 096 was the number picked: it is
-        // what a filesystem, an object store and a TLS record all already deal
-        // in, so a drop is one of something everywhere it is handled.
+        // A filesystem, an object store and a TLS record all deal in this size,
+        // so a drop is one of something everywhere it is handled.
         assert_eq!(DROP % 4_096, 0);
     }
 }

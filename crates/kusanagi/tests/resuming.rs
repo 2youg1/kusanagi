@@ -13,11 +13,6 @@
 //! failure. A cairn that is read wrongly makes a poll expensive, which is the
 //! subject of the other file; a cairn that is *trusted* wrongly makes a read
 //! quietly short, and no assertion about a message arriving would notice.
-//!
-//! Split out when `unwatched.rs` reached the per-file limit in the justfile.
-//! Splitting the assertions about a rule away from the rule is the answer
-//! `ARCHITECTURE.md` §5 names, and the workspace total counts tests, so nothing
-//! is hidden by the move.
 
 #![allow(
     clippy::unwrap_used,

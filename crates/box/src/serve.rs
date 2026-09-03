@@ -24,12 +24,10 @@
 //!   ordinary static file server gives them.
 //!
 //! That last one is the difference between a host somebody runs and a host
-//! somebody can be found running. A banner at a well-known path turns an
-//! internet-wide scan into a list of this network's users, and the scan costs
-//! one request per address. The capability banner that used to live at
-//! `/health` had exactly one caller in this workspace — its own test — because
-//! `kusanagi doctor` measures a host rather than believing it (`ARCHITECTURE.md`
-//! §8), so removing it cost nothing that was being used.
+//! somebody can be found running: a banner at a well-known path turns an
+//! internet-wide scan into a list of this network's users, at one request per
+//! address. A host is measured rather than asked — `kusanagi doctor` writes twice
+//! and reads back (`ARCHITECTURE.md` §8).
 //!
 //! Objects carry an expiry in front of the bytes, so a swept object and an object
 //! that was never written are the same answer, `404`, with no bookkeeping to
@@ -181,10 +179,10 @@ impl<C: Clock> Server<C> {
 
 /// The lifetime a `Cache-Control` value asks for, if it asks for one.
 ///
-/// A standard header rather than one of ours. `X-Kusanagi-Ttl` named the product
-/// in every request, in the clear, to every proxy and every log on the path —
-/// which is a fingerprint that survives TLS termination anywhere. `max-age` is
-/// the header a browser, a CDN and a package manager all send anyway.
+/// `max-age` is the header a browser, a CDN and a package manager all send
+/// anyway, so a lifetime asks for itself the way everything else on the wire
+/// does. A header named after this product would be a fingerprint in every
+/// request, readable by every proxy and log on the path.
 ///
 /// An unparsable directive is ignored rather than refused, which is what
 /// RFC 9111 §5.2 asks of a recipient and also what keeps a malformed value from

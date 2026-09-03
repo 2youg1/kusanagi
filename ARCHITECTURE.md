@@ -59,11 +59,10 @@ supervised learning problem with unlimited labelled data: an adversary runs our
 binary as often as they like, labels both sides, and trains a classifier. Any
 residual difference that is not cryptographically negligible will be found.
 
-Two consequences run through everything below. **Mimicry is not a defence** —
-imitating a protocol means imitating its error handling, its retries and its
-quirks, and the adversary needs one discrepancy (Houmansadr et al., *The Parrot
-Is Dead*, IEEE S&P 2013). And **an argument that we are indistinguishable is
-worth nothing next to a measurement**, which is why law 6 in §7 exists.
+Two rules follow. **Nothing here imitates a protocol**, because imitation must
+also imitate error handling, retries and quirks, and one discrepancy is enough.
+And **indistinguishability is measured rather than argued**, which is law 6 in
+§7.
 
 **And assume the compute is unbounded.** That is the design posture, and it has a
 precise consequence rather than a rhetorical one: **every computational guarantee
@@ -129,8 +128,7 @@ worlds — four where a byte is said and four where three thousand are — measu
 ten features of what the host is left holding, and fails if any single threshold
 separates them by more than their own spread. A stump that separates two groups
 *is* the rule a censor deploys, so a run with no such stump is the claim, and a
-run with one prints it as a sentence. Before the fixed-size envelope the same
-experiment separated the worlds on `size.largest` at 528 against 3 600.
+run with one prints it as a sentence.
 
 The same experiment states property 3 rather than describing it: the features
 allowed to separate a silent channel from a busy one are written down as a list
@@ -187,11 +185,7 @@ One name per concept. A word with no implementation does not enter the code.
 | **Cairn** | how far one author's stream has been verified: a handle and a head, 73 bytes | a reader resumes instead of re-naming a stream, and cannot be talked back down below it |
 | **Box** | a host somebody runs: it holds sealed bytes at opaque addresses and refuses to overwrite one | the untrusted half is a program, not a promise |
 | **Veil** | the one size every sealed drop has: 4 096 bytes, a checked pad, no exceptions | how much was said stops being a thing anybody holds |
-
-`Veil` was reserved until this version and is now half of what it was reserved
-for. It named padding, jitter and pluggable transports together; padding exists,
-so the word enters the code meaning exactly that, and the other two stay in §9
-under their own description rather than borrowing a name that is now taken.
+| **Trail** | one author's private sequence of one-time proofs for one stream: each segment shows the current proof and commits to the next | a peer can check who wrote a message and can never prove it to anybody else |
 
 Reserved for work not yet done, and therefore **not** in the code: `Bell`,
 `Cohort`, `Depot`.
@@ -220,10 +214,7 @@ Dependencies point one way only: `kernel` depends on nothing of ours, and
 | **2,500 lines** | each crate's `src/` | how large one idea may grow |
 | **25,000 lines** | the workspace, tests included | how much there is to read at all |
 
-The first limit is per kind because the kinds fail differently, and this table
-said a flat 500 for two versions after `just budget` had stopped agreeing with
-it. The gate was right and the document was wrong, which is the case §0 says
-this document loses.
+The limit is per kind because the kinds fail differently.
 
 The file is the unit that actually gets opened: a reviewer opens one, an editor
 jumps into one, a model reads one. So the limit that decides whether this code can
@@ -249,11 +240,7 @@ That exclusion list is closed; a third entry is a decision, not an oversight.
 | **workspace, tests included** | **13,854 / 25,000** | |
 | **largest single file** | **388** (`kernel/src/segment.rs`) | |
 
-**Three crates have been split at this line, and the budget is what made each
-decision arrive on time.** The third was `crates/kusanagi/tests/unwatched.rs`,
-which sat one line over for two versions with the gate red and nobody looking;
-what came out of it is `resuming.rs`, holding the two assertions about a cairn
-being recomputable rather than the three about what a poll costs.
+**The budget is what makes a split arrive on time rather than late.**
 
 
 `kusanagi` gave up the disk formats to `site`. The boundary that made it possible
@@ -328,10 +315,25 @@ second authority for that rule.
 
 Reopening one of these requires a reason that did not exist when it was taken.
 
-- **Handles are public keys, and segments carry signatures.** Stage 0 derived a
-  handle from a name, which named a writer without proving one. Grants name
-  subjects by handle, so without signatures a grant would restrict only the
-  software that chose to obey it. The wire format is `kusanagi.segment.v2`.
+- **Identity is a hash, not a key.** `Handle` is `BLAKE3(public key)`, 32 bytes,
+  so address derivation, cairn filenames and the segment layout do not depend on
+  which signature scheme is in use.
+- **The signature scheme is ML-DSA-44 (FIPS 204).** Integer-only arithmetic, so
+  a constant-time implementation is reachable, and a standard that is final. The
+  invitation is a blob to send as a file or a QR code rather than a line to
+  paste.
+- **Every segment after the first is authenticated by a Trail, not a signature.**
+  A signature is transferable, so a peer who is compromised or coerced holds not
+  merely knowledge of what was said but proof of it that convinces anybody,
+  forever, without the author's participation. Segment *i* reveals `secret_i` and commits to `H(secret_{i+1})`; a reader
+  accepts it only when the reveal hashes to the previous segment's commitment.
+  Forging a segment, or racing to a height before its author, needs a preimage.
+  Anybody who has read the stream can afterwards fabricate a different one that
+  verifies exactly as well, which is what makes a quotation an assertion rather
+  than evidence. Both wire shapes carry 141 bytes of overhead, so the envelope
+  above them is unaffected. **§9 carries this row: the shipped format is
+  `kusanagi.segment.v2` and this is not built yet.**
+
 - **The sealed form is the whole segment, not its payload.** A segment carries its
   author in the clear; sealing only the payload would let a host group drops by
   author and property 2 would be worth nothing.
@@ -369,85 +371,47 @@ Reopening one of these requires a reason that did not exist when it was taken.
   partition. The invitation carries a suite byte and refuses one it does not
   know, so changing the suite is a network-wide flip rather than a negotiation —
   which is the migration path for everything below.
-- **Ed25519 stays, and ML-DSA is refused with numbers rather than with taste.**
-  The signature here is *inside* the sealed envelope: placing bytes at a drop
-  requires the channel secret, so an adversary who breaks Ed25519 without that
-  secret can compute no address and produce nothing that opens. What a signature
-  actually defends is a co-member forging their peer's stream, or a grant holder
-  forging a wider grant — both of which require already being inside the channel.
-  Against `MAX_SEGMENT = 4 076`:
-
-  | suite | public key | signature | segment overhead | payload left |
-  |---|---|---|---|---|
-  | Ed25519 | 32 | 64 | 141 | **3 935** |
-  | ML-DSA-44 | 1 312 | 2 420 | 3 777 | **299** |
-  | ML-DSA-65 | 1 952 | 3 309 | 5 306 | does not fit one drop |
-  | Falcon-512 | 897 | 666 | 1 608 | 2 468 |
-  | SLH-DSA-128s | 32 | 7 856 | 7 933 | needs a 16 KiB drop |
-
-  ML-DSA costs 92% of a message, and a 1 312-byte `Handle` takes the invitation
-  from about 600 hexadecimal characters to over ten thousand — which ends the
-  one-line invitation §2 is built on — and takes a cairn's filename from 64
-  characters to 2 624. Falcon-512 is the only one that survives the current
-  envelope, and FIPS 206 is not final, its signing is floating-point, and
-  constant-time implementations are a known hazard. SLH-DSA keeps identities at
-  32 bytes, which would leave every filename and every derivation untouched, at
-  the price of a 16 KiB drop — and drop size multiplies straight into the cost of
-  the cover traffic §9 still owes.
-
-  **The symmetric layer needs nothing.** A 256-bit ChaCha20 key leaves 128 bits
-  under Grover and BLAKE3's preimage resistance the same, so the part of this
-  design that carries confidentiality is already adequate against a quantum
-  adversary. The place a post-quantum decision will actually matter is the day a
-  key exchange is introduced, because there is none today — and on that day it
-  must be hybrid (X25519 with ML-KEM-768) from the first commit rather than
-  added afterwards.
 - **Scale is layered, not flat.** Cohorts of about a thousand, joined by
   transitive grants. Flat global reachability needs a globally resolvable name
   table, and that table is a relationship graph.
 - **Bell is a waypoint capability, not a protocol requirement.** A host that can
   long-poll needs no Bell and leaks nothing; the cost of the alternative is paid
   only by whoever chose a dumb object store.
-- **Every sealed drop is one size, and the size is not a parameter.** 4 096 bytes,
-  always, with `MAX_PAYLOAD` derived from what is left rather than chosen. A
-  ladder of buckets was rejected: it still tells a host which bucket, every
-  boundary in it is a number somebody picked, and two builds that picked
-  differently split their users into two distinguishable populations. PADMÉ
-  (Nikitin et al., PETS 2019) is the published answer where sizes span orders of
-  magnitude and is the wrong one here, because a segment is capped at one drop in
-  the first place and the whole range fits in a single bucket.
-- **The pad is checked, not skipped.** Unchecked padding is a perfect covert
-  channel — inside the authenticated envelope, exactly as long as the message is
-  short, and never looked at again. A patched build could ship an identity seed
-  out through it at a kilobyte a message with every test still green. A non-zero
-  pad is refused.
-- **A host describes nothing.** `GET /health` and its capability banner are
-  deleted, every refusal has an empty body, and a caller who holds no address
-  gets one identical `404` to every question. The banner had never been evidence
-  — `doctor` measures — and its only caller in the workspace was the test that
-  asserted its text, so what it cost was a one-request answer to "is this a
-  kusanagi host", which is the most useful thing a scanner could be handed.
-- **Only headers ordinary traffic already carries.** `X-Kusanagi-Ttl` became
-  `Cache-Control: max-age`, and the client sends no `User-Agent` at all. A header
-  named after this project announces it to every proxy and log on the route,
-  including the ones inside TLS. Sending a browser's agent string instead was
-  rejected: a browser header above a TLS handshake that is plainly not a
-  browser's is a worse tell than silence.
+- **Every sealed drop is one size, and the size is not a parameter.** 4 096
+  bytes, always, with `MAX_PAYLOAD` derived from what is left rather than chosen.
+  A size that varies is a measurement a host takes without any cryptanalysis, and
+  a ladder of buckets is the same measurement one step coarser — with boundaries
+  that are parameters, and two builds holding different parameters are two
+  distinguishable populations.
+- **The pad is checked, not skipped.** Unchecked padding is a covert channel:
+  inside the authenticated envelope, exactly as long as the message is short, and
+  never looked at again. A non-zero pad is refused.
+- **A host describes itself to nobody.** There is no banner and no status path,
+  every refusal has an empty body, and a caller who holds no address gets one
+  identical `404` to every question. A well-known path that answers with a
+  product name turns an internet-wide scan into a list of this network's users.
+  `doctor` measures a host rather than asking it.
+- **Only headers ordinary traffic already carries.** `If-None-Match` for the
+  conditional write, `Cache-Control: max-age` for a lifetime, and no
+  `User-Agent`. A header named after this project announces it to every proxy and
+  log on the route, including those inside TLS; a borrowed browser header above a
+  handshake that is plainly not a browser's is a worse tell than silence.
 - **The invitation is not an argument.** It carries the channel secret and a
   signing key, and on Linux any account can read another process's command line
-  out of `/proc`, after which the shell keeps a copy. `join` reads it from stdin
-  and there is no second way in — two ways would mean the leaking one stays the
-  default.
+  out of `/proc`, after which the shell keeps a copy. `join` reads it from stdin,
+  and there is no second way in.
 - **A site is readable by its owner and nobody else.** `0600` on every file,
-  `0700` on every directory, set at creation and again after each write so that
-  an older build's file is corrected rather than inherited. The attacker this
-  answers is not a nation state; it is a second account on a shared build machine.
-- **Secrets erase themselves, and cannot be compared.** `Secret`, `Stream` and
+  `0700` on every directory, established at creation and never adjusted after —
+  `set_permissions` follows symbolic links, so a build that chmods a file it did
+  not create can be aimed at one it did not choose. A replacement stages beside
+  its target and renames over it. The attacker this answers is a second account
+  on a shared machine, not a nation state.
+- **Secrets erase themselves and cannot be compared.** `Secret`, `Stream` and
   `Key` are `ZeroizeOnDrop`, so a channel secret does not outlive its value in
-  freed memory, a core dump or a swap file. They also lost `PartialEq`: nothing
-  compares two secrets, and a derived comparison would run in a time that depends
-  on how many leading bytes match. `zeroize` was already in the tree beneath
-  `ed25519-dalek`, so taking it directly added nothing to audit.
+  freed memory, a core dump or a swap file. None of them implements `PartialEq`:
+  nothing compares two secrets, and a derived comparison would run in a time that
+  depends on how many leading bytes match. Every fixed-width identifier compares
+  in constant time.
 - **The adversary is out of the workspace and speaks only through the door a user
   has.** `adversary/` drives the shipped binary with `--json` and asserts
   *relations between traces* — never an expected output, because restating a rule
@@ -473,17 +437,18 @@ version of its own.
 
 | Missing | Why it waits |
 |---|---|
-| **Cover traffic** — property 4b | the largest gap in §3 and the one the rest now depends on. An endpoint emits requests only when there is something to say, so the rhythm of a conversation survives everything else here. What is needed is traffic that does not depend on whether anybody is talking. Constant rate is *not* the answer and was rejected while being designed: a lone endpoint emitting a fixed beat is more conspicuous than one that says nothing, because cover only works when the cover distribution is the ambient one |
+| **Trail** — deniable segments | the largest open item, and the only one whose absence is a live exposure rather than a missing improvement: until it lands, a compromised or coerced peer holds transferable proof of every message you sent them. §8 has the design. What remains is `kusanagi.segment.v3`, a cairn carrying the next commitment, and the two bootstrap paths that deliver a first one |
+| **Cover traffic** — property 4b | the largest gap in §3. An endpoint emits requests only when there is something to say, so the rhythm of a conversation survives everything else here. What closes it is traffic independent of whether anybody is talking — and it has to be traffic whose distribution is the ambient one, because a lone endpoint emitting a fixed beat is more conspicuous than one that says nothing |
 | **Riding a carrier** | the way property 0 closes for a path observer, and the way 4b closes with it. Drops written into a store that already receives opaque high-entropy blobs on a schedule — an encrypted backup repository, a container registry — by invoking the real client rather than imitating it. Nothing here imitates a protocol today, and nothing should start: see §3 on why mimicry loses |
 | **TLS fingerprint** | a `rustls` handshake is identifiable as one (JA3/JA4). Closing it needs handshake mimicry with no clean answer in the Rust ecosystem, and it is second in line behind the carrier, which would make the handshake a real client's |
 | **Forward secrecy** | one static channel secret decrypts everything, forever, for whoever takes a site. A per-epoch ratchet is the answer and needs a decision about law 1 first: a ratchet that has moved cannot re-read what it advanced past |
 | **On-disk deniability** | mode bits stop another account; they do not stop somebody holding the disk, who finds a 32-byte identity, 73-byte cairns and fixed-offset channel records whether or not the files are named |
 | **Windows file permissions** | `0600` has no counterpart; restricting a file there means writing an ACL, which needs an API this workspace cannot reach without `unsafe` or a crate that brings one |
-| `Bell` | **no longer only an optimisation.** A reader that polls names the address it waits on, then the next one after a hit, so a host watching one endpoint can follow the live edge; a host that can be asked to wait is told one address instead. Riding a carrier that bulk-syncs would close the same leak more completely and make this unnecessary; whichever lands first decides whether the other is built |
+| `Bell` | a privacy mechanism rather than a latency tweak. A reader that polls names the address it waits on, then the next one after a hit, so a host watching one endpoint can follow the live edge; a host that can be asked to wait is told one address instead. Riding a carrier that bulk-syncs closes the same leak more completely, and whichever lands first decides whether the other is built |
 | `Cohort` — rosters and epochs | needs multi-node test infrastructure; two parties do not need a roster |
 | `Depot` — chunked content | now load-bearing rather than optional: a drop carries 3 935 bytes, so anything larger needs chunking rather than a bigger envelope |
 | `port` — local socket and MCP front ends | the verb set is one enum, so a second front end is additive |
-| Post-quantum signatures | **the data path is already post-quantum confidential**, and this is worth stating rather than leaving as an absence: confidentiality rests on a pre-shared secret through BLAKE3 and ChaCha20-Poly1305, with no public-key exchange anywhere in it, so harvest-now-decrypt-later does not apply. What is classical is Ed25519 authorship, and §8 records with numbers why replacing it today would cost 92% of a message and the one-line invitation. Revisit when FIPS 206 is final or when a drop is large enough that SLH-DSA fits |
+| ML-DSA-44, replacing Ed25519 | the scheme is chosen (§8) and unbuilt. Two changes go with it: `Handle` becomes `BLAKE3(public key)` so nothing else moves, and the invitation stops being a pasteable line. Confidentiality needs none of this — it rests on a pre-shared secret through BLAKE3 and ChaCha20-Poly1305 with no public-key exchange anywhere, so harvest-now-decrypt-later does not apply to what this network carries |
 
 ---
 

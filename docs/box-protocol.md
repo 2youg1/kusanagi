@@ -83,15 +83,12 @@ hands the bytes back. `kusanagi doctor` uses exactly that.
 
 ## There is no third request
 
-Earlier versions answered `GET /health` with `kusanagi-box/1 write-once=yes
-conditional-read=yes expiry=yes`. It is gone, and nothing replaced it.
+There is no banner, no version and no status path. A well-known path that
+answers with a product name turns an internet-wide scan into a list of this
+network's hosts, and their users with them, at one request per address.
 
-The banner was never evidence — `kusanagi doctor` has always ignored it and
-measured the host instead, by writing twice and reading back. What it was, was a
-one-request test for "is this a kusanagi host", answerable by anybody, which is
-the single most useful thing a scanner could have been given. Removing it cost
-nothing that was in use: across the whole workspace the only caller was the test
-that asserted the banner's own text.
+A host is measured rather than asked: `kusanagi doctor` writes twice and reads
+back, which is evidence, while a self-description is not.
 
 ## Limits
 
