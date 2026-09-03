@@ -335,9 +335,17 @@ fn run() -> ExitCode {
         }
     };
 
+    // One fence per invocation, drawn before anything a peer wrote is rendered.
+    let fence = match kusanagi::fresh_fence() {
+        Ok(fence) => fence,
+        Err(complaint) => {
+            eprintln!("{}", complaint.render(cli.json));
+            return ExitCode::FAILURE;
+        }
+    };
     match kusanagi::run(&Site::at(&root), &request) {
         Ok(outcome) => {
-            println!("{}", outcome.render(cli.json));
+            println!("{}", outcome.render(cli.json, fence));
             ExitCode::SUCCESS
         }
         Err(complaint) => {

@@ -14,7 +14,7 @@
 
 use kusanagi_kernel::{Clock, Instant};
 
-use kusanagi_door::Complaint;
+use kusanagi_door::{Complaint, Fence};
 
 /// The clock of the machine this is running on.
 #[derive(Debug, Clone, Copy)]
@@ -61,6 +61,26 @@ pub fn fresh_seed() -> Result<[u8; 32], Complaint> {
         source: std::io::Error::other(source.to_string()),
     })?;
     Ok(seed)
+}
+
+/// Eight bytes nobody can predict, for one invocation's fence.
+///
+/// Drawn here rather than in `kusanagi-door` because randomness has one source
+/// in this program and that source is this file. What the fence is for is in
+/// `door/src/fence.rs`.
+///
+/// # Errors
+///
+/// [`Complaint::Local`] when the operating system has no entropy to give. A
+/// predictable fence is one a peer can close, so this refuses rather than
+/// falling back.
+pub fn fresh_fence() -> Result<Fence, Complaint> {
+    let mut bytes = [0_u8; 8];
+    getrandom::fill(&mut bytes).map_err(|source| Complaint::Local {
+        action: "ask the operating system for randomness",
+        source: std::io::Error::other(source.to_string()),
+    })?;
+    Ok(Fence::from_bytes(bytes))
 }
 
 #[cfg(test)]

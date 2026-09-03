@@ -11,10 +11,12 @@
 //! Column widths, the words `cut off`, and the warning under `forgotten` all
 //! belong here and nowhere near the value a machine parses.
 
-use crate::report::{Entry, Measured, Outcome, Summary};
+use crate::fence::Fence;
+use crate::report::Outcome;
+use crate::rows::{Entry, Measured, Summary};
 
 /// Renders one outcome as prose.
-pub fn render(outcome: &Outcome) -> String {
+pub fn render(outcome: &Outcome, fence: Fence) -> String {
     match outcome {
         Outcome::Identity { handle, site } => {
             format!("this endpoint is {handle}\n  site  {site}")
@@ -53,7 +55,7 @@ pub fn render(outcome: &Outcome) -> String {
             author,
             height,
             segments,
-        } => stream(name, author, *height, segments),
+        } => stream(name, author, *height, segments, fence),
         Outcome::Revoked { name, step } => format!(
             "the peer of `{name}` is cut off\n  step  {step}\n\
              nothing they write from now on will be accepted here."
@@ -117,8 +119,19 @@ fn listing(channels: &[Summary]) -> String {
     lines.join("\n")
 }
 
-/// One verified stream, header then payloads as text.
-fn stream(name: &str, author: &str, height: Option<u64>, segments: &[Entry]) -> String {
+/// One verified stream, header then payloads inside a fence.
+///
+/// **No byte a peer wrote ever shares a line with a byte kusanagi wrote.** The
+/// index and the size are this program speaking; everything between the tags is
+/// the other end, and the tags are what says so to a reader with no parser. See
+/// `fence.rs` for why that reader is the one to design for.
+fn stream(
+    name: &str,
+    author: &str,
+    height: Option<u64>,
+    segments: &[Entry],
+    fence: Fence,
+) -> String {
     // The listing abbreviates a handle and so does this: the full one is in the
     // `author` field for whatever needs to match on it.
     let who: String = author.chars().take(12).collect();
@@ -130,11 +143,12 @@ fn stream(name: &str, author: &str, height: Option<u64>, segments: &[Entry]) -> 
         ),
     };
     let mut lines = vec![header];
-    lines.extend(
-        segments
-            .iter()
-            .map(|entry| format!("  #{:<3} {}", entry.index, entry.carried.shown())),
-    );
+    for entry in segments {
+        lines.push(format!("  #{:<3} {}", entry.index, entry.carried.said()));
+        lines.push(fence.opens());
+        lines.push(entry.carried.shown());
+        lines.push(fence.closes());
+    }
     lines.join("\n")
 }
 

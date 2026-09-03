@@ -227,6 +227,9 @@ impl From<SiteError> for Complaint {
 /// A complaint rendered for both readers.
 #[derive(Serialize)]
 struct Rendered<'a> {
+    /// The version of the shape a machine reads. Failures carry it too, because
+    /// a caller that pins the contract pins it on every answer or on none.
+    contract: u8,
     error: &'a str,
     code: &'a str,
     recover: String,
@@ -367,6 +370,7 @@ impl Complaint {
     #[must_use]
     pub fn render(&self, json: bool) -> String {
         let rendered = Rendered {
+            contract: crate::CONTRACT,
             error: &self.to_string(),
             code: self.code(),
             recover: self.recover(),

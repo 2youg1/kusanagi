@@ -10,127 +10,30 @@
 //! door is usually an agent, and a program whose human output and machine output
 //! drift apart is a program that lies to one of its two readers.
 
-use kusanagi_grant::{Ability, Revocations};
-use kusanagi_kernel::{Handle, Hex, Instant};
+use kusanagi_grant::Revocations;
+use kusanagi_kernel::{Handle, Instant};
+use kusanagi_site::Channel;
 use kusanagi_waypoint::{Certificate, Verdict};
 use serde::Serialize;
 
-use kusanagi_site::{Channel, Standing};
-
+use crate::fence::Fence;
 use crate::prose;
+use crate::rows::{Carried, Entry, Measured, Summary};
 
-/// A handle rendered short enough to read, for listings.
+/// The version of the shape a machine reads.
 ///
-/// Shortening is a rendering decision, so it lives with the renderings and not
-/// with the record: what is stored is always the whole handle.
-fn abbreviate(handle: &Handle) -> String {
-    handle.to_string().chars().take(12).collect()
-}
+/// Every top-level JSON object carries it, success and failure alike. A caller
+/// that pins it fails loudly on a build that changed the shape, instead of
+/// quietly reading a field that no longer means what it did. Adding a field does
+/// not move it; removing or renaming one does.
+pub const CONTRACT: u8 = 1;
 
-/// One segment as it is reported.
-///
-/// Two fields, and one of them used to be four. What went: `id` and `address`
-/// are derived values a caller can recompute and almost never wants, and the
-/// pair of payload renderings said the same sentence twice — once unreadably.
-#[derive(Serialize, Debug)]
-pub struct Entry {
-    pub(crate) index: u64,
+/// One outcome as a machine reads it: the contract version, then the outcome.
+#[derive(Serialize)]
+struct Answer<'a> {
+    contract: u8,
     #[serde(flatten)]
-    pub(crate) carried: Carried,
-}
-
-/// What a segment carried, in the one encoding that does not lose it.
-///
-/// **An enum because the two are exclusive, and were not before.** A payload
-/// that is valid UTF-8 survives a JSON string byte for byte, so hexadecimal
-/// beside it doubled the size of every ordinary message to say the same thing;
-/// a payload that is not text cannot go in a string at all, so hexadecimal is
-/// the only honest rendering of it. Which one appears therefore says something
-/// true about the bytes, and a reader that handles both handles everything.
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum Carried {
-    /// Every byte of it is text, and this is exactly those bytes.
-    Text(String),
-    /// It is not text. The exact bytes, in lowercase hexadecimal.
-    Payload(String),
-}
-
-impl Carried {
-    /// Renders `bytes` in whichever form keeps all of them.
-    fn of(bytes: &[u8]) -> Self {
-        match core::str::from_utf8(bytes) {
-            Ok(text) => Self::Text(text.to_owned()),
-            Err(_) => Self::Payload(Hex(bytes).to_string()),
-        }
-    }
-
-    /// What a person sees. Bytes that are not text are named, not mangled.
-    pub(crate) fn shown(&self) -> String {
-        match self {
-            Self::Text(text) => text.clone(),
-            Self::Payload(hex) => format!("<{} bytes that are not text>", hex.len() / 2),
-        }
-    }
-}
-
-/// What this endpoint may do on a channel at one moment.
-///
-/// The two cases are kept apart in the type so that the listing cannot report
-/// abilities and a refusal at the same time. Flattening happens once, at the
-/// edge, in [`Summary`].
-enum Authority {
-    /// Verified now, with what survived and when it lapses.
-    Held {
-        /// The abilities that passed verification.
-        can: Vec<&'static str>,
-        /// When they stop being accepted, absent for a root authority.
-        until: Option<u64>,
-    },
-    /// Nothing, and the stable code that says why.
-    Void(&'static str),
-}
-
-/// One channel as it is listed.
-#[derive(Serialize, Debug)]
-pub struct Summary {
-    pub(crate) name: String,
-    pub(crate) waypoint: String,
-    pub(crate) standing: &'static str,
-    pub(crate) peer: Option<String>,
-    /// What this endpoint may do here right now, verified rather than claimed.
-    ///
-    /// Empty exactly when `refused` is present: a caller reads one field or the
-    /// other, never both.
-    pub(crate) can: Vec<&'static str>,
-    /// When the authority lapses, in seconds since the Unix epoch.
-    ///
-    /// Absent for a root authority, which nobody issued and nothing expires.
-    pub(crate) expires_at: Option<u64>,
-    /// How long that is from the instant this command sampled.
-    ///
-    /// The same fact as `expires_at` in the frame a reader is in. Both are
-    /// reported because they answer different questions: one survives being
-    /// written down, the other can be acted on without a clock.
-    pub(crate) expires_in: Option<u64>,
-    /// The stable code that says why `can` is empty, absent when it is not.
-    pub(crate) refused: Option<&'static str>,
-    /// The code a read of the peer's stream would fail with, absent when it
-    /// would not.
-    ///
-    /// This is where a revocation becomes visible to the endpoint that made it.
-    /// Cutting somebody off is one-sided by construction — there is no channel
-    /// on which to tell them — so their own listing goes on reporting a live
-    /// grant, and the refusal lives on this side.
-    pub(crate) peer_refused: Option<&'static str>,
-}
-
-/// One measured capability as it is reported.
-#[derive(Serialize, Debug)]
-pub struct Measured {
-    pub(crate) capability: &'static str,
-    pub(crate) verdict: &'static str,
-    pub(crate) detail: Option<String>,
+    outcome: &'a Outcome,
 }
 
 /// What a command produced.
@@ -231,44 +134,6 @@ pub enum Outcome {
     },
 }
 
-/// What `who` may do under `standing` at `now`, asked the way a verb asks it.
-///
-/// `send` asks whether this endpoint may write; `read` asks whether the author
-/// of what it is about to read may. Putting those questions through the same
-/// function is what keeps a listing from disagreeing with the command it
-/// describes — and everything needed to answer them is on this machine, so a
-/// listing costs no request.
-fn authority(
-    standing: &Standing,
-    root: &Handle,
-    who: &Handle,
-    now: Instant,
-    revoked: &Revocations,
-) -> Authority {
-    let until = expiry(standing, root, now, revoked);
-    let held = |can: Vec<&'static str>| Authority::Held { can, until };
-    match (
-        standing.permits(root, who, Ability::Send, now, revoked),
-        standing.permits(root, who, Ability::Read, now, revoked),
-    ) {
-        (Ok(()), Ok(())) => held(vec!["send", "read"]),
-        (Ok(()), Err(_)) => held(vec!["send"]),
-        (Err(_), Ok(())) => held(vec!["read"]),
-        // Both refusals have one cause — an expired, revoked or detached chain
-        // refuses every ability alike — so either error names it.
-        (Err(error), Err(_)) => Authority::Void(error.code()),
-    }
-}
-
-/// When a standing lapses, for the standings that lapse at all.
-///
-/// A root authority has no expiry because nobody issued it, and a chain that no
-/// longer verifies has no expiry worth reporting — what it has is a refusal.
-fn expiry(standing: &Standing, root: &Handle, now: Instant, revoked: &Revocations) -> Option<u64> {
-    let scope = standing.grant()?.verify(root, now, revoked).ok()?;
-    Some(scope.expires_at().as_unix_seconds())
-}
-
 impl Outcome {
     /// Reports one channel listing, with its authority checked at `now`.
     #[must_use]
@@ -279,33 +144,7 @@ impl Outcome {
         now: Instant,
         revoked: &Revocations,
     ) -> Summary {
-        let (can, expires_at, refused) =
-            match authority(&channel.standing, &channel.root, who, now, revoked) {
-                Authority::Held { can, until } => (can, until, None),
-                Authority::Void(code) => (Vec::new(), None, Some(code)),
-            };
-        // The peer is asked the one question a read of their stream asks.
-        let peer_refused = channel.peer.as_ref().and_then(|peer| {
-            peer.standing
-                .permits(&channel.root, &peer.handle(), Ability::Send, now, revoked)
-                .err()
-                .map(|error| error.code())
-        });
-        let expires_in = expires_at.map(|at| at.saturating_sub(now.as_unix_seconds()));
-        Summary {
-            name: name.to_owned(),
-            waypoint: channel.locator.clone(),
-            standing: match channel.standing {
-                Standing::Root => "root",
-                Standing::Granted(_) => "granted",
-            },
-            peer: channel.peer.as_ref().map(|peer| abbreviate(&peer.handle())),
-            can,
-            expires_at,
-            expires_in,
-            refused,
-            peer_refused,
-        }
+        Summary::of(name, channel, who, now, revoked)
     }
 
     /// Reports a verified stream: its head, and the segments to show.
@@ -363,12 +202,20 @@ impl Outcome {
     }
 
     /// Renders this outcome for a person or for a machine.
+    ///
+    /// `fence` is the tag the prose puts around anything a peer wrote. It is a
+    /// parameter because randomness has one source in this program and it is not
+    /// here; JSON ignores it, because a parser draws its own boundaries.
     #[must_use]
-    pub fn render(&self, json: bool) -> String {
+    pub fn render(&self, json: bool, fence: Fence) -> String {
         if json {
-            return serde_json::to_string_pretty(self)
+            let answer = Answer {
+                contract: CONTRACT,
+                outcome: self,
+            };
+            return serde_json::to_string_pretty(&answer)
                 .unwrap_or_else(|error| format!(r#"{{"error":"{error}"}}"#));
         }
-        prose::render(self)
+        prose::render(self, fence)
     }
 }

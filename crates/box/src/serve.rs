@@ -42,16 +42,9 @@ use std::path::PathBuf;
 
 use kusanagi_kernel::{Clock, DropAddr, Instant, PutOutcome, Waypoint as _};
 
+use crate::capacity::{CAPACITY, held};
 use crate::exchange::{IDLE, Request, Response, address_of, etag};
 use kusanagi_waypoint::DirWaypoint;
-
-/// How many bytes a host will hold before it stops accepting more.
-///
-/// A host answers strangers, and a stranger's write is free to them and not to
-/// the disk it lands on. A gigabyte is eight thousand drops: more than any two
-/// people will exchange, and small enough that filling it is somebody's project
-/// rather than somebody's afternoon.
-pub const CAPACITY: u64 = 1_073_741_824;
 
 /// A host: a directory, an HTTP door, and no opinions.
 #[derive(Debug)]
@@ -80,28 +73,6 @@ impl<C: Clock> Server<C> {
     pub const fn holding(mut self, bytes: u64) -> Self {
         self.capacity = bytes;
         self
-    }
-
-    /// What this host is already holding, in bytes.
-    ///
-    /// Walked per write rather than counted incrementally, because a counter is
-    /// state and a host that is killed loses it. A box holds thousands of files,
-    /// not millions, and the walk is one `readdir` per shard.
-    fn held(&self) -> u64 {
-        fn beneath(path: &std::path::Path) -> u64 {
-            let Ok(entries) = std::fs::read_dir(path) else {
-                return 0;
-            };
-            entries
-                .flatten()
-                .map(|entry| match entry.metadata() {
-                    Ok(data) if data.is_dir() => beneath(&entry.path()),
-                    Ok(data) => data.len(),
-                    Err(_) => 0,
-                })
-                .fold(0_u64, u64::saturating_add)
-        }
-        beneath(&self.root)
     }
 
     /// Answers requests until the listener fails.
@@ -225,7 +196,7 @@ impl<C: Clock> Server<C> {
         let mut envelope = expires_at.as_unix_seconds().to_be_bytes().to_vec();
         envelope.extend_from_slice(&request.body);
         let wanted = u64::try_from(envelope.len()).unwrap_or(u64::MAX);
-        if self.held().saturating_add(wanted) > self.capacity {
+        if held(&self.root).saturating_add(wanted) > self.capacity {
             return refused;
         }
         match self.drops.put_if_absent(addr, &envelope) {

@@ -16,7 +16,9 @@
 //! not compile a server, and `docs/box-protocol.md` describes what the two halves
 //! agree on.
 
+mod capacity;
 mod exchange;
 mod serve;
 
-pub use serve::{CAPACITY, Server};
+pub use capacity::CAPACITY;
+pub use serve::Server;

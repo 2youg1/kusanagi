@@ -16,8 +16,12 @@
 //! prose is the same value said to somebody reading a terminal.
 
 mod complaint;
+mod fence;
 mod prose;
 mod report;
+mod rows;
 
 pub use complaint::Complaint;
-pub use report::{Carried, Entry, Measured, Outcome, Summary};
+pub use fence::Fence;
+pub use report::{CONTRACT, Outcome};
+pub use rows::{Carried, Entry, Measured, Summary};

@@ -19,7 +19,13 @@
 
 use std::path::{Path, PathBuf};
 
-use kusanagi::{Complaint, Outcome, Request, Site};
+use kusanagi::{Complaint, Fence, Outcome, Request, Site};
+
+/// A fence with a value nobody has to look up.
+///
+/// JSON ignores it, and the tests that assert on prose want a fence they can
+/// spell. What must be random in production is asserted by `payload.rs`.
+pub const FENCE: Fence = Fence::from_bytes([0; 8]);
 
 /// A directory nothing else is using.
 pub fn scratch(tag: &str) -> PathBuf {
@@ -73,7 +79,7 @@ impl Endpoint {
 
 /// Renders an outcome as JSON so that a test asserts on fields rather than prose.
 pub fn json(outcome: &Outcome) -> serde_json::Value {
-    serde_json::from_str(&outcome.render(true)).expect("an outcome did not render as JSON")
+    serde_json::from_str(&outcome.render(true, FENCE)).expect("an outcome did not render as JSON")
 }
 
 /// Opens a channel and returns the invitation line.
