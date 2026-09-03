@@ -50,6 +50,7 @@ skip = [
     { crate = "getrandom@0.2", reason = "ring 0.17 is still on 0.2; this workspace and ureq are on 0.3" },
     { crate = "cpufeatures@0.2", reason = "chacha20 0.9 is still on 0.2; sha2 0.10 has moved to 0.3" },
     { crate = "syn@2", reason = "zeroize_derive is still on syn 2; the other derive macros have moved to 3" },
+    { crate = "windows-sys@0.52", reason = "ring 0.17 is still on 0.52; site::permissions::windows asks for 0.61" },
 ]
 # `unsafe_code = "forbid"` covers our own crates; these are the ones whose
 # absence keeps the binary small and the failure modes few.
