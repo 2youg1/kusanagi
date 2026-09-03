@@ -78,14 +78,22 @@ impl Complaint {
             Self::BadRecord { .. } => "this file is not one this build can read; keep it and \
                  report it, because a record written here should not fail to parse"
                 .to_owned(),
-            Self::NoInvitation => "ask for a fresh invitation: this one has expired, or the                  host no longer holds what it points at"
+            Self::NoInvitation => "ask for a fresh invitation: this one has expired, \
+                 or the host no longer holds what it points at"
                 .to_owned(),
             Self::InviteSpent => {
                 "ask for a fresh invitation; each one admits exactly one endpoint".to_owned()
             }
-            Self::ForeignRecord { .. } => "this site was made on another platform: run                  `kusanagi export` there, and pipe the archive into `kusanagi import` here"
+            // The second command names its argument as a slot rather than
+            // standing alone. `kusanagi import` by itself is advice nobody can
+            // take — it reads a key and an archive from a pipe, so typing it at a
+            // terminal refuses — and advice that does not run is not advice.
+            Self::ForeignRecord { .. } => "this site was made on another platform: run \
+                 `kusanagi export` there, then pipe the archive into \
+                 `kusanagi import --root <EMPTY_DIRECTORY>` here"
                 .to_owned(),
-            Self::BadRecovery => "check the recovery key: it is the 64 hexadecimal digits                  `kusanagi export` printed once, and it goes in on the first line of stdin"
+            Self::BadRecovery => "check the recovery key: it is the 64 hexadecimal digits \
+                 `kusanagi export` printed once, and it goes in on the first line of stdin"
                 .to_owned(),
             Self::OwnInvitation => "hand this line to the endpoint you mean to admit; \
                  the channel it opens is already here under the name you gave it"

@@ -77,11 +77,9 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             capabilities,
         } => certificate(waypoint, kind, tier, capabilities),
         Outcome::Exported { recovery, archive } => format!(
-            "{} bytes of archive are on stdout. The key that opens them is
-
-  {recovery}
-
-             write it down now: it is shown once, it is not stored anywhere, and              without it the archive is noise.",
+            "{} bytes of archive are on stdout. The key that opens them is\n\n  {recovery}\n\n\
+             write it down now: it is shown once, it is stored nowhere, and without \
+             it the archive is noise.",
             archive.len()
         ),
         Outcome::Imported { site, channels } => {

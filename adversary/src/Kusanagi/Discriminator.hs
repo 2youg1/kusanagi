@@ -139,21 +139,42 @@ repeats bodies
   where
     adjacent = concatMap (\body -> ByteString.zip body (ByteString.drop 1 body)) bodies
 
--- | How many byte offsets hold the same value in every object.
+-- | Byte offsets holding one value in every object, beyond what chance explains.
 --
 -- A magic number, a version byte, a length outside the envelope or a constant
--- nonce all show up here and nowhere else. Zero when there are fewer than two
--- objects, because one object agrees with itself everywhere and that is an
+-- nonce all show up here and nowhere else.
+--
+-- __The raw count is the object count wearing a hat, and subtracting the chance
+-- floor is what stops it being one.__ @k@ independent keystreams agree at a
+-- given offset with probability @256^(1-k)@, so a world holding two drops
+-- expects 512 agreements across 131 072 bytes and a world holding five expects
+-- none at all. A raw count therefore separates any two worlds whose object
+-- counts differ — which is the fact @drops@ already reports, in a third unit,
+-- and 'declared' would have had to call it a leak that no design change could
+-- ever close.
+--
+-- The question this was built to ask survives the correction: a field fixed by
+-- the format sits at the same offset whatever the object count, so what a censor
+-- could act on is agreement /above/ the floor. Zero when there are fewer than
+-- two objects, because one object agrees with itself everywhere and that is an
 -- artefact of the sample rather than a fact about the product.
 constantPositions :: [ByteString.ByteString] -> Int
 constantPositions bodies
-  | length bodies < 2 = 0
-  | otherwise = length [() | at <- [0 .. shortest - 1], agrees at]
+  | held < 2 = 0
+  | otherwise = max 0 (agreeing - chanceFloor)
   where
+    held = length bodies
     shortest = smallest (map ByteString.length bodies)
+    agreeing = length [() | at <- [0 .. shortest - 1], agrees at]
     agrees at = case map (`ByteString.index` at) bodies of
       [] -> False
       (first : rest) -> all (== first) rest
+    -- Binomial, as 'Kusanagi.Veil.tolerance' is for the pairwise case: five
+    -- deviations above the expectation, which chance clears about three times
+    -- in ten million.
+    chance = 1 / (256 ** fromIntegral (held - 1)) :: Double
+    expected = fromIntegral shortest * chance :: Double
+    chanceFloor = ceiling (expected + 5 * sqrt (expected * (1 - chance))) :: Int
 
 -- | The features on which one threshold classifies every world correctly.
 separating :: [[Reading]] -> [[Reading]] -> [Text]
