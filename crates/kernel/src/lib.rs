@@ -33,7 +33,7 @@ pub use digest::{Digest, DigestParseError};
 pub use identity::{Handle, NotAuthentic, Signature, Signer, VerifyingKey};
 pub use link::{ChainHead, Link};
 pub use payload::{MAX_PAYLOAD, MAX_SEGMENT};
-pub use segment::{Segment, SegmentError, SegmentId};
+pub use segment::{Freight, Purpose, Segment, SegmentError, SegmentId};
 pub use trail::{Commitment, Reveal, Trail};
 pub use waypoint::{PutOutcome, Waypoint, WaypointError};
 pub use wire::{Hex, HexError, Incomplete, Reader, unhex};

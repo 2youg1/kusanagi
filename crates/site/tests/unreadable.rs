@@ -67,6 +67,8 @@ fn nothing_a_site_writes_is_readable_by_anybody_else() {
 
     site.adopt(&[5; 32]).unwrap();
     site.keep(&Channel {
+        cadence: kusanagi_site::Cadence::OnDemand,
+        retention: kusanagi_site::Retention::Keep,
         name: "peer".to_owned(),
         secret: Secret::from_bytes([7; 32]),
         root: author.handle(),

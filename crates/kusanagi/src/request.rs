@@ -14,6 +14,41 @@
 use std::path::PathBuf;
 
 use kusanagi_grant::Abilities;
+use kusanagi_site::{Cadence, Retention};
+
+/// The two habits a channel is opened with, settled once at both ends.
+///
+/// One value rather than two parameters because `invite` and `join` each carry
+/// both and neither means anything alone: a channel that releases its history
+/// without a rhythm still leaks when it speaks, and a rhythm without release
+/// still leaves every word on the host. Grouping them is also what keeps the two
+/// verbs' signatures from growing a parameter every time a policy is added.
+///
+/// **Neither end tells the other.** Both are local decisions about what *this*
+/// endpoint does, so two ends may disagree — one may fill slots while the other
+/// answers on demand, and the protocol is unchanged. What an observer learns
+/// about an endpoint is decided by that endpoint alone, which is the only shape
+/// in which the choice is worth anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Habit {
+    /// How often this endpoint writes here.
+    pub cadence: Cadence,
+    /// What becomes of a drop once the peer has read it.
+    pub retention: Retention,
+}
+
+impl Default for Habit {
+    /// Write when asked, and keep everything.
+    ///
+    /// The default is the one that costs nothing and promises nothing: no
+    /// scheduler, no backup duty, and law 1 unqualified.
+    fn default() -> Self {
+        Self {
+            cadence: Cadence::OnDemand,
+            retention: Retention::Keep,
+        }
+    }
+}
 
 /// Which stream a read reports.
 ///
@@ -46,12 +81,26 @@ pub enum Request {
         lifetime: u64,
         /// What the invitee will be permitted to do.
         abilities: Abilities,
+        /// How this endpoint will write here, and what it will keep.
+        habit: Habit,
     },
     /// Accept an invitation.
     Join {
         /// The invitation, as one line.
         invite: String,
         /// What to call the channel here.
+        name: String,
+        /// How this endpoint will write here, and what it will keep.
+        habit: Habit,
+    },
+    /// Fill this channel's current slot, writing a filler if there is nothing
+    /// queued, and look once.
+    ///
+    /// The verb a scheduler runs. It is one-shot like every other, so the
+    /// schedule lives in `schtasks`, `cron` or `launchd` and never in a process
+    /// of this program's.
+    Tick {
+        /// Which channel.
         name: String,
     },
     /// Append one segment to this endpoint's stream on a channel.
@@ -126,6 +175,11 @@ pub enum Request {
     /// about somebody else's promise and needs the network, the other is about
     /// this side and needs nothing.
     Here,
+    /// Answer an agent over the Model Context Protocol, on stdin and stdout.
+    ///
+    /// A transport rather than a daemon: every call inside it opens the site,
+    /// does one thing and closes it, so killing this changes no result.
+    Port,
     /// Be a host for other people's drops.
     Host {
         /// The address to listen on.

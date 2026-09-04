@@ -14,18 +14,19 @@ use crate::segment::SegmentError;
 
 /// The fixed part of a genesis segment's canonical bytes, in bytes.
 ///
-/// tag 1 + index 8 + author 32 + commit 32 + `payload_len` 4 + signature 4 627.
+/// tag 1 + index 8 + author 32 + commit 32 + ack 8 + purpose 1 +
+/// `payload_len` 4 + signature 4 627.
 /// The signature is the whole of the difference: it is the one signature in a
 /// chain, and under ML-DSA-87 it is thirty times a following segment's fixed
 /// cost. The envelope in `seal` hides that difference along with every other one.
-pub(crate) const GENESIS_OVERHEAD: u32 = 4_704;
+pub(crate) const GENESIS_OVERHEAD: u32 = 4_713;
 
 /// The fixed part of a following segment's canonical bytes, in bytes.
 ///
-/// tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32 +
-/// `payload_len` 4. No signature: what authenticates a following segment is the
-/// commitment the segment beneath it published.
-pub(crate) const FOLLOWS_OVERHEAD: u32 = 141;
+/// tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32 + ack 8 +
+/// purpose 1 + `payload_len` 4. No signature: what authenticates a following
+/// segment is the commitment the segment beneath it published.
+pub(crate) const FOLLOWS_OVERHEAD: u32 = 150;
 
 /// The largest canonical byte string a segment can have, in bytes.
 ///
@@ -48,7 +49,7 @@ pub const MAX_SEGMENT: usize = 131_052;
 /// A payload larger than this is the job of content-addressed chunking, which
 /// does not exist yet; until it does, a larger payload is refused rather than
 /// silently split.
-pub const MAX_PAYLOAD: u32 = 126_348;
+pub const MAX_PAYLOAD: u32 = 126_339;
 
 const _: () = assert!(
     MAX_SEGMENT == 131_052 && GENESIS_OVERHEAD + MAX_PAYLOAD == 131_052,

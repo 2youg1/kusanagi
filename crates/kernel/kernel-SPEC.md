@@ -84,16 +84,21 @@ digest.rs     Digest<N> 与 identifier! 宏
 identity.rs   Handle / VerifyingKey / Signer / Signature / NotAuthentic
 trail.rs      Trail / Reveal / Commitment —— 一条流上的一次性证明
 link.rs       Link / ChainHead —— 段在链上的位置与认证它的东西
-segment/      mod.rs 是类型与规范字节，refusal.rs 是失败的分类
+segment/      mod.rs 是类型，canonical.rs 是规范字节，freight.rs 是段载什么，
+              refusal.rs 是失败的分类
 payload.rs    Payload 与三个尺寸常量：一个段能装多少
 address.rs    DropAddr（只声明，不派生）
 clock.rs      Instant / Clock / FixedClock
-waypoint.rs   Waypoint trait、PutOutcome、WaypointError
+waypoint.rs   Waypoint trait、PutOutcome、WaypointError（含 delete）
 ```
 
 kernel 无内部依赖；外部依赖只有 `blake3`、`fips204`、`subtle`、`zeroize`、`thiserror`。
 
 **`identity.rs` 四型同居一文件**是因为它们互相依赖：`Signer::verifying_key()` 产出 `VerifyingKey`，`VerifyingKey::handle()` 产出 `Handle`，`VerifyingKey::verify` 消费 `Signature`。拆开只会在文件之间制造一个环。
+
+**`segment/canonical.rs` 从 `mod.rs` 分出来**（C4/I3 时）：一个段**是什么**与它**怎么写下来**
+为不同理由改动，把编解码单独放一处，则一次布局升级只动一个文件。`freight.rs` 同理是概念而非行数：
+`Freight { payload, purpose, acknowledged }` 三件事由调用方**同时**决定，拆开的构造函数会让其中两件互相矛盾。
 
 **`payload.rs` 从 `segment.rs` 分出来**是因为 `segment.rs` 撞上了 400 行的单文件上限，而「一个段能装多少」本身是个完整的概念：`MAX_SEGMENT` 由 `seal::veil` 的信封定死，`MAX_PAYLOAD` 由它减出来，`Payload` 是把这条上限确立一次的那个类型。上限不上调，文件就得拆。
 
@@ -213,6 +218,30 @@ kernel 内部不做恢复——一切失败都是调用方的输入问题，一�
 | `thiserror` 2 | 只生成 `Display` 与 `From`，无运行时足迹 | 手写约多 60 行且易与错误码脱节 |
 
 不引入 `serde`（§10 步骤 2）、不引入 `hex`（`wire` 约 40 行，少一个依赖）。
+
+### 段版本 4（I3 · C4）
+
+布局在 `segment/canonical.rs`，域串 `kusanagi.segment.v4` 与 `kusanagi.segment.v4.sign`：
+
+```
+genesis:  tag 1 + index 8 + author 32 + commit 32 + ack 8 + purpose 1 + len 4 + payload + sig 4627
+follows:  tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32
+          + ack 8 + purpose 1 + len 4 + payload
+```
+
+固定开销因此 4 704 → **4 713**、141 → **150**，`MAX_PAYLOAD` 126 348 → **126 339**。
+`MAX_SEGMENT` 与 `seal::veil` 的编译期断言一字未动——尺寸不变，被挪走的是九个字节的载荷额度。
+
+**`acknowledged` 是计数而不是高度**：「我验过你三条」不需要哨兵值，而「验到高度 0」与「一条没验」
+用一个 `u64` 高度分不开。释放正是拿它做减法的，所以取那个没有歧义分支的编码。
+
+**`purpose` 是枚举而不是「空载荷即填充」**：读方要据此**做不同的事**——消息上报、填充计数后丢弃。
+一个空载荷的消息是合法的，把两者压成同一种表示就是让读方猜。
+
+**两个新字段都在签名之外**，与载荷同理由，且理由更硬一层：一份签了名的「我读了你多少」
+是「这场对话发生过」的可转移证据，而这正是全网每一个派生地址所要抹掉的事实。
+`tests/segment.rs` 与 `tests/robust.rs` 把这条边界写成可运行断言——签名区内每一位翻转都被拒，
+ack 区翻转则照常解码。
 
 ## 14 硬编码声明
 

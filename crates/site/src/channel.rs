@@ -31,6 +31,8 @@
 //! introduction 2592 bytes   the one-time key whose stream carries the greeting
 //! locator_len     2 bytes   big endian, then that many utf-8 bytes
 //! standing        1 byte    0 = root, 1 = granted, then a length-prefixed grant
+//! cadence       1|5 bytes   0 = on demand; 1 = slotted, then a u32 of seconds
+//! retention       1 byte    0 = keep, 1 = release once acknowledged
 //! has_peer        1 byte
 //! peer         2592 bytes   the peer's verifying key; zeroes when absent
 //! peer_standing   1 byte    as above
@@ -49,16 +51,21 @@ use kusanagi_grant::{Ability, Grant, GrantError, Revocations};
 use kusanagi_kernel::{Handle, Instant, Reader, VerifyingKey};
 use kusanagi_seal::Secret;
 
+use crate::blocks::{malformed, put_block, take_block, take_text};
+use crate::cadence::Cadence;
 use crate::error::SiteError;
+use crate::retention::Retention;
 
 /// The record this build writes and reads.
 ///
-/// Version 3 carries the channel's local name, which version 2 kept in the file
-/// name instead. Version 2 named its peer by verifying key where version 1 named
-/// it by handle — the two are the same width and neither decodes as the other,
+/// Version 4 carries the two choices that change what this endpoint does on the
+/// network rather than what it knows: a [`Cadence`] and a [`Retention`]. Version
+/// 3 carried the channel's local name, which version 2 kept in the file name
+/// instead. Version 2 named its peer by verifying key where version 1 named it
+/// by handle — the two are the same width and neither decodes as the other,
 /// which is why the version byte moves at all: a silent reinterpretation would
 /// leave an endpoint verifying every segment against 32 bytes that are not a key.
-const VERSION: u8 = 3;
+const VERSION: u8 = 4;
 const STANDING_ROOT: u8 = 0;
 const STANDING_GRANTED: u8 = 1;
 
@@ -176,6 +183,10 @@ pub struct Channel {
     pub locator: String,
     /// Why this endpoint is allowed here.
     pub standing: Standing,
+    /// How often this endpoint writes here.
+    pub cadence: Cadence,
+    /// What becomes of a drop once the peer has read it.
+    pub retention: Retention,
     /// The other end, once it has introduced itself.
     pub peer: Option<Peer>,
 }
@@ -191,6 +202,8 @@ impl Channel {
         out.extend_from_slice(self.introduction.as_bytes());
         put_block(&mut out, self.locator.as_bytes());
         self.standing.write(&mut out);
+        self.cadence.write(&mut out);
+        self.retention.write(&mut out);
         match &self.peer {
             None => {
                 out.push(0);
@@ -232,6 +245,8 @@ impl Channel {
         );
         let locator = take_text(&mut reader, "a locator")?;
         let standing = Standing::read(&mut reader)?;
+        let cadence = Cadence::read(&mut reader)?;
+        let retention = Retention::read(&mut reader)?;
 
         let has_peer = reader.take_byte().map_err(malformed)?;
         let key = VerifyingKey::from_bytes(
@@ -267,41 +282,10 @@ impl Channel {
             introduction,
             locator,
             standing,
+            cadence,
+            retention,
             peer,
         })
-    }
-}
-
-/// Writes a length-prefixed block.
-///
-/// The length is `u16`, which caps a locator and a grant at 64 KiB each. A grant
-/// is bounded by its hop limit and a locator is a URL, so the cap is unreachable;
-/// saturating rather than wrapping is what keeps an unreachable case from
-/// becoming a silently truncated one.
-pub(crate) fn put_block(out: &mut Vec<u8>, block: &[u8]) {
-    let len = u16::try_from(block.len()).unwrap_or(u16::MAX);
-    out.extend_from_slice(&len.to_be_bytes());
-    out.extend_from_slice(block);
-}
-
-pub(crate) fn take_block(reader: &mut Reader<'_>) -> Result<Vec<u8>, SiteError> {
-    let len = usize::from(u16::from_be_bytes(
-        reader.take_array::<2>().map_err(malformed)?,
-    ));
-    Ok(reader.take(len).map_err(malformed)?.to_vec())
-}
-
-pub(crate) fn take_text(reader: &mut Reader<'_>, what: &'static str) -> Result<String, SiteError> {
-    String::from_utf8(take_block(reader)?).map_err(|error| SiteError::BadRecord {
-        what,
-        reason: error.to_string(),
-    })
-}
-
-pub(crate) fn malformed(error: kusanagi_kernel::Incomplete) -> SiteError {
-    SiteError::BadRecord {
-        what: "a stored record",
-        reason: error.to_string(),
     }
 }
 
@@ -313,7 +297,7 @@ pub(crate) fn malformed(error: kusanagi_kernel::Incomplete) -> SiteError {
     reason = "test code"
 )]
 mod tests {
-    use super::{Channel, Peer, Standing};
+    use super::{Cadence, Channel, Peer, Retention, Standing};
     use kusanagi_grant::{Abilities, Ability, Grant, GrantError, Revocations, Scope};
     use kusanagi_kernel::{Instant, Signer};
     use kusanagi_seal::Secret;
@@ -329,6 +313,8 @@ mod tests {
             introduction: guest.verifying_key(),
             locator: "http://box.example:8963".to_owned(),
             standing: Standing::Root,
+            cadence: Cadence::OnDemand,
+            retention: Retention::Keep,
             peer: with_peer.then(|| Peer {
                 key: guest.verifying_key(),
                 standing: Standing::Granted(Grant::issue(&root, &guest.handle(), scope)),
@@ -371,6 +357,21 @@ mod tests {
             Standing::Root.permits(&root, &other, Ability::Send, now, &Revocations::new()),
             Err(GrantError::NotTheHolder { .. })
         ));
+    }
+
+    /// The two policies survive the round trip, and neither one's default is
+    /// what the other decodes to.
+    #[test]
+    fn a_channel_remembers_how_it_writes_and_what_it_keeps() {
+        let mut original = channel(true);
+        original.cadence = Cadence::Slotted {
+            period: core::num::NonZeroU32::new(900).unwrap(),
+        };
+        original.retention = Retention::ReleaseOnAck;
+        let decoded = Channel::from_bytes(&original.to_bytes()).unwrap();
+        assert_eq!(decoded.cadence.period(), Some(900));
+        assert_eq!(decoded.retention, Retention::ReleaseOnAck);
+        assert_eq!(decoded.to_bytes(), original.to_bytes());
     }
 
     #[test]

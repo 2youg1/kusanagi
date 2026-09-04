@@ -132,6 +132,21 @@ impl Waypoint for DirWaypoint {
         Ok(outcome)
     }
 
+    /// Removes the drop, treating an address that holds nothing as done.
+    ///
+    /// The write side claims an address by hard-linking onto it, so the file
+    /// here is the only link and removing it removes the drop.
+    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+        match fs::remove_file(self.path_of(addr)?) {
+            Ok(()) => Ok(()),
+            Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(WaypointError::Io {
+                action: "releasing a drop",
+                source,
+            }),
+        }
+    }
+
     fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
         // Reading creates nothing: a read with a side effect would make polling an
         // empty address change the world.

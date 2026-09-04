@@ -53,6 +53,7 @@ fn a_host_holding_a_hundred_segments_can_link_none_of_them() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
 
@@ -160,6 +161,7 @@ fn a_second_channel_between_the_same_two_endpoints_shares_nothing_with_the_first
         bob.run(&Request::Join {
             invite: invitation,
             name: channel.to_owned(),
+            habit: kusanagi::Habit::default(),
         })
         .unwrap();
         alice.send(channel, "the same words on both channels");

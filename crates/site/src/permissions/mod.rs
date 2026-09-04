@@ -38,9 +38,15 @@
 //! **The platform difference is a file, not a branch.** This module holds the
 //! part that is the same everywhere — staging, renaming, and refusing to touch
 //! what it did not create — and `unix.rs` and `windows.rs` each hold one answer
-//! to the two questions the platform actually decides: how a directory is
-//! created, and how a file is created. A third platform is a third file and one
-//! line here.
+//! to the questions the platform actually decides: how a directory is created,
+//! how a file is created, and how a page is pinned. A third platform is a third
+//! file and one line here.
+//!
+//! **Everything read off this disk comes back in a [`Locked`] buffer.** A site
+//! record is a channel secret, and a secret in a page the operating system may
+//! evict is a secret in `pagefile.sys` and in every backup that reached it. One
+//! funnel means "which records need pinning" is not a list anybody has to
+//! remember: it is every record, because there is one way in.
 
 #[cfg(unix)]
 #[path = "unix.rs"]
@@ -54,8 +60,48 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use zeroize::Zeroize as _;
+
 use crate::at_rest::{open_at_rest, seal_at_rest};
 use crate::error::SiteError;
+
+/// Bytes that stay in physical memory until they are erased.
+///
+/// Borrowed as a slice everywhere, so a caller reads it exactly as it would read
+/// a `Vec<u8>` and cannot accidentally take a copy that outlives the pin. What a
+/// caller *decodes* out of it — a `Secret`, an expanded key — lives in ordinary
+/// pages and erases itself instead; `site-SPEC.md` §9 records that boundary
+/// rather than leaving it to be discovered.
+#[derive(Debug)]
+pub(crate) struct Locked {
+    bytes: Vec<u8>,
+}
+
+impl Locked {
+    /// Pins `bytes` for as long as this value lives.
+    fn holding(bytes: Vec<u8>) -> Self {
+        platform::lock(&bytes);
+        Self { bytes }
+    }
+}
+
+impl Drop for Locked {
+    /// Erases first, unpins second. The other order would let the operating
+    /// system evict the page between the two, which is the whole thing being
+    /// prevented.
+    fn drop(&mut self) {
+        self.bytes.as_mut_slice().zeroize();
+        platform::unlock(&self.bytes);
+    }
+}
+
+impl core::ops::Deref for Locked {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.bytes
+    }
+}
 
 #[cfg(windows)]
 pub(crate) use platform::{protect, unprotect};
@@ -131,11 +177,11 @@ pub(crate) fn write_new(path: &Path, bytes: &[u8], action: &'static str) -> Resu
 /// [`SiteError::Local`] when the file cannot be read, and whatever
 /// [`crate::at_rest::open_at_rest`] reports for a record this platform has no
 /// store for.
-pub(crate) fn read(path: &Path, action: &'static str) -> Result<Option<Vec<u8>>, SiteError> {
+pub(crate) fn read(path: &Path, action: &'static str) -> Result<Option<Locked>, SiteError> {
     match fs::read(path) {
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(SiteError::Local { action, source }),
-        Ok(stored) => open_at_rest(&stored).map(Some),
+        Ok(stored) => open_at_rest(&stored).map(|plain| Some(Locked::holding(plain))),
     }
 }
 

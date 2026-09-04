@@ -185,6 +185,20 @@ pub const CONTRACT: u8 = 1;
 
 不新增任何外部供应商：door 的依赖集是 kusanagi 原有依赖的子集。
 
+### 三个新 Outcome 与三个新码（I3 · C4 · I5）
+
+`Queued` 与 `Sent` **分开**：一个在盘上、一个在宿主上，承诺不一样。把两者合成一个，调用方就会
+把「还没发出去」读成「已经送到」。`Ticked` 带 `carried`（`message` / `filler` / `nothing`）——
+**宿主分不出这三者，这正是时隙的意义**，所以这个字段只存在于门的这一侧。`Served` 是 MCP 会话
+结束时的一行。
+
+`Summary` 加 `period` 与 `retention` 两列。`retention` 即使默认值也照报，恰恰因为它不是默认：
+在一条 `release` 通道上，这块盘是这场对话的唯一副本，而列表是人会注意到这件事的地方。
+
+新码三个：`kusanagi.needs_cairn`、`kusanagi.not_slotted`、`seal.burned`（由 `Burned` 透传）。
+三者的 `recover` 都点名一个动词——前两个指向 `import` 与 `send --to`，`waypoint.deletion_refused`
+指向「不带 `--release` 重开，或换一个会删的宿主」。
+
 ## 14 硬编码声明
 
 | 硬编码 | 意图 | 后续影响 |

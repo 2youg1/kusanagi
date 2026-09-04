@@ -11,10 +11,13 @@
 //! corrupt a third thing that does not exist.
 //!
 //! ```text
-//! <root>/identity                 32 bytes: this endpoint's signing seed
-//! <root>/channels/<filed>         one channel record
-//! <root>/cairns/<filed>/<author>  how far that author's stream is verified
-//! <root>/revoked                  one revoked step identifier per line
+//! <root>/identity                   32 bytes: this endpoint's signing seed
+//! <root>/channels/<filed>           one channel record
+//! <root>/cairns/<filed>/<author>    how far that author's stream is verified
+//! <root>/ratchets/<filed>/<author>  how far that lane's keys are burned
+//! <root>/outbox/<filed>/<ticket>    a payload waiting for its slot
+//! <root>/slots/<filed>              the last slot this endpoint filled
+//! <root>/revoked                    one revoked step identifier per line
 //! ```
 //!
 //! **`<filed>` is not the channel's name.** It is a keyed hash of the name under
@@ -28,10 +31,13 @@
 //! part of a file that leaks the most widely, into backup catalogues, sync
 //! clients, crash reports and any listing anybody happens to take.
 //!
-//! Three of those four are facts this endpoint cannot recompute. A cairn is the
-//! exception: it can always be rebuilt by reading the stream again from height
-//! zero, which is why every way of failing to read one is treated as not having
-//! one. Losing every cairn costs requests and privacy, never correctness.
+//! Only one of these is recomputable. A cairn can always be rebuilt by reading
+//! the stream again from height zero, which is why every way of failing to read
+//! one is treated as not having one; losing every cairn costs requests and
+//! privacy, never correctness. **Everything else here is irreplaceable**, and on
+//! a channel that releases the ratchet and the outbox are irreplaceable in the
+//! strongest sense: no host and no peer holds a copy. That is what makes
+//! `export` a duty rather than a convenience.
 //!
 //! Channel names are checked rather than escaped. A name is a path component
 //! here, and the set of characters that are safe in a path component on every
@@ -101,7 +107,7 @@ impl Site {
         else {
             return Ok(None);
         };
-        <[u8; 32]>::try_from(bytes.as_slice())
+        <[u8; 32]>::try_from(&*bytes)
             .map(Some)
             .map_err(|_| SiteError::BadRecord {
                 what: "an identity file",
@@ -292,6 +298,9 @@ impl Site {
                 // a later channel of the same name inherit a stranger's heights.
                 if let Ok(filed) = self.filed_or_unknown(name) {
                     fs::remove_dir_all(cairns::dir(&self.root, &filed)).ok();
+                    fs::remove_dir_all(self.root.join("ratchets").join(&filed)).ok();
+                    fs::remove_dir_all(self.root.join("outbox").join(&filed)).ok();
+                    fs::remove_file(self.root.join("slots").join(&filed)).ok();
                 }
                 Ok(())
             }
@@ -353,7 +362,7 @@ impl Site {
     }
 
     /// What `name` is filed as, when a site with no identity means no such thing.
-    fn filed_or_unknown(&self, name: &str) -> Result<String, SiteError> {
+    pub(crate) fn filed_or_unknown(&self, name: &str) -> Result<String, SiteError> {
         self.filed(name)?.ok_or_else(|| SiteError::UnknownChannel {
             name: name.to_owned(),
         })

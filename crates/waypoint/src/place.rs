@@ -15,156 +15,28 @@
 //! file:/var/lib/kusanagi         the same, said out loud
 //! http://box.example:8963        somebody's HTTP box
 //! s3://ACCOUNT.r2.cloudflarestorage.com/bucket/prefix?region=auto
+//! carry://remote:drops           whatever KUSANAGI_CARRIER runs, under a prefix
 //! ```
+//!
+//! **A `carry://` locator names a prefix and never a program.** The program is
+//! this machine's own `KUSANAGI_CARRIER`; a locator arrives inside somebody
+//! else's invitation, and a locator that could name a program would be remote
+//! code execution spelled as configuration. See `carrier.rs`.
 //!
 //! [`Place`] is the only place in the workspace that knows more than one adapter
 //! exists, and it answers "not offered" on behalf of the ones that cannot do a
 //! thing — which is why `doctor` can examine a plain directory without either
 //! special-casing it or lying about it.
 
-use std::path::PathBuf;
-use std::str::FromStr;
-
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
 
 use crate::access::Access;
+use crate::carrier::CarrierWaypoint;
 use crate::conditional::{Conditional, Fetched, TtlOutcome, Validator};
 use crate::dir::DirWaypoint;
 use crate::http::HttpWaypoint;
+use crate::locator::{Locator, LocatorError};
 use crate::s3::S3Waypoint;
-
-/// Where an endpoint keeps its drops, before anything has been opened.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Locator {
-    /// A directory on this machine.
-    Directory(PathBuf),
-    /// An HTTP box, named by its root URL.
-    Box {
-        /// The root URL, without a trailing slash.
-        base: String,
-    },
-    /// A bucket on an S3-compatible host.
-    Bucket {
-        /// The endpoint URL, without the bucket.
-        endpoint: String,
-        /// The bucket name.
-        bucket: String,
-        /// A key prefix, possibly empty.
-        prefix: String,
-        /// The signing region; `auto` for R2.
-        region: String,
-    },
-}
-
-/// The scheme a string announces, if it announces one.
-///
-/// A scheme is letters, digits, `+`, `-` or `.` before `://`, which no path on
-/// any system this runs on begins with.
-fn announced(text: &str) -> Option<&str> {
-    let (scheme, _) = text.split_once("://")?;
-    let plausible = !scheme.is_empty()
-        && scheme.starts_with(|letter: char| letter.is_ascii_alphabetic())
-        && scheme
-            .chars()
-            .all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '+' | '-' | '.'));
-    plausible.then_some(scheme)
-}
-
-impl FromStr for Locator {
-    type Err = LocatorError;
-
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        if let Some(path) = text.strip_prefix("file:") {
-            return Ok(Self::Directory(PathBuf::from(path)));
-        }
-        if text.starts_with("http://") || text.starts_with("https://") {
-            return Ok(Self::Box {
-                base: text.trim_end_matches('/').to_owned(),
-            });
-        }
-        if let Some(rest) = text.strip_prefix("s3://") {
-            return parse_bucket(rest);
-        }
-        if text.is_empty() {
-            return Err(LocatorError::Empty);
-        }
-        // Anything else is a path — except a string that plainly announces a
-        // scheme. Treating `ftp://host` as a relative directory produced four
-        // measured failures about a filename, which is a true answer to a
-        // question nobody asked.
-        if let Some(scheme) = announced(text) {
-            return Err(LocatorError::UnknownScheme {
-                scheme: scheme.to_owned(),
-            });
-        }
-        Ok(Self::Directory(PathBuf::from(text)))
-    }
-}
-
-fn parse_bucket(rest: &str) -> Result<Locator, LocatorError> {
-    let (location, query) = rest.split_once('?').unwrap_or((rest, ""));
-    let mut parts = location.splitn(3, '/');
-    let endpoint = parts.next().unwrap_or_default();
-    let bucket = parts.next().unwrap_or_default();
-    let prefix = parts.next().unwrap_or_default();
-    if endpoint.is_empty() || bucket.is_empty() {
-        return Err(LocatorError::BucketIncomplete);
-    }
-
-    let region = query
-        .split('&')
-        .filter_map(|pair| pair.split_once('='))
-        .find(|(name, _)| *name == "region")
-        .map_or("auto", |(_, value)| value);
-
-    Ok(Locator::Bucket {
-        endpoint: format!("https://{endpoint}"),
-        bucket: bucket.to_owned(),
-        prefix: prefix.to_owned(),
-        region: region.to_owned(),
-    })
-}
-
-/// Why a locator does not name a place.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
-pub enum LocatorError {
-    /// The locator is the empty string.
-    #[error("a waypoint locator cannot be empty")]
-    Empty,
-    /// An `s3://` locator did not carry both an endpoint and a bucket.
-    #[error("an s3 locator reads s3://ENDPOINT/BUCKET[/PREFIX][?region=REGION]")]
-    BucketIncomplete,
-    /// The locator names a bucket but no credentials were supplied.
-    #[error("this bucket needs credentials; set KUSANAGI_S3_ACCESS_KEY and KUSANAGI_S3_SECRET_KEY")]
-    CredentialsMissing,
-    /// The locator names a scheme this build does not speak.
-    #[error("`{scheme}://` is not a kind of waypoint this build knows")]
-    UnknownScheme {
-        /// The scheme as it was written.
-        scheme: String,
-    },
-    /// A proxy was configured and is not one.
-    #[error("that is not a proxy: {reason}")]
-    BadProxy {
-        /// What the client library said was wrong with it.
-        reason: String,
-    },
-}
-
-impl LocatorError {
-    /// A stable code for machine callers. Never changes once published.
-    #[must_use]
-    pub const fn code(&self) -> &'static str {
-        match self {
-            Self::Empty => "locator.empty",
-            Self::BucketIncomplete => "locator.bucket_incomplete",
-            Self::CredentialsMissing => "locator.credentials_missing",
-            Self::UnknownScheme { .. } => "locator.unknown_scheme",
-            Self::BadProxy { .. } => "locator.bad_proxy",
-        }
-    }
-}
 
 /// An opened place, ready to hold bytes.
 #[derive(Debug)]
@@ -175,6 +47,8 @@ pub enum Place {
     Box(HttpWaypoint),
     /// A bucket on an S3-compatible host.
     Bucket(S3Waypoint),
+    /// Somewhere this machine's own carrier program puts things.
+    Carried(CarrierWaypoint),
 }
 
 impl Place {
@@ -214,6 +88,10 @@ impl Place {
                     now,
                 )))
             }
+            Locator::Carrier { prefix } => {
+                let carrier = access.carrier.clone().ok_or(LocatorError::CarrierMissing)?;
+                Ok(Self::Carried(CarrierWaypoint::new(carrier, prefix)))
+            }
         }
     }
 
@@ -224,6 +102,7 @@ impl Place {
             Self::Directory(_) => "directory",
             Self::Box(_) => "http box",
             Self::Bucket(_) => "s3 bucket",
+            Self::Carried(_) => "carrier",
         }
     }
 }
@@ -234,6 +113,7 @@ impl Waypoint for Place {
             Self::Directory(place) => place.put_if_absent(addr, bytes),
             Self::Box(place) => place.put_if_absent(addr, bytes),
             Self::Bucket(place) => place.put_if_absent(addr, bytes),
+            Self::Carried(place) => place.put_if_absent(addr, bytes),
         }
     }
 
@@ -242,6 +122,16 @@ impl Waypoint for Place {
             Self::Directory(place) => place.get(addr),
             Self::Box(place) => place.get(addr),
             Self::Bucket(place) => place.get(addr),
+            Self::Carried(place) => place.get(addr),
+        }
+    }
+
+    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+        match self {
+            Self::Directory(place) => place.delete(addr),
+            Self::Box(place) => place.delete(addr),
+            Self::Bucket(place) => place.delete(addr),
+            Self::Carried(place) => place.delete(addr),
         }
     }
 }
@@ -253,10 +143,18 @@ impl Conditional for Place {
         known: Option<&Validator>,
     ) -> Result<Fetched, WaypointError> {
         match self {
-            // A directory has no validators and no cheap "unchanged" answer, so
-            // it always sends the bytes. Saying that plainly is what lets one
-            // `doctor` run describe every kind of host.
+            // Neither a directory nor a carrier has validators or a cheap
+            // "unchanged" answer, so both always send the bytes. Saying that
+            // plainly is what lets one `doctor` run describe every kind of host.
             Self::Directory(place) => {
+                Ok(place
+                    .get(addr)?
+                    .map_or(Fetched::Absent, |bytes| Fetched::Fresh {
+                        bytes,
+                        validator: None,
+                    }))
+            }
+            Self::Carried(place) => {
                 Ok(place
                     .get(addr)?
                     .map_or(Fetched::Absent, |bytes| Fetched::Fresh {
@@ -277,6 +175,10 @@ impl Conditional for Place {
     ) -> Result<TtlOutcome, WaypointError> {
         match self {
             Self::Directory(place) => {
+                place.put_if_absent(addr, bytes)?;
+                Ok(TtlOutcome::NotOffered)
+            }
+            Self::Carried(place) => {
                 place.put_if_absent(addr, bytes)?;
                 Ok(TtlOutcome::NotOffered)
             }
@@ -310,8 +212,9 @@ mod tests {
         ));
     }
 
-    use super::{Locator, LocatorError, Place};
+    use super::Place;
     use crate::access::Access;
+    use crate::locator::{Locator, LocatorError};
     use std::path::PathBuf;
     use std::str::FromStr as _;
 

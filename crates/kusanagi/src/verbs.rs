@@ -16,8 +16,10 @@
 
 use std::path::PathBuf;
 
+use core::num::NonZeroU32;
+
 use clap::{Parser, Subcommand};
-use kusanagi::{Complaint, HOST_ADDRESS, Request, Whose};
+use kusanagi::{Cadence, Complaint, HOST_ADDRESS, Habit, Request, Retention, Whose};
 use kusanagi_grant::{Abilities, Ability};
 
 use crate::intake;
@@ -68,6 +70,21 @@ pub(crate) enum Verb {
         /// What the invitee may do, as a comma-separated list of send and read.
         #[arg(long = "can", default_value = "send,read", value_name = "ABILITIES")]
         can: String,
+        /// Write one drop every SECONDS whether or not there is anything to say.
+        ///
+        /// Turns `send` into a queue and `tick` into what empties it, so that
+        /// how often this endpoint speaks stops depending on what it has to
+        /// say. Costs one drop per period per direction and up to one period of
+        /// latency. A scheduler outside this program runs the ticks.
+        #[arg(long = "every", value_name = "SECONDS")]
+        every: Option<NonZeroU32>,
+        /// Delete each drop once the peer says they have read it.
+        ///
+        /// The keys go with it, so a host that kept a copy holds bytes nobody
+        /// can open. **This site then becomes the only copy of the
+        /// conversation**: run `kusanagi export` and keep the archive.
+        #[arg(long)]
+        release: bool,
     },
     /// Accept an invitation, read from stdin.
     ///
@@ -79,6 +96,25 @@ pub(crate) enum Verb {
         /// What to call the channel here, or `-` to read it from the first
         /// line of stdin, ahead of the invitation.
         #[arg(long, value_name = "NAME")]
+        name: String,
+        /// Write one drop every SECONDS whether or not there is anything to say.
+        #[arg(long = "every", value_name = "SECONDS")]
+        every: Option<NonZeroU32>,
+        /// Delete each drop once the peer says they have read it, and burn the
+        /// key. **This site then becomes the only copy.**
+        #[arg(long)]
+        release: bool,
+    },
+    /// Fill this channel's current slot, and look once.
+    ///
+    /// What a scheduler runs on a channel opened with `--every`. It writes
+    /// exactly one drop per slot — whatever `send` queued, or a filler carrying
+    /// nothing — so that an endpoint with everything to say and one with nothing
+    /// produce the same traffic. Running it twice in one slot writes nothing the
+    /// second time.
+    Tick {
+        /// Which channel, or `-` to read the name from stdin.
+        #[arg(long = "from", value_name = "NAME")]
         name: String,
     },
     /// Append one segment to your stream on a channel, or on every channel in a
@@ -158,6 +194,12 @@ pub(crate) enum Verb {
     /// because a command line is public while the process runs and is written to
     /// a history file afterwards.
     Import,
+    /// Answer an agent over the Model Context Protocol, on stdin and stdout.
+    ///
+    /// The same verbs as this command line, through the door an agent is
+    /// already standing at. Every call opens the site, does one thing and
+    /// closes it, so killing this loses nothing.
+    Port,
     /// Hold other people's drops. This is the untrusted half of the network.
     Host {
         /// The address to listen on: HOST:PORT, a bare port, or 0 for any free
@@ -188,6 +230,21 @@ pub(crate) enum Verb {
 /// An unknown word is refused rather than ignored: an invitation that silently
 /// granted less than it was asked for would be discovered by the person it was
 /// given to, days later, as a failure they cannot explain.
+/// Turns the two flags a channel is opened with into the value they mean.
+///
+/// Absent is the default in both cases, and the default is the one that promises
+/// nothing: write when asked, keep everything.
+fn habit(every: Option<NonZeroU32>, release: bool) -> Habit {
+    Habit {
+        cadence: every.map_or(Cadence::OnDemand, |period| Cadence::Slotted { period }),
+        retention: if release {
+            Retention::ReleaseOnAck
+        } else {
+            Retention::Keep
+        },
+    }
+}
+
 fn abilities(text: &str) -> Result<Abilities, Complaint> {
     let mut abilities = Abilities::NONE;
     for word in text
@@ -219,16 +276,30 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
             waypoint,
             lifetime,
             can,
+            every,
+            release,
         } => Request::Invite {
             name: intake::channel(name)?,
             waypoint,
             lifetime,
             abilities: abilities(&can)?,
+            habit: habit(every, release),
         },
-        Verb::Join { name } => {
+        Verb::Join {
+            name,
+            every,
+            release,
+        } => {
             let (name, invite) = intake::invited(name)?;
-            Request::Join { invite, name }
+            Request::Join {
+                invite,
+                name,
+                habit: habit(every, release),
+            }
         }
+        Verb::Tick { name } => Request::Tick {
+            name: intake::channel(name)?,
+        },
         // Two destinations, and the command line carries at most one of them.
         // clap refuses both at once; the case it cannot express is neither, and
         // saying so here gives that a stable code and a way out.
@@ -279,6 +350,7 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
         Verb::Forget { name } => Request::Forget {
             name: intake::channel(name)?,
         },
+        Verb::Port => Request::Port,
         Verb::Export => Request::Export,
         Verb::Import => {
             let (recovery, archive) = intake::restored()?;

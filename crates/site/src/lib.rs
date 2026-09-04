@@ -22,21 +22,31 @@
 
 mod archive;
 mod at_rest;
+mod blocks;
+mod cadence;
 mod cairns;
 mod channel;
 mod error;
 mod invite;
 mod naming;
+mod outbox;
 mod permissions;
+mod ratchets;
 mod records;
+mod retention;
 mod revoked;
+mod rhythm;
 mod roster;
 mod site;
+mod slots;
 
 pub use archive::{export, import};
 pub use at_rest::store;
+pub use cadence::Cadence;
 pub use channel::{Channel, Peer, Standing};
 pub use error::SiteError;
 pub use invite::{Invite, Offer};
+pub use outbox::Queued;
+pub use retention::Retention;
 pub use roster::Roster;
 pub use site::Site;

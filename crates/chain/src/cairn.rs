@@ -177,7 +177,7 @@ impl CairnError {
 )]
 mod tests {
     use super::{Cairn, HANDLE_WIDTH, ID_WIDTH, INDEX_WIDTH};
-    use kusanagi_kernel::{Segment, Signer, Trail};
+    use kusanagi_kernel::{Freight, Segment, Signer, Trail};
 
     /// A cairn over a chain actually built to `height`, so that the head in it is
     /// a witness rather than an assertion.
@@ -188,10 +188,20 @@ mod tests {
     fn cairn_at(height: u8) -> Cairn {
         let signer = Signer::from_seed(&[3_u8; 32]);
         let trail = Trail::from_seed([4_u8; 32]);
-        let mut segment = Segment::genesis(&signer, &trail, b"genesis".to_vec()).unwrap();
+        let mut segment = Segment::genesis(
+            &signer,
+            &trail,
+            Freight::message(b"genesis".to_vec()).unwrap(),
+        )
+        .unwrap();
         for _ in 0..height {
-            segment =
-                Segment::extend(&trail, signer.handle(), b"more".to_vec(), segment.head()).unwrap();
+            segment = Segment::extend(
+                &trail,
+                signer.handle(),
+                Freight::message(b"more".to_vec()).unwrap(),
+                segment.head(),
+            )
+            .unwrap();
         }
         Cairn::new(signer.handle(), segment.head())
     }

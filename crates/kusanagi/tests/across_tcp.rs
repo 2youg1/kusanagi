@@ -53,6 +53,7 @@ fn two_endpoints_meet_over_tcp_through_a_host_neither_of_them_trusts() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .expect("bob could not join over tcp");
 

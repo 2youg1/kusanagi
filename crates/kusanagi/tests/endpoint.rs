@@ -36,6 +36,7 @@ fn two_endpoints_exchange_messages_through_a_host_neither_of_them_runs() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .expect("bob could not join");
 
@@ -83,6 +84,7 @@ fn one_flipped_byte_on_the_host_is_caught() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     let address = alice.send_reporting("bob", "a message that must arrive intact");
@@ -124,6 +126,7 @@ fn revoking_a_peer_stops_their_messages_from_that_moment() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     bob.send("alice", "something bob wrote while he was welcome");
@@ -193,6 +196,7 @@ fn an_invitation_admits_exactly_one_endpoint() {
     bob.run(&Request::Join {
         invite: invitation.clone(),
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
 
@@ -202,6 +206,7 @@ fn an_invitation_admits_exactly_one_endpoint() {
         .run(&Request::Join {
             invite: invitation,
             name: "alice".to_owned(),
+            habit: kusanagi::Habit::default(),
         })
         .expect_err("an invitation was accepted twice");
     assert_eq!(refused.code(), "kusanagi.invite_spent");
@@ -223,6 +228,7 @@ fn an_endpoint_with_only_read_cannot_send() {
                 waypoint: host.display().to_string(),
                 lifetime: 3_600,
                 abilities: kusanagi_grant::Abilities::NONE.with(kusanagi_grant::Ability::Read),
+                habit: kusanagi::Habit::default(),
             })
             .unwrap(),
     )["invite"]
@@ -233,6 +239,7 @@ fn an_endpoint_with_only_read_cannot_send() {
     bob.run(&Request::Join {
         invite: line,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
 
@@ -272,6 +279,7 @@ fn an_expired_invitation_is_refused() {
                 waypoint: host.display().to_string(),
                 lifetime: 0,
                 abilities: kusanagi_grant::Abilities::ALL,
+                habit: kusanagi::Habit::default(),
             })
             .unwrap(),
     )["invite"]
@@ -283,6 +291,7 @@ fn an_expired_invitation_is_refused() {
         .run(&Request::Join {
             invite: invitation,
             name: "alice".to_owned(),
+            habit: kusanagi::Habit::default(),
         })
         .expect_err("an expired invitation was accepted");
     assert_eq!(refused.code(), "grant.expired");
@@ -301,6 +310,7 @@ fn a_command_keeps_no_state_that_a_kill_could_lose() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     alice.send("bob", "one");
@@ -342,6 +352,7 @@ fn a_channel_lists_itself_before_and_after_somebody_joins() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     bob.send("alice", "here I am");

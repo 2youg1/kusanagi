@@ -12,13 +12,18 @@
 //! content addressing would stop meaning anything.
 //!
 //! ```text
-//! genesis:  tag 1 + index 8 + author 32 + commit 32 + payload_len 4 + payload + sig 4627
+//! genesis:  tag 1 + index 8 + author 32 + commit 32
+//!           + ack 8 + purpose 1 + payload_len 4 + payload + sig 4627
 //! follows:  tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32
-//!           + payload_len 4 + payload
+//!           + ack 8 + purpose 1 + payload_len 4 + payload
 //! ```
 //!
-//! A genesis segment spends 4 704 bytes besides its payload and a following one
-//! spends 141, and the envelope above them shows one length whichever it is.
+//! A genesis segment spends 4 713 bytes besides its payload and a following one
+//! spends 150, and the envelope above them shows one length whichever it is.
+//!
+//! The three fields after the chain are one value, [`Freight`], because a caller
+//! settles all three at once — see `freight.rs` for why an acknowledgement is a
+//! count and why a filler is a purpose rather than an empty payload.
 //!
 //! **Only the first segment of a chain is signed.** A signature is transferable,
 //! and a peer who is compromised or coerced would otherwise hold proof of
@@ -45,32 +50,25 @@
 
 use core::num::NonZeroU64;
 
+mod canonical;
+mod freight;
 mod refusal;
 
+pub use freight::{Freight, Purpose};
 pub use refusal::SegmentError;
 
 use crate::identifier;
-use crate::identity::{Handle, Signature, Signer, VerifyingKey};
+use crate::identity::{Handle, Signer};
 use crate::link::{ChainHead, Link};
-use crate::payload::Payload;
 use crate::trail::{Commitment, Reveal, Trail};
-use crate::wire::Reader;
+use canonical::signed_bytes;
 
 /// Domain separation for segment identity.
 ///
 /// The version is part of the prefix so that a future layout change produces
 /// different identifiers for the same bytes. Two encodings sharing one address
 /// space is the failure this prevents.
-const SEGMENT_DOMAIN: &[u8] = b"kusanagi.segment.v3";
-
-/// Domain separation for what the author signs.
-///
-/// Distinct from [`SEGMENT_DOMAIN`] so that a segment identifier can never be
-/// mistaken for something an author agreed to, in either direction.
-const SIGNING_DOMAIN: &[u8] = b"kusanagi.segment.v3.sign";
-
-const TAG_GENESIS: u8 = 0;
-const TAG_FOLLOWS: u8 = 1;
+const SEGMENT_DOMAIN: &[u8] = b"kusanagi.segment.v4";
 
 identifier! {
     /// The content address of a segment.
@@ -82,7 +80,7 @@ identifier! {
 pub struct Segment {
     link: Link,
     author: Handle,
-    payload: Payload,
+    freight: Freight,
 }
 
 impl Segment {
@@ -93,15 +91,14 @@ impl Segment {
     /// # Errors
     ///
     /// [`SegmentError::PayloadTooLarge`] when the payload exceeds [`MAX_PAYLOAD`](crate::MAX_PAYLOAD).
-    pub fn genesis(signer: &Signer, trail: &Trail, payload: Vec<u8>) -> Result<Self, SegmentError> {
+    pub fn genesis(signer: &Signer, trail: &Trail, freight: Freight) -> Result<Self, SegmentError> {
         let author = signer.handle();
-        let payload = Payload::new(payload)?;
         let commit = trail.commitment(1);
         let signature = signer.sign(&signed_bytes(&author, commit));
         Ok(Self {
             link: Link::Genesis { commit, signature },
             author,
-            payload,
+            freight,
         })
     }
 
@@ -121,7 +118,7 @@ impl Segment {
     pub fn extend(
         trail: &Trail,
         author: Handle,
-        payload: Vec<u8>,
+        freight: Freight,
         head: ChainHead,
     ) -> Result<Self, SegmentError> {
         let height = head
@@ -132,7 +129,6 @@ impl Segment {
         // modelled rather than asserted away.
         let index = NonZeroU64::new(height).ok_or(SegmentError::ChainExhausted)?;
         let next = height.checked_add(1).ok_or(SegmentError::ChainExhausted)?;
-        let payload = Payload::new(payload)?;
         Ok(Self {
             link: Link::Follows {
                 index,
@@ -141,7 +137,7 @@ impl Segment {
                 commit: trail.commitment(next),
             },
             author,
-            payload,
+            freight,
         })
     }
 
@@ -207,166 +203,23 @@ impl Segment {
     /// The opaque bytes this segment carries.
     #[must_use]
     pub const fn payload(&self) -> &[u8] {
-        self.payload.bytes()
+        self.freight.payload.bytes()
     }
 
-    /// Encodes this segment into its one canonical byte string.
+    /// Whether the author meant to say anything, or was filling a slot.
     #[must_use]
-    pub fn to_canonical_bytes(&self) -> Vec<u8> {
-        match self.link {
-            Link::Genesis { commit, signature } => {
-                let mut out = genesis_body(&self.author, commit, &self.payload);
-                out.extend_from_slice(signature.as_bytes());
-                out
-            }
-            Link::Follows {
-                index,
-                previous,
-                reveal,
-                commit,
-            } => {
-                let mut out = Vec::new();
-                out.push(TAG_FOLLOWS);
-                out.extend_from_slice(&index.get().to_be_bytes());
-                out.extend_from_slice(previous.as_bytes());
-                out.extend_from_slice(self.author.as_bytes());
-                out.extend_from_slice(reveal.as_bytes());
-                out.extend_from_slice(commit.as_bytes());
-                out.extend_from_slice(&self.payload.declared_len());
-                out.extend_from_slice(self.payload.bytes());
-                out
-            }
-        }
+    pub const fn purpose(&self) -> Purpose {
+        self.freight.purpose
     }
 
-    /// Decodes a segment from its canonical byte string.
+    /// How many of the reader's segments the author had verified when they
+    /// wrote this.
     ///
-    /// Re-encoding the body before checking a genesis signature makes canonicity
-    /// part of authenticity: bytes that decode to this segment but are not the
-    /// bytes this segment encodes to produce a different signed message, and are
-    /// therefore refused.
-    ///
-    /// `author` is whose segment the caller expects, and one naming anybody else
-    /// is refused before anything else is looked at. A caller that has no
-    /// expectation cannot call this at all, which is the difference between
-    /// "somebody wrote these bytes" and "the peer I am reading wrote them".
-    ///
-    /// **A following segment is not authenticated here**, because what
-    /// authenticates it is the commitment made by the segment beneath it, and
-    /// only a reader walking the chain holds that. `kusanagi_chain::Verifier`
-    /// makes the comparison, and a segment that never passes through it has been
-    /// read but not believed.
-    ///
-    /// # Errors
-    ///
-    /// Every malformed input has its own variant of [`SegmentError`]; nothing here
-    /// panics, and trailing bytes are refused so that one segment keeps exactly
-    /// one spelling.
-    pub fn from_canonical_bytes(bytes: &[u8], author: &VerifyingKey) -> Result<Self, SegmentError> {
-        let mut reader = Reader::new(bytes);
-        let tag = reader.take_byte()?;
-        let height = reader.take_u64()?;
-
-        let previous = match tag {
-            TAG_GENESIS if height != 0 => {
-                return Err(SegmentError::GenesisIndexNotZero { index: height });
-            }
-            TAG_GENESIS => None,
-            TAG_FOLLOWS => Some(SegmentId::from_bytes(reader.take_array::<32>()?)),
-            other => return Err(SegmentError::UnknownTag { tag: other }),
-        };
-
-        let named = Handle::from_bytes(reader.take_array::<32>()?);
-        // The name first: a segment by somebody else is a different fact from a
-        // forgery, and reporting the forgery would point a reader at the wrong
-        // problem — usually a host serving a drop from a stream they did not ask
-        // for.
-        let expected = author.handle();
-        if named != expected {
-            return Err(SegmentError::NotTheAuthor {
-                expected,
-                found: named,
-            });
-        }
-
-        let reveal = match previous {
-            None => None,
-            Some(_) => Some(Reveal::from_bytes(reader.take_array::<32>()?)),
-        };
-        let commit = Commitment::from_bytes(reader.take_array::<32>()?);
-        let declared = reader.take_u32()?;
-        let wanted = usize::try_from(declared)
-            .map_err(|_| SegmentError::PayloadUnrepresentable { len: declared })?;
-        let payload = Payload::new(reader.take(wanted)?.to_vec())?;
-
-        let link = match (previous, reveal) {
-            (None, _) => {
-                let signature = Signature::from_bytes(reader.take_array::<4_627>()?);
-                author.verify(&signed_bytes(&named, commit), &signature)?;
-                Link::Genesis { commit, signature }
-            }
-            (Some(previous), Some(reveal)) => {
-                let index = NonZeroU64::new(height).ok_or(SegmentError::FollowsIndexZero)?;
-                Link::Follows {
-                    index,
-                    previous,
-                    reveal,
-                    commit,
-                }
-            }
-            // Unreachable by construction: `reveal` is `Some` exactly when
-            // `previous` is. Modelled rather than asserted away, because an
-            // `unreachable!` here would be a panic on attacker-supplied bytes.
-            (Some(_), None) => return Err(SegmentError::FollowsIndexZero),
-        };
-
-        if reader.remaining() != 0 {
-            return Err(SegmentError::TrailingBytes {
-                count: reader.remaining(),
-            });
-        }
-
-        Ok(Self {
-            link,
-            author: named,
-            payload,
-        })
+    /// A count, so zero means *none* rather than *height zero*. Whoever wrote it
+    /// is saying they no longer need those segments to exist, which is what a
+    /// channel that releases acts on.
+    #[must_use]
+    pub const fn acknowledged(&self) -> u64 {
+        self.freight.acknowledged
     }
-}
-
-/// Everything a genesis segment is, except the signature over it.
-fn genesis_body(author: &Handle, commit: Commitment, payload: &Payload) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.push(TAG_GENESIS);
-    out.extend_from_slice(&0_u64.to_be_bytes());
-    out.extend_from_slice(author.as_bytes());
-    out.extend_from_slice(commit.as_bytes());
-    out.extend_from_slice(&payload.declared_len());
-    out.extend_from_slice(payload.bytes());
-    out
-}
-
-/// The exact message an author signs, once, at the foot of a chain.
-///
-/// **The payload is deliberately outside it**, and that omission is the whole of
-/// what makes a stream deniable. A signature over what was said is proof of what
-/// was said, transferable to anybody, forever, without the author's
-/// participation — which is the property this design exists to destroy. What is
-/// signed is only that this author opened a stream committing to this first
-/// proof: enough to stop a peer who holds the channel secret from racing to
-/// height zero, and not enough to convict anybody of a sentence.
-///
-/// A reader loses nothing by it. The bytes arrive inside an authenticated
-/// envelope sealed under a key derived from the channel secret, at an address
-/// derived from the same secret, so a host cannot alter a payload and a stranger
-/// cannot supply one. The only party who can put different words at this height
-/// is the peer who already read it — and that is exactly the party who must not
-/// be able to prove what the words were.
-fn signed_bytes(author: &Handle, commit: Commitment) -> Vec<u8> {
-    let mut out = Vec::with_capacity(SIGNING_DOMAIN.len().saturating_add(72));
-    out.extend_from_slice(SIGNING_DOMAIN);
-    out.extend_from_slice(author.as_bytes());
-    out.extend_from_slice(commit.as_bytes());
-    out.extend_from_slice(&0_u64.to_be_bytes());
-    out
 }

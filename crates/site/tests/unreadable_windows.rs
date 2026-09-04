@@ -154,6 +154,8 @@ fn written(tag: &str) -> Site {
     let site = Site::at(root);
     site.adopt(&[5; 32]).unwrap();
     site.keep(&Channel {
+        cadence: kusanagi_site::Cadence::OnDemand,
+        retention: kusanagi_site::Retention::Keep,
         name: "peer".to_owned(),
         secret: Secret::from_bytes([7; 32]),
         root: Signer::from_seed(&[3; 32]).handle(),

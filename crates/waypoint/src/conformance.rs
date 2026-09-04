@@ -77,6 +77,15 @@ impl Clause<'_> {
             })
     }
 
+    fn delete(&self, addr: &DropAddr) -> Result<(), Failure> {
+        self.waypoint
+            .delete(addr)
+            .map_err(|source| Failure::Unavailable {
+                clause: self.name,
+                source,
+            })
+    }
+
     fn require(&self, held: bool, detail: impl fmt::Display) -> Result<(), Failure> {
         if held {
             return Ok(());
@@ -148,6 +157,23 @@ pub fn run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure> 
     empty_payload.require(
         empty_payload.get(&addr(3))? == Some(Vec::new()),
         "an empty payload read back as absent; empty and missing are different",
+    )?;
+
+    // A channel that releases stakes its history on this clause: once the peer
+    // has acknowledged a drop, the drop is removed and the reader's own site is
+    // the only copy left. A host that quietly kept the bytes would leave that
+    // channel believing in a deletion that never happened.
+    let released = clause("release-removes-and-stays-removed");
+    released.put(&addr(4), b"released")?;
+    released.delete(&addr(4))?;
+    released.require(
+        released.get(&addr(4))?.is_none(),
+        "a released drop was still readable afterwards",
+    )?;
+    released.delete(&addr(4))?;
+    released.require(
+        released.get(&addr(4))?.is_none(),
+        "releasing an address twice did not leave it empty",
     )?;
 
     Ok(())

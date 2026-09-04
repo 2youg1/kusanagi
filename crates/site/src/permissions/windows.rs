@@ -53,6 +53,10 @@ use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_WRITE,
 };
+use windows_sys::Win32::System::Memory::{VirtualLock, VirtualUnlock};
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, SetProcessWorkingSetSize};
+
+use zeroize::Zeroize as _;
 
 use crate::error::SiteError;
 
@@ -294,7 +298,16 @@ fn crypt(input: &[u8], direction: Direction) -> Result<Vec<u8>, SiteError> {
     // SAFETY: on success DPAPI reports a buffer of exactly `cbData` bytes at
     // `pbData`, allocated with `LocalAlloc`. The copy happens before the free,
     // and nothing else holds the pointer.
-    let bytes = unsafe { std::slice::from_raw_parts(out.pbData, len) }.to_vec();
+    let plaintext = unsafe { std::slice::from_raw_parts_mut(out.pbData, len) };
+    // DPAPI chose this buffer, so the plaintext of a record exists for a moment
+    // in a page this program did not lock. Pinning it here closes that moment;
+    // erasing it below closes what the free would otherwise leave behind.
+    lock(plaintext);
+    let bytes = plaintext.to_vec();
+    if matches!(direction, Direction::Open) {
+        plaintext.zeroize();
+    }
+    unlock(plaintext);
     // SAFETY: `out.pbData` came from DPAPI, which documents `LocalFree` as the
     // way to release it, and this is the only release of it.
     unsafe { LocalFree(out.pbData.cast()) };
@@ -314,4 +327,60 @@ fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SiteError> {
         cbData: len,
         pbData: bytes.as_ptr().cast_mut(),
     })
+}
+
+/// Pins `bytes` in physical memory, so the page file never sees them.
+///
+/// **What this buys and what it does not.** A site record is a channel secret;
+/// once it is in a page the operating system may evict, it is in `pagefile.sys`,
+/// in a hibernation image, and in whatever a backup of those files reached.
+/// `VirtualLock` keeps the page resident, so those three copies stop being made.
+/// It does nothing about a crash dump, which is machine-wide policy, and nothing
+/// about values *derived* from a record afterwards — an expanded signing key
+/// lives in an ordinary page and is erased rather than pinned. `site-SPEC.md` §9
+/// records that boundary.
+///
+/// **A failure is not reported.** The lock is a hardening measure over a
+/// correctness-neutral property: a record that could not be pinned is still the
+/// right record, and refusing to read it would turn a tightened working-set
+/// quota into an endpoint that cannot open its own channels. What is done
+/// instead is raising the quota once, below, so the common cause cannot arise.
+pub(super) fn lock(bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+    room_to_lock();
+    // SAFETY: the pointer and length describe a live slice the caller owns for
+    // the duration of this call, which is all `VirtualLock` reads. Its return is
+    // deliberately dropped; the doc comment above says why.
+    let _locked = unsafe { VirtualLock(bytes.as_ptr().cast(), bytes.len()) };
+}
+
+/// Releases what [`lock`] pinned. Call it *after* erasing, never before.
+pub(super) fn unlock(bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+    // SAFETY: same slice, same lifetime, and unlocking a range that was never
+    // locked is a documented no-op that reports failure rather than misbehaving.
+    let _unlocked = unsafe { VirtualUnlock(bytes.as_ptr().cast(), bytes.len()) };
+}
+
+/// Raises this process's minimum working set once, so locking can succeed.
+///
+/// `VirtualLock` is bounded by the *minimum* working set size, which Windows
+/// defaults low enough that a site with a few dozen channels would reach it.
+/// Eight mebibytes is far above anything this program holds at once and far
+/// below anything a desktop would notice.
+fn room_to_lock() {
+    static RAISED: std::sync::Once = std::sync::Once::new();
+    RAISED.call_once(|| {
+        const MINIMUM: usize = 8 * 1_024 * 1_024;
+        const MAXIMUM: usize = 32 * 1_024 * 1_024;
+        // SAFETY: `GetCurrentProcess` returns a pseudo-handle that needs no
+        // release and is valid for the life of the process; the two sizes are
+        // plain integers. A refusal leaves the default quota in place, which
+        // `lock` already treats as acceptable.
+        let _raised = unsafe { SetProcessWorkingSetSize(GetCurrentProcess(), MINIMUM, MAXIMUM) };
+    });
 }

@@ -54,4 +54,9 @@ impl Waypoint for MemoryWaypoint {
     fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
         Ok(self.drops().get(addr).cloned())
     }
+
+    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+        self.drops().remove(addr);
+        Ok(())
+    }
 }

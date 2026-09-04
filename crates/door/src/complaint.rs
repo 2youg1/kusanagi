@@ -160,6 +160,26 @@ pub enum Complaint {
         /// Which channel was being extended.
         name: String,
     },
+    /// A key this endpoint destroyed on purpose was asked for again.
+    #[error(transparent)]
+    Burned(#[from] kusanagi_seal::Burned),
+    /// A channel that releases was read without the record that is its history.
+    ///
+    /// On such a channel the host holds nothing that has been acknowledged, so
+    /// a walk from height zero would find an empty address and conclude the
+    /// stream had never started — a wrong answer given confidently, which is
+    /// worse than a refusal.
+    #[error("`{name}` releases its history, and the record of what was read is gone")]
+    NeedsCairn {
+        /// Which channel.
+        name: String,
+    },
+    /// A slot verb was run on a channel that has no slots.
+    #[error("`{name}` writes when it is asked to, so it has no slot to fill")]
+    NotSlotted {
+        /// Which channel.
+        name: String,
+    },
     /// An archive did not open under the recovery key that was offered.
     #[error("this archive did not open under that recovery key")]
     BadRecovery,
@@ -312,6 +332,9 @@ impl Complaint {
             Self::HistoryChanged { .. } => "kusanagi.history_changed",
             Self::InviteSpent => "kusanagi.invite_spent",
             Self::NoInvitation => "kusanagi.no_invitation",
+            Self::Burned(burned) => burned.code(),
+            Self::NeedsCairn { .. } => "kusanagi.needs_cairn",
+            Self::NotSlotted { .. } => "kusanagi.not_slotted",
             Self::BadRecovery => "kusanagi.bad_recovery_key",
             Self::ForeignRecord { .. } => "site.foreign_record",
             Self::OwnInvitation => "kusanagi.own_invitation",

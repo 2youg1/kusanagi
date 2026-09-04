@@ -13,11 +13,12 @@
 
 use kusanagi_door::{Delivery, Landed};
 use kusanagi_grant::Ability;
-use kusanagi_kernel::{Instant, PutOutcome, Segment, Signer, Waypoint as _};
-use kusanagi_seal::{Fit, derive, seal};
+use kusanagi_kernel::{Freight, Instant, Purpose, PutOutcome, Segment, Signer, Waypoint};
+use kusanagi_seal::{Fit, seal};
 use kusanagi_site::{Channel, Site};
 
 use crate::assembly::{open, signer};
+use crate::lane::{Lane, verified};
 use crate::membership::greet;
 use crate::request::Whose;
 use crate::walk::{Reach, Walked, track};
@@ -39,18 +40,34 @@ const fn reach(after: Option<u64>) -> Reach {
 /// different shapes, so the facts are a value and neither shape is the other's
 /// special case.
 pub(crate) struct Appended {
-    index: u64,
-    id: String,
-    address: String,
+    pub(crate) index: u64,
+    pub(crate) id: String,
+    pub(crate) address: String,
 }
 
+/// Appends one segment, or queues it when the channel writes on a schedule.
+///
+/// **A slotted channel cannot write when it is asked to**, because writing when
+/// asked is exactly the rhythm a slot exists to hide. So the payload is left in
+/// the outbox and `tick` takes it out when the slot comes round; the caller is
+/// told which of the two happened, because the difference is a delay of up to
+/// one period and a promise kept by this disk rather than by a host.
 pub(crate) fn send(
     site: &Site,
     name: &str,
     payload: &[u8],
     now: Instant,
 ) -> Result<Outcome, Complaint> {
-    let written = appended(site, name, payload, now)?;
+    let channel = site.channel(name)?;
+    if channel.cadence.period().is_some() {
+        site.queue(name, payload)?;
+        return Ok(Outcome::Queued {
+            name: name.to_owned(),
+            waiting: site.pending(name)?.len(),
+            period: channel.cadence.period(),
+        });
+    }
+    let written = appended(site, name, Purpose::Message, payload, now)?;
     Ok(Outcome::Sent {
         name: name.to_owned(),
         index: written.index,
@@ -86,7 +103,7 @@ pub(crate) fn fanout(
         .iter()
         .map(|member| Delivery {
             member: member.clone(),
-            landed: match appended(site, member, payload, now) {
+            landed: match appended(site, member, Purpose::Message, payload, now) {
                 Ok(written) => Landed::Sent {
                     index: written.index,
                     address: written.address,
@@ -104,7 +121,20 @@ pub(crate) fn fanout(
     })
 }
 
-fn appended(site: &Site, name: &str, payload: &[u8], now: Instant) -> Result<Appended, Complaint> {
+/// Writes one segment on this endpoint's own lane and reports where it landed.
+///
+/// Every segment carries how far its author has verified the other side. It
+/// rides inside the sealed part, so the host learns nothing from it, and it is
+/// outside the signature, so it proves nothing to anybody afterwards — a signed
+/// receipt for *how much of you I read* would be transferable evidence that the
+/// conversation happened at all.
+pub(crate) fn appended(
+    site: &Site,
+    name: &str,
+    purpose: Purpose,
+    payload: &[u8],
+    now: Instant,
+) -> Result<Appended, Complaint> {
     let me = signer(site)?;
     let channel = site.channel(name)?;
     channel.standing.permits(
@@ -116,18 +146,11 @@ fn appended(site: &Site, name: &str, payload: &[u8], now: Instant) -> Result<App
     )?;
 
     let place = open(&channel.locator, now)?;
-    let stream = channel.secret.stream(&me.handle());
+    let mine = Lane::open(site, name, &channel, &me.verifying_key())?;
     // Only the head is needed, so this walk owes the caller no segment and may
     // resume from the cairn: sending the thousandth segment asks the host for one
     // address rather than announcing the previous nine hundred and ninety-nine.
-    let mine = track(
-        site,
-        name,
-        &place,
-        &stream,
-        &me.verifying_key(),
-        Reach::Head,
-    )?;
+    let walked = track(site, name, &place, &mine, Reach::Head)?;
 
     // The height still comes from the waypoint rather than from a local count:
     // the cairn moves the walk's starting point and proves the join to it, so a
@@ -136,21 +159,35 @@ fn appended(site: &Site, name: &str, payload: &[u8], now: Instant) -> Result<App
     // never written down: an author recomputes it from a deterministic signature
     // over their own lane, so a killed process loses nothing and a seized disk
     // holds no proof of anything.
-    let trail = stream.trail(&me);
-    let segment = match mine.head() {
-        None => Segment::genesis(&me, &trail, payload.to_vec()),
-        Some(head) => Segment::extend(&trail, me.handle(), payload.to_vec(), head),
+    let acknowledged = match &channel.peer {
+        None => 0,
+        Some(peer) => verified(site, name, &peer.handle())?,
+    };
+    let freight = match purpose {
+        Purpose::Message => Freight::message(payload.to_vec()),
+        Purpose::Filler => Freight::filler(),
+    }?
+    .acknowledging(acknowledged);
+
+    let trail = mine.keys.trail(&me);
+    let segment = match walked.head() {
+        None => Segment::genesis(&me, &trail, freight),
+        Some(head) => Segment::extend(&trail, me.handle(), freight, head),
     }?;
 
-    let (address, key) = derive(&stream, segment.index());
-    let sealed = seal(&key, Fit::Veil, &segment.to_canonical_bytes())?;
-    match place.put_if_absent(&address, &sealed)? {
+    let address = mine.keys.address(segment.index());
+    let sealed = seal(
+        &mine.keys.key(segment.index())?,
+        Fit::Veil,
+        &segment.to_canonical_bytes(),
+    )?;
+    match Waypoint::put_if_absent(&place, &address, &sealed)? {
         // The host took it at an address that was empty, so this endpoint knows
         // the segment is there without reading it back. Recording that now is
         // what keeps the next send at one request: a position left one behind
         // the stream would make every send rediscover what it had just written.
         PutOutcome::Stored => {
-            if let Some(cairn) = mine.extended(&segment)? {
+            if let Some(cairn) = walked.extended(&segment)? {
                 site.mark(name, &cairn)?;
             }
         }
@@ -200,17 +237,78 @@ pub(crate) fn read(
     peer.standing
         .permits(&channel.root, &peer.handle(), Ability::Send, now, &revoked)?;
 
-    let stream = channel.secret.stream(&peer.handle());
-    let theirs = track(site, name, &place, &stream, &peer.key, reach(after))?;
-    Ok(reported(name, &peer.handle().to_string(), &theirs, after))
+    let theirs = Lane::open(site, name, &channel, &peer.key)?;
+    let walked = track(site, name, &place, &theirs, reach(after))?;
+    let answer = reported(name, &peer.handle().to_string(), &walked, after);
+
+    // Only now, once the caller holds what was read: settling is the step that
+    // destroys it.
+    if channel.retention.releases() {
+        settle(site, name, &channel, &place, &walked, &theirs, &me)?;
+    }
+    Ok(answer)
 }
 
-/// Turns a walk into the answer for it, dropping what the caller already holds.
+/// Acts on what a read just learned, on a channel that releases.
 ///
-/// The filter is here rather than in `door` because `--after` is a property of
-/// the request: the door renders the segments it is handed and has no way to
-/// perform a walk, which is what keeps the output contract free of the machinery
-/// that produces it.
+/// Two halves of one promise, and they are here together because doing either
+/// alone would be a claim this endpoint could not keep. **Deletion is the honest
+/// host's half**: the peer said how much of this endpoint's stream they had
+/// verified, so those drops are removed and an honest host now holds no history.
+/// **The ratchet is the dishonest host's half**: the keys that opened them are
+/// destroyed, so a host that quietly kept a copy holds bytes nobody can open.
+///
+/// A failure to delete is reported, because an endpoint that believes its
+/// history is gone and is wrong is an endpoint making a false promise.
+fn settle(
+    site: &Site,
+    name: &str,
+    channel: &Channel,
+    place: &impl Waypoint,
+    walked: &Walked,
+    theirs: &Lane,
+    me: &Signer,
+) -> Result<(), Complaint> {
+    // The peer repeats their acknowledgement in every segment, so the highest
+    // one in this walk is the current answer and an older segment cannot undo a
+    // newer one.
+    let acknowledged = walked
+        .held()
+        .iter()
+        .map(|held| held.segment.acknowledged())
+        .max()
+        .unwrap_or(0);
+
+    if acknowledged > 0 {
+        let ours = Lane::open(site, name, channel, &me.verifying_key())?;
+        for index in ours.keys.floor()..acknowledged {
+            place.delete(&ours.keys.address(index))?;
+        }
+        ours.burn_below(site, name, acknowledged.saturating_sub(1))?;
+    }
+
+    // The peer's own lane burns behind the reader in the same way. What was
+    // verified has been handed over; nothing will ask for it again.
+    if let Some(head) = walked.head() {
+        theirs.burn_below(site, name, head.index())?;
+    }
+    Ok(())
+}
+
+/// Turns a walk into the answer for it, dropping what the caller already holds
+/// and what nobody meant to say.
+///
+/// Two filters, and they are different kinds of thing. `--after` is a property
+/// of the request, so it lives with the verb rather than in `door`, which
+/// renders what it is handed and cannot perform a walk. **A filler is filtered
+/// because it is not a message at all**: it exists so that an observer cannot
+/// tell a silent endpoint from a busy one, and reporting it to the caller would
+/// hand them padding to read as though somebody had written it.
+///
+/// The height is unaffected by either filter. It is the verified head of the
+/// stream, fillers included — a height that skipped them would tell a reader
+/// exactly how many slots went by empty, which is the fact the fillers were
+/// spent to hide.
 fn reported(name: &str, author: &str, walked: &Walked, after: Option<u64>) -> Outcome {
     Outcome::read(
         name,
@@ -219,6 +317,7 @@ fn reported(name: &str, author: &str, walked: &Walked, after: Option<u64>) -> Ou
         walked
             .held()
             .iter()
+            .filter(|held| held.segment.purpose() == Purpose::Message)
             .filter(|held| after.is_none_or(|floor| held.segment.index() > floor))
             .map(|held| (held.segment.index(), held.segment.payload())),
     )
@@ -244,14 +343,7 @@ fn mine(
     now: Instant,
 ) -> Result<Outcome, Complaint> {
     let place = open(&channel.locator, now)?;
-    let stream = channel.secret.stream(&me.handle());
-    let ours = track(
-        site,
-        name,
-        &place,
-        &stream,
-        &me.verifying_key(),
-        reach(after),
-    )?;
-    Ok(reported(name, &me.handle().to_string(), &ours, after))
+    let ours = Lane::open(site, name, channel, &me.verifying_key())?;
+    let walked = track(site, name, &place, &ours, reach(after))?;
+    Ok(reported(name, &me.handle().to_string(), &walked, after))
 }

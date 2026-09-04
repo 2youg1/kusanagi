@@ -247,6 +247,14 @@ mod tests {
         ) -> Result<Option<Vec<u8>>, kusanagi_kernel::WaypointError> {
             Ok(self.drops.lock().unwrap().get(addr).cloned())
         }
+
+        fn delete(
+            &self,
+            addr: &kusanagi_kernel::DropAddr,
+        ) -> Result<(), kusanagi_kernel::WaypointError> {
+            self.drops.lock().unwrap().remove(addr);
+            Ok(())
+        }
     }
 
     impl crate::Conditional for Overwriting {

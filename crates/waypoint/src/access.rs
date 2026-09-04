@@ -18,8 +18,9 @@
 
 use std::time::Duration;
 
+use crate::carrier::Carrier;
 use crate::client::PATIENCE;
-use crate::place::LocatorError;
+use crate::locator::LocatorError;
 use crate::sigv4::Credentials;
 
 /// Where to send every request instead of straight at the host.
@@ -100,6 +101,11 @@ pub struct Access {
     pub credentials: Option<Credentials>,
     /// The socket every request leaves through, if not the default one.
     pub proxy: Option<Proxy>,
+    /// The program that moves bytes for a `carry://` locator.
+    ///
+    /// Here rather than in the locator because a locator arrives from somebody
+    /// else and this is a program this machine runs; see `carrier.rs`.
+    pub carrier: Option<Carrier>,
     /// How long one request may take in total before the verb gives up.
     ///
     /// A parameter rather than a seam: a test needs a second where production
@@ -117,6 +123,7 @@ impl Default for Access {
         Self {
             credentials: None,
             proxy: None,
+            carrier: None,
             patience: PATIENCE,
         }
     }

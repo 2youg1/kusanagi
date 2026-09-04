@@ -35,3 +35,15 @@ pub(super) fn create_file(path: &Path, action: &'static str) -> Result<File, Sit
         .open(path)
         .map_err(|source| SiteError::Local { action, source })
 }
+
+/// Pins pages so that a secret read off the disk never reaches swap.
+///
+/// The Unix branch exists to compile, and is asserted by nothing here: this
+/// workspace verifies on one platform and says so. When a second platform is
+/// verified, this becomes `mlock` and its `munlock`, with the same contract —
+/// a failure is not reported, because a record that could not be pinned is
+/// still the right record.
+pub(super) const fn lock(_bytes: &[u8]) {}
+
+/// Releases what `lock` pinned.
+pub(super) const fn unlock(_bytes: &[u8]) {}

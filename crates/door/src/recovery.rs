@@ -24,22 +24,7 @@ impl Complaint {
     /// The command that would move the caller forward from here.
     pub(crate) fn recover(&self) -> String {
         match self {
-            // Two of the waypoint's failures have a way out of their own, and
-            // both are about the host rather than the network: one sent this
-            // endpoint somewhere it did not choose, the other said nothing at
-            // all. Telling somebody to run `doctor` against a host that is not
-            // answering wastes the one thing they have, which is a guess.
-            Self::Waypoint(WaypointError::Redirected { .. }) => {
-                "this host is not a box: it answered with somewhere else to go, and that was \
-                 refused rather than followed. Check the waypoint url"
-                    .to_owned()
-            }
-            Self::Waypoint(WaypointError::Unanswered { .. }) => {
-                "retry; if it persists the host is down".to_owned()
-            }
-            Self::Waypoint(_) => {
-                "run `kusanagi doctor <waypoint>` to see what the host actually does".to_owned()
-            }
+            Self::Waypoint(failure) => host_trouble(failure),
             Self::Segment(_)
             | Self::Chain(_)
             | Self::Sealed(_)
@@ -99,6 +84,17 @@ impl Complaint {
                  `kusanagi export` there, then pipe the archive into \
                  `kusanagi import --root <EMPTY_DIRECTORY>` here"
                 .to_owned(),
+            Self::Burned(_) | Self::NeedsCairn { .. } => {
+                "this channel releases what its peer has read, so the archive is the history: \
+                 run `kusanagi import` with the backup `kusanagi export` made"
+                    .to_owned()
+            }
+            Self::NotSlotted { name } => {
+                format!(
+                    "`tick` is for a channel with a period; send on this one with \
+                     `kusanagi send --to {name}`"
+                )
+            }
             Self::BadRecovery => "check the recovery key: it is the 64 hexadecimal digits \
                  `kusanagi export` printed once, and it goes in on the first line of stdin"
                 .to_owned(),
@@ -141,5 +137,22 @@ impl Complaint {
             }
             Self::Argument { instead, .. } => (*instead).to_owned(),
         }
+    }
+}
+
+/// What to do about a host that would not do what it was asked.
+///
+/// Apart from the rest because these answers are about somebody else's machine
+/// rather than about this endpoint's own state, and because telling somebody to
+/// run `doctor` against a host that is not answering wastes the one thing they
+/// have, which is a guess.
+fn host_trouble(failure: &WaypointError) -> String {
+    match failure {
+        WaypointError::Redirected { .. } => "this host is not a box: it answered with somewhere              else to go, and that was refused rather than followed. Check the waypoint url"
+            .to_owned(),
+        WaypointError::Unanswered { .. } => "retry; if it persists the host is down".to_owned(),
+        WaypointError::DeletionRefused => "this host will not delete, so a channel opened with              --release cannot keep its promise here. Open it without --release, or move it to a              host that deletes"
+            .to_owned(),
+        _ => "run `kusanagi doctor <waypoint>` to see what the host actually does".to_owned(),
     }
 }

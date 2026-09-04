@@ -81,11 +81,17 @@
 
 ```
 lib.rs        模块索引与再导出
-request.rs    Request —— 动词集合的唯一权威
+request.rs    Request / Habit —— 动词集合的唯一权威
+lane.rs       Lane —— 一条道怎么开：地址、钥匙、以及烧到哪（I5）
 walk.rs       peek / walk —— 读一条流并逐段检查
+slot.rs       tick —— 填一个时隙（I3）
+port.rs       MCP 的 stdio 会话循环（D3）
+tools.rs      动词集合的 MCP 工具目录（D3）
+roots.rs      默认 root：每平台一个 cfg 分支
 world.rs      时钟与熵的唯一采样点
-assembly.rs   十个动词的组装
+assembly.rs   动词的组装
 main.rs       clap ↔ Request
+verbs.rs      命令行那一读
 intake.rs     动词从 stdin 收下的一切（属二进制，不属 lib）
 ```
 
@@ -281,6 +287,38 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 | `clap` 4，`default-features = false` | 只在 `main.rs`；派生宏换来的帮助文本与错误信息值这一个依赖。**只开 `std`/`derive`/`help`/`usage`/`error-context`**：默认集合另外带来 `color`（anstream 等九个 crate，含一份 `windows-sys`）与 `suggestions`（strsim），换来的是彩色帮助与「你是不是想输入」。每一个 crate 都是一个能往这个二进制里写代码的人，`just deps` 报出这个数 |
 | `getrandom` 0.3 | 直接问操作系统要熵，中间不放生成器，就没有需要正确播种、重播种、fork 后重置的东西 |
 | `kusanagi-door` | 输出契约；`serde` / `serde_json` / `thiserror` 现在是它的依赖，不是本 crate 的 |
+
+### `port`：第三读，不是第二权威（D3）
+
+`Request` 是动词集合的唯一权威，`verbs.rs` 是它的命令行读法，`tools.rs` 是它的 MCP 读法。
+**一个不在 `Request` 里的动词不可能出现在工具目录里**；一个加进 `Request` 的动词离被offer
+只差一个分支。`tests/ported.rs` 里那条把目录逐字钉住的测试就是防两个解析器各自漂走的那道门。
+
+**三个动词故意不是工具**：`host` 与 `port` 跑到被杀为止，`export` 把归档写到 stdout——
+三者都不是「问一句答一句」，在一个只做问答的协议上offer它们，就是offer一个不工作的东西。
+
+**这个进程是传输而不是状态持有者，法则 1 因此不破。** 每一次调用都打开站点、做一件事、关上，
+与一次性命令逐字相同；什么都不缓存，随时杀掉不改变任何结果。它在这一点上是 `kusanagi host`，
+不是守护进程：跑很久的是一根管子，端点的状态在盘上。
+
+**被拒绝的动词是带 `isError` 的 result，不是 JSON-RPC error。** 这个区分是协议自己的，
+在这里尤其要紧：传输错误意味着调用没发生，而宿主不可达或 grant 被撤销是**调用发生了并且答复了**。
+把后者当前者的 agent 会去重试一件永远同样失败的事。
+
+### `tick` 与 outbox（I3）
+
+`send` 在时隙通道上不写宿主，写 outbox，并且**如实报告它排了队**（`Outcome::Queued`）——
+把排队报成已发送，就是替一个还没发生的投递做担保。`tick` 是调度器跑的那个一次性动词：
+算出当前时隙 → 已填则什么都不做 → 否则取队首、没有就写填充段 → 无论哪一种都读一次。
+
+**填充段不进 `read` 的报告，但进高度。** 不报是因为它不是谁说的话；进高度是因为一个跳过它们的
+高度会精确告诉读方有多少个时隙是空的，而那正是这些填充字节买来要藏的事实。
+
+### 释放发生在 `read` 里，不在 `send` 里（与 C4 原方案的差别）
+
+路线图原本写「a 收到确认、且自己再发一条之后」删除。落地时改成**读的时候就地结算**：
+对端的确认写在他们自己的段里，我读到他们的流的那一刻就拿到了这个数，删除与烧钥匙都在那一刻做完，
+**不多付一个请求**，也不需要在盘上多存一个「对方确认到哪」的计数器。`traffic::settle` 是那一处。
 
 ## 14 硬编码声明
 

@@ -44,6 +44,7 @@ fn a_host_cannot_talk_a_reader_down_from_a_height_it_verified() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     alice.send("bob", "the offer stands");
@@ -105,6 +106,7 @@ fn genuine_bytes_served_at_the_wrong_address_are_not_a_segment() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     let first = alice.send_reporting("bob", "one");

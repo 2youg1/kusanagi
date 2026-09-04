@@ -20,7 +20,7 @@
     reason = "test code"
 )]
 
-use kusanagi_kernel::{MAX_PAYLOAD, Segment, SegmentError, Signer, Trail, VerifyingKey};
+use kusanagi_kernel::{Freight, MAX_PAYLOAD, Segment, SegmentError, Signer, Trail, VerifyingKey};
 
 fn alice() -> Signer {
     Signer::from_seed(&[1_u8; 32])
@@ -35,11 +35,22 @@ fn trail() -> Trail {
 }
 
 fn genesis() -> Segment {
-    Segment::genesis(&alice(), &trail(), b"first".to_vec()).unwrap()
+    Segment::genesis(
+        &alice(),
+        &trail(),
+        Freight::message(b"first".to_vec()).unwrap(),
+    )
+    .unwrap()
 }
 
 fn follower(payload: &[u8], head: kusanagi_kernel::ChainHead) -> Segment {
-    Segment::extend(&trail(), alice().handle(), payload.to_vec(), head).unwrap()
+    Segment::extend(
+        &trail(),
+        alice().handle(),
+        Freight::message(payload.to_vec()).unwrap(),
+        head,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -79,8 +90,8 @@ fn the_two_shapes_cost_what_they_cost_and_the_envelope_hides_it() {
     let overhead = |segment: &Segment| segment.to_canonical_bytes().len() - segment.payload().len();
     // A genesis segment carries the chain's one signature and a following one
     // carries none, so the two differ by exactly an ML-DSA-87 signature.
-    assert_eq!(overhead(&first), 4_704);
-    assert_eq!(overhead(&second), 141);
+    assert_eq!(overhead(&first), 4_713);
+    assert_eq!(overhead(&second), 150);
     assert_eq!(overhead(&first) - overhead(&second), 4_563);
     // The payload limit is set by the more expensive shape, so both fit a drop.
     assert_eq!(
@@ -104,8 +115,9 @@ fn nothing_above_genesis_is_signed() {
         "a following segment carried the genesis signature"
     );
     // And the only 32-byte fields it holds are a link, a name, a proof and a
-    // promise: 1 + 8 + 32 + 32 + 32 + 32 + 4 = 141.
-    assert_eq!(bytes.len() - second.payload().len(), 141);
+    // promise, above an acknowledgement and a purpose:
+    // 1 + 8 + 32 + 32 + 32 + 32 + 8 + 1 + 4 = 150.
+    assert_eq!(bytes.len() - second.payload().len(), 150);
 }
 
 /// A genesis segment fixes what height one must show, so a chain cannot be
@@ -123,9 +135,18 @@ fn a_genesis_commits_to_the_height_above_it() {
 #[test]
 fn identity_follows_every_field() {
     let base = genesis();
-    let other_author =
-        Segment::genesis(&Signer::from_seed(&[2; 32]), &trail(), b"first".to_vec()).unwrap();
-    let other_payload = Segment::genesis(&alice(), &trail(), b"second".to_vec()).unwrap();
+    let other_author = Segment::genesis(
+        &Signer::from_seed(&[2; 32]),
+        &trail(),
+        Freight::message(b"first".to_vec()).unwrap(),
+    )
+    .unwrap();
+    let other_payload = Segment::genesis(
+        &alice(),
+        &trail(),
+        Freight::message(b"second".to_vec()).unwrap(),
+    )
+    .unwrap();
     let higher = follower(b"first", base.head());
 
     assert_ne!(base.id(), other_author.id());
@@ -194,7 +215,7 @@ fn a_lying_length_is_truncated_not_panicking() {
 fn an_oversized_payload_is_refused() {
     let payload = vec![0_u8; usize::try_from(MAX_PAYLOAD).unwrap() + 1];
     assert!(matches!(
-        Segment::genesis(&alice(), &trail(), payload),
+        Freight::message(payload),
         Err(SegmentError::PayloadTooLarge { .. })
     ));
 }
@@ -213,8 +234,19 @@ fn an_oversized_payload_is_refused() {
 fn every_flipped_byte_outside_the_payload_breaks_a_genesis_segment() {
     let segment = genesis();
     let canonical = segment.to_canonical_bytes();
-    let payload_at = 77;
+    // The freight sits between what the signature covers and the payload, and it
+    // is not covered either: a signed acknowledgement is transferable proof that
+    // the conversation happened, which is what this layout exists to avoid
+    // producing. So it is grouped with the payload here — a flipped bit in it
+    // decodes, exactly as one in a word does. The purpose byte is the exception,
+    // because only two values name a purpose at all.
+    let signed_ends = 1 + 8 + 32 + 32;
+    let purpose_at = signed_ends + 8;
+    let payload_at = purpose_at + 1 + 4;
     let payload_ends = payload_at + segment.payload().len();
+    let unauthenticated = |at: usize| {
+        (payload_at..payload_ends).contains(&at) || (signed_ends..purpose_at).contains(&at)
+    };
 
     // Every field boundary and a stride through the signature, rather than all
     // 4 709 positions: each rejection costs an ML-DSA-87 verification, and a
@@ -230,13 +262,17 @@ fn every_flipped_byte_outside_the_payload_breaks_a_genesis_segment() {
             continue;
         }
         let decoded = Segment::from_canonical_bytes(&tampered, &hers());
-        if (payload_at..payload_ends).contains(&at) {
+        if at == purpose_at {
+            // Either it names the other purpose or it names none; both are
+            // answers rather than damage, and neither forges a word.
+            continue;
+        }
+        if unauthenticated(at) {
             assert!(
                 decoded.is_ok(),
-                "byte {at} is inside the payload, and a payload a peer can rewrite \
-                 is what stops a transcript being proof"
+                "byte {at} is outside what the author signed, and what a peer can \
+                 rewrite is what stops a transcript being proof"
             );
-            assert_ne!(decoded.unwrap().payload(), segment.payload());
         } else {
             assert!(
                 decoded.is_err(),
@@ -256,7 +292,7 @@ fn every_flipped_byte_outside_the_payload_breaks_a_genesis_segment() {
 fn a_follower_is_parsed_here_and_believed_in_the_chain() {
     let second = follower(b"second", genesis().head());
     let mut tampered = second.to_canonical_bytes();
-    let payload_at = 141;
+    let payload_at = 150;
     tampered[payload_at] ^= 0x01;
     let decoded = Segment::from_canonical_bytes(&tampered, &hers())
         .expect("a follower carries no signature to break");

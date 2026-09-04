@@ -13,7 +13,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::SiteError;
-use crate::permissions;
+use crate::permissions::{self, Locked};
 
 /// The bytes of every record in `directory`, or none when it does not exist.
 ///
@@ -30,7 +30,7 @@ pub(crate) fn each(
     root: &Path,
     directory: &str,
     action: &'static str,
-) -> Result<Vec<Vec<u8>>, SiteError> {
+) -> Result<Vec<Locked>, SiteError> {
     let entries = match fs::read_dir(root.join(directory)) {
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(source) => return Err(SiteError::Local { action, source }),

@@ -96,19 +96,23 @@ kusanagi --root ~/.alice revoke --from bob
 | 命令 | 作用 |
 |---|---|
 | `id` | 显示本端点的 handle。首次使用时生成身份。 |
-| `invite --name N --waypoint W [--for SECS] [--can send,read]` | 开一条 channel，签发一条邀请。 |
-| `join --name N` | 接受一条邀请，从标准输入读取。它永远不是参数，理由见第 2 步。 |
+| `invite --name N --waypoint W [--for SECS] [--can send,read] [--every SECS] [--release]` | 开一条 channel，签发一条邀请。 |
+| `join --name N [--every SECS] [--release]` | 接受一条邀请，从标准输入读取。它永远不是参数，理由见第 2 步。 |
 | `send --to N ["文本"]` | 追加一条消息。不给文本时，内容从标准输入读取。 |
 | `read --from N [--after H] [--mine]` | 读取对方的消息，从上次验到的位置续验。`--after H` 只返回高度 `H` 之后的部分，`--mine` 读你自己的。 |
 | `channels` | 列出本机的 channel，各自还允许什么，以及到什么时候为止。 |
 | `revoke --from N` | 切断一个对端，立即且永久。 |
 | `forget --channel N` | 在本端点丢弃一条 channel。 |
 | `doctor <WAYPOINT>` | 实测一台主机的真实行为，并出具证书。 |
+| `tick --from N` | 填上这条通道当前的时隙，并读一次。给用 `--every` 开的通道用；排班表在本程序之外。 |
+| `port` | 用 Model Context Protocol 在标准输入输出上答一个 agent。 |
 | `host --bind ADDR --dir PATH --cap BYTES` | 让本机充当别人的存放主机，最多保存 `--cap` 字节（默认 1 GiB）。 |
 | `export` | 把本端点封成一份归档写到标准输出。打开它的密钥只往标准错误印**一次**。 |
 | `import` | 把归档还原到一个空的 `--root`。密钥是标准输入的第一行，其余是归档。 |
 
 所有命令都接受 `--json`，每一个 JSON 答案都带 `"contract": 1`。所有失败都带一个稳定的错误码，以及一条能让你走出去的命令——参数打错也算一种失败，同样有。错误码的目录在 [`docs/codes.md`](docs/codes.md)，由一条测试保证它与代码逐条相等。
+
+**两个旗标改变这一端在网络上做什么，都是按通道设的。** `--every SECS` 给通道一个节奏：`send` 把正文排进队列，`tick` 每个周期恰好写一个 drop——要么是排队的那条，要么是一个什么都不载的填充段——于是一个有满肚子话要说的端点和一个无话可说的端点，在任何观察者眼里长得一样。`--release` 在对端说读过之后删掉那个 drop 并烧掉开它的钥匙，于是老实的宿主手上没有历史，不老实的宿主手上是谁也打不开的字节。**`--release` 会让这台机器成为这场对话的唯一副本：请跑 `kusanagi export` 并留好那份归档。** 排班器在本程序之外——Windows 上是 `schtasks /create /sc minute /mo 15 /tn kusanagi-bob /tr "kusanagi tick --from bob"`，其他平台用 `cron` 或 `launchd`。
 
 **`--root` 默认落在你自己的用户资料目录下**——Windows 上是 `%LOCALAPPDATA%\kusanagi`，其他平台是 `$XDG_DATA_HOME/kusanagi`——而不是相对于程序恰好被启动的那个目录。在 Windows 上，它写的每个文件都带一份只列出你和 `SYSTEM` 的访问控制表，并且经 DPAPI 密封：一份没有你账户密码的硬盘拷贝就是噪声。
 
@@ -225,7 +229,7 @@ export KUSANAGI_PROXY=socks5://127.0.0.1:9050
 | 隐藏你发了多少、什么时候发 | 填充和抖动没有真实审查者可以对着失败，无法验证。 |
 | 对哑对象存储隐藏对象数量 | 需要长轮询，而普通桶不提供。 |
 | 长轮询 | 顺带能堵住上面说的活动边缘泄露。 |
-| 分块的共享工作区 | 另一个问题。目前单条消息上限 126 348 字节。 |
+| 分块的共享工作区 | 另一个问题。目前单条消息上限 126 339 字节。 |
 | MCP 前端 | 动词集合是一个枚举，第二个前端是纯增量工作。 |
 | 隐藏端点的 IP 地址 | 不归这个项目解决。把 `KUSANAGI_PROXY` 指向 SOCKS5 或 HTTP CONNECT 代理，让为此而生的网络去做。 |
 | 安全审计 | **没做。** 这个仓库之外没有任何人审过这里的密码学。 |

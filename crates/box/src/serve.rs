@@ -15,7 +15,13 @@
 //! - **There is no unconditional write.** A `PUT` without `If-None-Match: *` is
 //!   ignored, so no request in the protocol can overwrite a drop.
 //! - **There is no confirmed write.** Every `PUT` is answered `404`, empty,
-//!   whether it was stored, refused, or dropped for want of room.
+//!   whether it was stored, refused, or dropped for want of room. A `DELETE` is
+//!   answered the same way, for the same reason.
+//! - **Anybody who knows an address may release it.** Knowing an address is
+//!   already knowing everything a drop protects — it is derived from the channel
+//!   secret, so producing one takes the secret — and a host with accounts would
+//!   have to learn who anybody is in order to refuse. What a hostile deleter can
+//!   do is destroy bytes, which a host can do anyway by being a host.
 //! - **There is no listing.** A caller who does not already know an address
 //!   learns nothing, which is what makes address unlinkability worth anything.
 //! - **There is no account.** The server never learns who anybody is, so it has
@@ -43,7 +49,7 @@ use std::path::PathBuf;
 use kusanagi_kernel::{Clock, DropAddr, Instant, PutOutcome, Waypoint as _};
 
 use crate::capacity::{CAPACITY, held};
-use crate::exchange::{IDLE, Request, Response, address_of, etag};
+use crate::exchange::{IDLE, Request, Response, address_of, etag, max_age};
 use kusanagi_waypoint::DirWaypoint;
 
 /// A host: a directory, an HTTP door, and no opinions.
@@ -134,8 +140,22 @@ impl<C: Clock> Server<C> {
         match (request.method.as_str(), address_of(&request.target)) {
             ("GET", Some(addr)) => self.read(&addr, request),
             ("PUT", Some(addr)) => self.write(&addr, request),
+            ("DELETE", Some(addr)) => self.release(&addr),
             _ => Response::empty(404),
         }
+    }
+
+    /// Forgets a drop, and says nothing about whether there was one.
+    ///
+    /// A channel that releases needs this: once its peer has acknowledged a
+    /// segment, the drop is removed so that an honest host keeps no history at
+    /// all. The answer is the same empty `404` every other request gets, because
+    /// an answer that distinguished "deleted" from "there was nothing" would
+    /// hand a scanner an address oracle — the exact thing every other refusal
+    /// here exists to deny.
+    fn release(&self, addr: &DropAddr) -> Response {
+        self.drops.delete(addr).ok();
+        Response::empty(404)
     }
 
     fn read(&self, addr: &DropAddr, request: &Request) -> Response {
@@ -211,23 +231,6 @@ impl<C: Clock> Server<C> {
             Instant::from_unix_seconds(u64::from_be_bytes(<[u8; 8]>::try_from(stamp).ok()?));
         (self.clock.now() < expires_at).then(|| bytes.to_vec())
     }
-}
-
-/// The lifetime a `Cache-Control` value asks for, if it asks for one.
-///
-/// `max-age` is the header a browser, a CDN and a package manager all send
-/// anyway, so a lifetime asks for itself the way everything else on the wire
-/// does. A header named after this product would be a fingerprint in every
-/// request, readable by every proxy and log on the path.
-///
-/// An unparsable directive is ignored rather than refused, which is what
-/// RFC 9111 §5.2 asks of a recipient and also what keeps a malformed value from
-/// being a way to tell this host apart from a cache.
-fn max_age(value: &str) -> Option<u64> {
-    value
-        .split(',')
-        .filter_map(|directive| directive.trim().strip_prefix("max-age="))
-        .find_map(|seconds| seconds.trim().parse::<u64>().ok())
 }
 
 #[cfg(test)]

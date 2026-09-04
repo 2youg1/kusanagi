@@ -91,12 +91,58 @@ pub fn invite_line(endpoint: &Endpoint, name: &str, waypoint: &str) -> String {
                 waypoint: waypoint.to_owned(),
                 lifetime: 3_600,
                 abilities: kusanagi_grant::Abilities::ALL,
+                habit: kusanagi::Habit::default(),
             })
             .unwrap(),
     )["invite"]
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+/// Two endpoints introduced to each other on one host, both with `habit`.
+///
+/// Both ends are given the same habit because a test that set only one would be
+/// testing two things at once. Nothing in the protocol requires them to agree:
+/// how often an endpoint writes and what it keeps are its own decisions, and
+/// `channel.rs` says why.
+pub fn pair_with(tag: &str, habit: kusanagi::Habit) -> (Endpoint, Endpoint, PathBuf) {
+    let ground = scratch(tag);
+    let host = ground.join("host");
+    let alice = Endpoint::new(ground.join("alice"));
+    let bob = Endpoint::new(ground.join("bob"));
+
+    let invitation = json(
+        &alice
+            .run(&Request::Invite {
+                name: "bob".to_owned(),
+                waypoint: host.display().to_string(),
+                lifetime: 3_600,
+                abilities: kusanagi_grant::Abilities::ALL,
+                habit,
+            })
+            .unwrap(),
+    )["invite"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    bob.run(&Request::Join {
+        invite: invitation,
+        name: "alice".to_owned(),
+        habit,
+    })
+    .unwrap();
+    (alice, bob, host)
+}
+
+/// The same, writing when asked and keeping everything.
+pub fn pair(tag: &str) -> (Endpoint, Endpoint, PathBuf) {
+    pair_with(tag, kusanagi::Habit::default())
+}
+
+/// How many objects a host holds, which is what an observer counts.
+pub fn drops(host: &Path) -> usize {
+    stored(host).len()
 }
 
 /// Everything a host holds: the address it is filed under, and the bytes.

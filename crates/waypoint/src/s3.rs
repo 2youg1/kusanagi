@@ -106,6 +106,7 @@ impl S3Waypoint {
         let url = self.url(addr);
         let sent = match method {
             "PUT" => carrying(self.client.agent().put(&url), &headers).send(payload),
+            "DELETE" => carrying(self.client.agent().delete(&url), &headers).call(),
             _ => carrying(self.client.agent().get(&url), &headers).call(),
         };
         let mut response =
@@ -165,6 +166,21 @@ impl Waypoint for S3Waypoint {
         match self.get_if_changed(addr, None)? {
             Fetched::Absent | Fetched::Unchanged => Ok(None),
             Fetched::Fresh { bytes, .. } => Ok(Some(bytes)),
+        }
+    }
+
+    /// `DeleteObject`, whose success and whose "there was nothing there" are the
+    /// same `204` in every S3 implementation worth using.
+    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+        let answer = self.send("DELETE", addr, &[], &[])?;
+        match answer.status {
+            200 | 202 | 204 | 404 => Ok(()),
+            other => Err(WaypointError::UnusableAddress {
+                reason: format!(
+                    "the object store answered {other} to a delete: {}",
+                    String::from_utf8_lossy(&answer.body)
+                ),
+            }),
         }
     }
 }

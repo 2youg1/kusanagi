@@ -33,6 +33,8 @@ fn scratch(tag: &str) -> Site {
 fn channel(name: &str) -> Channel {
     let root = Signer::from_seed(&[1; 32]);
     Channel {
+        cadence: kusanagi_site::Cadence::OnDemand,
+        retention: kusanagi_site::Retention::Keep,
         name: name.to_owned(),
         secret: Secret::from_bytes([7; 32]),
         root: root.handle(),

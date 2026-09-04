@@ -35,9 +35,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::{Endpoint, invite_line, scratch};
-use kusanagi::{Reach, Request, Site, track};
+use kusanagi::{Lane, Reach, Request, Site, track};
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
-use kusanagi_seal::derive;
 use kusanagi_waypoint::DirWaypoint;
 
 /// How many segments the peer has already written before the poll being measured.
@@ -101,6 +100,10 @@ impl Waypoint for Watching {
         self.open.fetch_sub(1, Ordering::SeqCst);
         found
     }
+
+    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+        self.inner.delete(addr)
+    }
 }
 
 #[test]
@@ -114,6 +117,7 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     for round in 0..HEIGHT {
@@ -124,13 +128,13 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     let site = Site::at(bob.site_root());
     let channel = site.channel("alice").unwrap();
     let peer = channel.peer.as_ref().expect("bob has met alice");
-    let stream = channel.secret.stream(&peer.handle());
+    let lane = Lane::open(&site, "alice", &channel, &peer.key).expect("a lane");
 
     let watching = Watching::new(&host);
 
     // The first read shows the whole stream, so it fetches the whole stream. That
     // cost is what catching up costs, and it is not what this file is about.
-    let caught_up = track(&site, "alice", &watching, &stream, &peer.key, Reach::Whole).unwrap();
+    let caught_up = track(&site, "alice", &watching, &lane, Reach::Whole).unwrap();
     assert_eq!(caught_up.held().len(), HEIGHT);
     let catching_up = watching.asked().len();
     assert!(
@@ -157,7 +161,7 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     // The poll an agent actually runs in a loop. Nothing has changed, and bob has
     // already verified all of it.
     watching.forget();
-    let polled = track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
+    let polled = track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
     assert_eq!(
         polled.head(),
         caught_up.head(),
@@ -178,9 +182,9 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     for round in HEIGHT..HEIGHT * 2 {
         alice.send("bob", &format!("round {round}"));
     }
-    track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
+    track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
     watching.forget();
-    track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
+    track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
     assert_eq!(
         watching.asked().len(),
         revealed.len(),
@@ -201,6 +205,7 @@ fn a_poll_names_the_one_address_it_is_waiting_on_and_no_other() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     for round in 0..HEIGHT {
@@ -210,18 +215,18 @@ fn a_poll_names_the_one_address_it_is_waiting_on_and_no_other() {
     let site = Site::at(bob.site_root());
     let channel = site.channel("alice").unwrap();
     let peer = channel.peer.as_ref().expect("bob has met alice");
-    let stream = channel.secret.stream(&peer.handle());
+    let lane = Lane::open(&site, "alice", &channel, &peer.key).expect("a lane");
 
     let watching = Watching::new(&host);
-    track(&site, "alice", &watching, &stream, &peer.key, Reach::Whole).unwrap();
+    track(&site, "alice", &watching, &lane, Reach::Whole).unwrap();
 
     // "At most two" is a bound; this is the fact. A poll asks for the height
     // above the one it has verified, and asks for nothing else — so a host sees
     // one address it has never been shown before, carrying no relation to any
     // address it has seen.
     watching.forget();
-    track(&site, "alice", &watching, &stream, &peer.key, Reach::Head).unwrap();
-    let (expected, _) = derive(&stream, u64::try_from(HEIGHT).unwrap());
+    track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
+    let expected = lane.keys.address(u64::try_from(HEIGHT).unwrap());
     assert_eq!(
         watching.asked(),
         vec![expected],
@@ -242,6 +247,7 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     for round in 0..HEIGHT {
@@ -254,7 +260,7 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
     // that it resumed is the next one, and this is the assertion that it marked.
     let site = Site::at(alice.site_root());
     let channel = site.channel("bob").unwrap();
-    let stream = channel.secret.stream(&alice_key(&site).handle());
+    let lane = Lane::open(&site, "alice", &channel, &alice_key(&site)).expect("a lane");
     let cairn = site
         .cairn("bob", &alice_key(&site).handle())
         .unwrap()
@@ -266,16 +272,8 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
     // writing the first cost, or a host learns how long a conversation has run
     // from the shape of a single send.
     let watching = Watching::new(&host);
-    track(
-        &site,
-        "bob",
-        &watching,
-        &stream,
-        &alice_key(&site),
-        Reach::Head,
-    )
-    .unwrap();
-    let (expected, _) = derive(&stream, u64::try_from(HEIGHT).unwrap());
+    track(&site, "bob", &watching, &lane, Reach::Head).unwrap();
+    let expected = lane.keys.address(u64::try_from(HEIGHT).unwrap());
     assert_eq!(
         watching.asked(),
         vec![expected],

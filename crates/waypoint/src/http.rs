@@ -125,6 +125,23 @@ impl Waypoint for HttpWaypoint {
             Fetched::Fresh { bytes, .. } => Ok(Some(bytes)),
         }
     }
+
+    /// Asks the box to forget a drop, and does not read the answer.
+    ///
+    /// A box answers every request the same empty `404`, so the status says
+    /// nothing here either. Whoever needs to know the drop is gone reads the
+    /// address back — which is what `released` in `kusanagi` does once, for the
+    /// whole batch, rather than once per drop.
+    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+        let response = self
+            .client
+            .agent()
+            .delete(self.url(addr))
+            .call()
+            .map_err(|source| self.client.failed("releasing a drop", &source))?;
+        Client::actionable("releasing a drop", &response)?;
+        Ok(())
+    }
 }
 
 impl Conditional for HttpWaypoint {

@@ -105,6 +105,40 @@ pub enum Outcome {
         /// Where it was left.
         address: String,
     },
+    /// A segment was queued for a slot rather than written now.
+    ///
+    /// Apart from [`Outcome::Sent`] because the promise is different: a sent
+    /// segment is on a host, and a queued one is on this disk until the slot
+    /// comes round. A caller that treated them alike would report delivery that
+    /// has not happened yet.
+    Queued {
+        /// Which channel.
+        name: String,
+        /// How many payloads are now waiting, this one included.
+        waiting: usize,
+        /// How many seconds one slot lasts.
+        period: Option<u32>,
+    },
+    /// One slot was filled, or found already filled.
+    Ticked {
+        /// Which channel.
+        name: String,
+        /// Which slot the clock is in for this endpoint on this channel.
+        slot: u64,
+        /// How many seconds one slot lasts.
+        period: u32,
+        /// The height written, absent when the slot was already filled.
+        wrote: Option<u64>,
+        /// What the drop carried: `message`, `filler`, or `nothing`.
+        ///
+        /// **A host cannot tell these apart** — that is the point of a slot —
+        /// so this field exists only on this side of the door.
+        carried: &'static str,
+        /// How many payloads are still waiting.
+        waiting: usize,
+        /// The peer's verified height after the look this slot includes.
+        heard: Option<u64>,
+    },
     /// A stream was read and verified.
     Read {
         /// Which channel.
@@ -184,6 +218,11 @@ pub enum Outcome {
         site: String,
         /// How many channels came back with it.
         channels: usize,
+    },
+    /// This endpoint answered an agent over MCP until the pipe closed.
+    Served {
+        /// How many calls it answered.
+        calls: u64,
     },
     /// This endpoint served as a host until the listener stopped.
     Hosted {

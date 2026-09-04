@@ -148,6 +148,15 @@ properties door =
             "whether anything was said separates them in time by what is written down"
             (measured (Tempo.presenceSaysOnlyWhatIsWrittenDown door))
         ]
+    , testGroup
+        "a channel that writes to a clock instead of to a caller"
+        [ testCase
+            "a slot makes a silent world and a busy one the same to a carrier"
+            (measured (Tempo.presenceSaysNothingOnASlottedChannel door))
+        , testCase
+            "a slot makes them the same to a host, which counts objects"
+            (measured (Tempo.volumeSaysNothingOnASlottedChannel door))
+        ]
     ]
 
 -- | Runs one command-line question against a throwaway world.

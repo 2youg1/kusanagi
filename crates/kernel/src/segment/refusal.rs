@@ -35,6 +35,12 @@ pub enum SegmentError {
         /// The tag byte that was read.
         tag: u8,
     },
+    /// The purpose byte is neither message nor filler.
+    #[error("unknown segment purpose {purpose}")]
+    UnknownPurpose {
+        /// The purpose byte that was read.
+        purpose: u8,
+    },
     /// A genesis segment declared a non-zero height.
     #[error("a genesis segment sits at height 0, not {index}")]
     GenesisIndexNotZero {
@@ -82,6 +88,7 @@ impl SegmentError {
             Self::Truncated(_) => "segment.truncated",
             Self::TrailingBytes { .. } => "segment.trailing",
             Self::UnknownTag { .. } => "segment.tag",
+            Self::UnknownPurpose { .. } => "segment.purpose",
             Self::GenesisIndexNotZero { .. } => "segment.genesis_index",
             Self::FollowsIndexZero => "segment.follows_index",
             Self::PayloadTooLarge { .. } => "segment.payload_too_large",

@@ -48,6 +48,7 @@ fn talking(tag: &str) -> (std::path::PathBuf, Endpoint, Endpoint) {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     for line in ["the first", "the second", "the third"] {

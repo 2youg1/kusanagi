@@ -234,7 +234,7 @@ impl ChainError {
 )]
 mod tests {
     use super::{ChainError, Verifier, verify};
-    use kusanagi_kernel::{Segment, Signer, Trail};
+    use kusanagi_kernel::{Freight, Segment, Signer, Trail};
 
     fn trail() -> Trail {
         Trail::from_seed([4_u8; 32])
@@ -245,14 +245,16 @@ mod tests {
     }
 
     fn chain_of(length: usize) -> Vec<Segment> {
-        let mut segments = vec![Segment::genesis(&alice(), &trail(), b"0".to_vec()).unwrap()];
+        let mut segments = vec![
+            Segment::genesis(&alice(), &trail(), Freight::message(b"0".to_vec()).unwrap()).unwrap(),
+        ];
         for step in 1..length {
             let head = segments.last().unwrap().head();
             segments.push(
                 Segment::extend(
                     &trail(),
                     alice().handle(),
-                    step.to_string().into_bytes(),
+                    Freight::message(step.to_string().into_bytes()).unwrap(),
                     head,
                 )
                 .unwrap(),
@@ -287,8 +289,10 @@ mod tests {
 
     #[test]
     fn a_second_genesis_is_refused() {
-        let first = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
-        let second = Segment::genesis(&alice(), &trail(), b"b".to_vec()).unwrap();
+        let first =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"a".to_vec()).unwrap()).unwrap();
+        let second =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"b".to_vec()).unwrap()).unwrap();
         assert_eq!(
             verify(&[first, second]).unwrap_err(),
             ChainError::UnexpectedGenesis
@@ -314,10 +318,17 @@ mod tests {
 
     #[test]
     fn a_wrong_predecessor_is_named() {
-        let genesis = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
-        let other = Segment::genesis(&alice(), &trail(), b"b".to_vec()).unwrap();
-        let forged =
-            Segment::extend(&trail(), alice().handle(), b"c".to_vec(), other.head()).unwrap();
+        let genesis =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"a".to_vec()).unwrap()).unwrap();
+        let other =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"b".to_vec()).unwrap()).unwrap();
+        let forged = Segment::extend(
+            &trail(),
+            alice().handle(),
+            Freight::message(b"c".to_vec()).unwrap(),
+            other.head(),
+        )
+        .unwrap();
         assert!(matches!(
             verify(&[genesis, forged]).unwrap_err(),
             ChainError::PreviousMismatch { index: 1, .. }
@@ -326,10 +337,16 @@ mod tests {
 
     #[test]
     fn a_changed_author_is_named() {
-        let genesis = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
+        let genesis =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"a".to_vec()).unwrap()).unwrap();
         let bob = Signer::from_seed(&[2_u8; 32]);
-        let intruder =
-            Segment::extend(&trail(), bob.handle(), b"b".to_vec(), genesis.head()).unwrap();
+        let intruder = Segment::extend(
+            &trail(),
+            bob.handle(),
+            Freight::message(b"b".to_vec()).unwrap(),
+            genesis.head(),
+        )
+        .unwrap();
         assert_eq!(
             verify(&[genesis, intruder]).unwrap_err(),
             ChainError::AuthorChanged {
@@ -346,7 +363,12 @@ mod tests {
         verifier.accept(&segments[0]).unwrap();
         let head_before = verifier.head();
 
-        let stranger = Segment::genesis(&alice(), &trail(), b"stranger".to_vec()).unwrap();
+        let stranger = Segment::genesis(
+            &alice(),
+            &trail(),
+            Freight::message(b"stranger".to_vec()).unwrap(),
+        )
+        .unwrap();
         assert!(verifier.accept(&stranger).is_err());
         assert_eq!(verifier.head(), head_before);
 

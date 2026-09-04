@@ -129,17 +129,30 @@ who has never seen this repository.
 | Command | What it does |
 |---|---|
 | `id` | Show this endpoint's handle. Creates an identity on first use. |
-| `invite --name N --waypoint W [--for SECS] [--can send,read]` | Open a channel and mint one invitation. |
-| `join --name N` | Accept an invitation, read from stdin. It is never an argument: see step 2. |
+| `invite --name N --waypoint W [--for SECS] [--can send,read] [--every SECS] [--release]` | Open a channel and mint one invitation. |
+| `join --name N [--every SECS] [--release]` | Accept an invitation, read from stdin. It is never an argument: see step 2. |
 | `send --to N ["text"]` | Append one message. Without the text, the payload is read from stdin. |
 | `read --from N [--after H] [--mine]` | Read the peer's messages, verified from wherever this endpoint last got to. `--after H` returns only what follows height `H`. `--mine` reads your own. |
 | `channels` | List the channels here, what each one still permits, and until when. |
 | `revoke --from N` | Cut a peer off, immediately and permanently. |
 | `forget --channel N` | Drop a channel from this endpoint. |
-| `doctor <WAYPOINT>` | Measure what a host actually does, and certify it. |
+| `tick --from N` | Fill this channel's current slot and look once. For a channel opened with `--every`; a scheduler outside this program runs it. |
+| `doctor <WAYPOINT>` | Measure what a host actually does, and certify it. `--here` measures this machine instead. |
+| `port` | Answer an agent over the Model Context Protocol, on stdin and stdout. |
 | `host --bind ADDR --dir PATH --cap BYTES` | Act as a host for other people's messages, holding at most `--cap` (1 GiB by default). |
 | `export` | Seal this endpoint into one archive on stdout. The key that opens it goes to stderr, **once**. |
 | `import` | Restore an archive into an empty `--root`. The key is the first line of stdin and the archive is the rest. |
+
+**Two flags change what an endpoint does on the network, and both are per channel.**
+`--every SECS` gives the channel a rhythm: `send` queues the message and `tick` writes
+exactly one drop per period — whatever was queued, or a filler carrying nothing — so
+that an endpoint with everything to say and one with nothing look the same to anybody
+watching. `--release` deletes each drop once the peer says they have read it and burns
+the key that opened it, so an honest host keeps no history and a dishonest one holds
+bytes nobody can open. **`--release` makes this machine the only copy of the
+conversation: run `kusanagi export` and keep the archive.** A scheduler is outside this
+program — `schtasks /create /sc minute /mo 15 /tn kusanagi-bob /tr "kusanagi tick --from bob"`
+on Windows, `cron` or `launchd` elsewhere.
 
 Every command accepts `--json`, and every JSON answer carries `"contract": 1`.
 Every failure carries a stable error code and a command that recovers from it,
@@ -326,7 +339,7 @@ Listed so that each absence is a decision rather than an oversight.
 | Hiding how much you send and when | Padding and jitter are untestable without a real censor to fail against. |
 | Hiding the number of objects from a dumb object store | Needs long-polling support that a plain bucket does not have. |
 | Long-polling | Would also close the live-edge leak described above. |
-| Chunked shared workspaces | A separate problem. One message is capped at 126 348 bytes today. |
+| Chunked shared workspaces | A separate problem. One message is capped at 126 339 bytes today. |
 | MCP front end | The verb set is one enum, so a second front end is additive work. |
 | Hiding an endpoint IP address | Not this project's to solve. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy and the network built for it does the work. |
 | A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |

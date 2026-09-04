@@ -45,6 +45,16 @@ impl Key {
         Self { bytes, nonce }
     }
 
+    /// The bytes themselves, so that a test can say two keys differ.
+    ///
+    /// Test-only on purpose: nothing in this workspace has a reason to look at
+    /// a key, and an accessor that existed in a release build would be the one
+    /// way to get one out of this type.
+    #[cfg(test)]
+    pub(crate) const fn as_parts(&self) -> (&[u8; 32], &[u8; 12]) {
+        (&self.bytes, &self.nonce)
+    }
+
     fn cipher(&self) -> Result<ChaCha20Poly1305, OpenFailed> {
         ChaCha20Poly1305::new_from_slice(&self.bytes).map_err(|_| OpenFailed::Unusable)
     }

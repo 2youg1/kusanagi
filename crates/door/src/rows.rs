@@ -17,7 +17,7 @@
 
 use kusanagi_grant::{Ability, Revocations};
 use kusanagi_kernel::{Handle, Hex, Instant};
-use kusanagi_site::{Channel, Standing};
+use kusanagi_site::{Channel, Retention, Standing};
 use serde::Serialize;
 
 /// A handle rendered short enough to read, for listings.
@@ -157,6 +157,15 @@ pub struct Summary {
     pub(crate) waypoint: String,
     pub(crate) standing: &'static str,
     pub(crate) peer: Option<String>,
+    /// How many seconds one slot lasts, absent on a channel that writes on
+    /// demand.
+    pub(crate) period: Option<u32>,
+    /// What becomes of a drop the peer has read: `keep` or `release`.
+    ///
+    /// **Reported because the combination that must not exist is release
+    /// without a backup**, and a listing is where somebody notices. On a
+    /// releasing channel this site is the only copy of the conversation.
+    pub(crate) retention: &'static str,
     /// What this endpoint may do here right now, verified rather than claimed.
     ///
     /// Empty exactly when `refused` is present: a caller reads one field or the
@@ -258,6 +267,11 @@ impl Summary {
             standing: match channel.standing {
                 Standing::Root => "root",
                 Standing::Granted(_) => "granted",
+            },
+            period: channel.cadence.period(),
+            retention: match channel.retention {
+                Retention::Keep => "keep",
+                Retention::ReleaseOnAck => "release",
             },
             peer: channel.peer.as_ref().map(|peer| abbreviate(&peer.handle())),
             can,

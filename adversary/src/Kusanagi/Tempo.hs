@@ -22,6 +22,8 @@ module Kusanagi.Tempo
   , everyRequestIsSeen
   , volumeKeepsTime
   , presenceSaysOnlyWhatIsWrittenDown
+  , presenceSaysNothingOnASlottedChannel
+  , volumeSaysNothingOnASlottedChannel
   ) where
 
 import Control.Monad (replicateM)
@@ -34,6 +36,7 @@ import Kusanagi.Discriminator
   , Sample (..)
   , report
   , sampleWorld
+  , slottedWorld
   , separating
   , sides
   )
@@ -177,6 +180,69 @@ presenceSaysOnlyWhatIsWrittenDown door = do
           )
   where
     shown names = Text.unpack (Text.intercalate ", " names)
+
+-- | The same question on a channel that writes to a clock instead of to a caller.
+--
+-- **This is what @declared@ exists to be compared against.** On an on-demand
+-- channel a silent world and a busy one differ in @gap.burst@, and that entry is
+-- written down because it is real. A slotted channel is the mechanism that
+-- closes it, so on one the list must be empty — every feature, both positions,
+-- no exceptions.
+--
+-- The two worlds queue different amounts and tick the same number of times.
+-- That asymmetry is the experiment: what a carrier hears must follow the ticks
+-- and not the queue.
+presenceSaysNothingOnASlottedChannel :: Door -> IO (Either String ())
+presenceSaysNothingOnASlottedChannel door = do
+  silent <- replicateM sides (slotted door [])
+  busy <- replicateM sides (slotted door (replicate 3 200))
+  pure $ do
+    quiet <- sequence silent
+    talking <- sequence busy
+    case separating quiet talking of
+      [] -> Right ()
+      found ->
+        Left
+          ( "a slotted channel is supposed to make a silent world and a busy one \
+            \the same thing to a carrier, and it did not:\n"
+              <> report found quiet talking
+              <> "\nThe declared list for a slotted channel is the empty set. A feature \
+                 \that separates here is a slot that is not doing its job, not a leak \
+                 \to be written down."
+          )
+
+-- | The same, from the host's position rather than the carrier's.
+--
+-- A host counts objects. Under a slot the count follows the number of ticks and
+-- nothing else, so two worlds that ticked the same number of times must hold the
+-- same number of drops whatever either of them had to say.
+volumeSaysNothingOnASlottedChannel :: Door -> IO (Either String ())
+volumeSaysNothingOnASlottedChannel door = do
+  silent <- slottedWorld door 2 []
+  busy <- slottedWorld door 2 (replicate 3 200)
+  pure $ do
+    quiet <- silent
+    talking <- busy
+    let count = length . sampleHeld
+    if count quiet == count talking
+      then Right ()
+      else
+        Left
+          ( "a host counted "
+              <> show (count quiet)
+              <> " objects in a silent world and "
+              <> show (count talking)
+              <> " in a busy one, on a channel where both ticked twice. Under a slot \
+                 \the object count is a function of the schedule and of nothing else."
+          )
+
+-- | One slotted world, as its carrier heard it.
+--
+-- Two ticks, so that the second finds its slot already filled: a schedule that
+-- fires twice in one period must still produce one drop, and this is where that
+-- is measured rather than assumed.
+slotted :: Door -> [Int] -> IO (Either String [Reading])
+slotted door lengths = fmap (timings . sampleSeen) <$> slottedWorld door 2 lengths
 
 -- | One world, as its carrier heard it.
 kept :: Door -> [Int] -> IO (Either String [Reading])

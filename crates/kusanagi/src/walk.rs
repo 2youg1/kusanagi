@@ -38,10 +38,11 @@
 //! following it approximate rather than exact.
 
 use kusanagi_chain::{Cairn, Verifier};
-use kusanagi_kernel::{ChainHead, DropAddr, Segment, SegmentError, VerifyingKey, Waypoint};
-use kusanagi_seal::{Fit, Stream, derive, open};
+use kusanagi_kernel::{ChainHead, DropAddr, Segment, SegmentError, Waypoint};
+use kusanagi_seal::{Fit, open};
 use kusanagi_site::Site;
 
+use crate::lane::Lane;
 use kusanagi_door::Complaint;
 
 /// One segment, and the address it was found at.
@@ -135,32 +136,37 @@ pub fn track(
     site: &Site,
     name: &str,
     waypoint: &(impl Waypoint + Sync),
-    stream: &Stream,
-    author: &VerifyingKey,
+    lane: &Lane,
     reach: Reach,
 ) -> Result<Walked, Complaint> {
-    let named = author.handle();
+    let named = lane.author.handle();
+    let recorded = site.cairn(name, &named)?;
+    // **A lane whose keys burn behind it cannot be walked from below its floor.**
+    // There the cairn is not an optimisation, it is the only place a walk can
+    // start: the drops beneath it have been deleted and the keys that opened
+    // them destroyed, so asking for them would find empty addresses and report a
+    // stream that never began.
+    let burned = lane.keys.floor() > 0;
     let from = match reach {
+        Reach::Whole if burned => recorded,
         Reach::Whole => None,
-        Reach::Head => site.cairn(name, &named)?,
+        Reach::Head => recorded,
         // A cairn above the caller's floor cannot be resumed from: the segments
         // between the floor and the cairn are ones the caller asked to see, and a
         // resumed walk would never fetch them. Falling back to the whole stream
         // costs requests; getting this wrong would silently drop segments.
-        Reach::Above(floor) => site
-            .cairn(name, &named)?
-            .filter(|cairn| cairn.head().index() <= floor),
+        Reach::Above(floor) => recorded.filter(|cairn| burned || cairn.head().index() <= floor),
     };
-    let walked = walk(waypoint, stream, author, name, from)?;
+    let walked = walk(waypoint, lane, name, from)?;
 
     // A resumed walk cannot contradict the record it resumed from: it started
     // there. A walk from genesis can, and that is the only shape in which a host
     // gets to lie by omission — hand back a shorter chain that verifies
     // perfectly, and a reader with no memory believes it.
     if from.is_none()
-        && let Some(recorded) = site.cairn(name, &named)?
+        && let Some(known) = recorded
     {
-        confirm(&walked, &recorded, name)?;
+        confirm(&walked, &known, name)?;
     }
 
     if let Some(cairn) = walked.cairn() {
@@ -222,16 +228,14 @@ fn confirm(walked: &Walked, recorded: &Cairn, name: &str) -> Result<(), Complain
 /// what comes out is not a segment by `author`.
 pub fn peek(
     waypoint: &impl Waypoint,
-    stream: &Stream,
+    lane: &Lane,
     index: u64,
-    author: &VerifyingKey,
 ) -> Result<Option<Segment>, Complaint> {
-    let (address, key) = derive(stream, index);
-    let Some(sealed) = waypoint.get(&address)? else {
+    let Some(sealed) = waypoint.get(&lane.keys.address(index))? else {
         return Ok(None);
     };
-    let plain = open(&key, Fit::Veil, &sealed)?;
-    Ok(Some(Segment::from_canonical_bytes(&plain, author)?))
+    let plain = open(&lane.keys.key(index)?, Fit::Veil, &sealed)?;
+    Ok(Some(Segment::from_canonical_bytes(&plain, &lane.author)?))
 }
 
 /// Walks a stream from `from` until the first empty address.
@@ -248,8 +252,7 @@ pub fn peek(
 /// that revised a drop this endpoint already read comes out as.
 pub fn walk(
     waypoint: &(impl Waypoint + Sync),
-    stream: &Stream,
-    author: &VerifyingKey,
+    lane: &Lane,
     name: &str,
     from: Option<Cairn>,
 ) -> Result<Walked, Complaint> {
@@ -268,13 +271,13 @@ pub fn walk(
     let mut index = start;
     let mut width = 1;
     loop {
-        for found in fetch(waypoint, stream, author, name, index, width)? {
+        for found in fetch(waypoint, lane, name, index, width)? {
             let Some(segment) = found else {
                 return Ok(Walked { verifier, held });
             };
             verifier.accept(&segment)?;
             held.push(Held {
-                address: derive(stream, segment.index()).0,
+                address: lane.keys.address(segment.index()),
                 segment,
             });
         }
@@ -311,8 +314,7 @@ pub const WINDOW: usize = 8;
 /// so that two runs against the same host report the same thing.
 fn fetch(
     waypoint: &(impl Waypoint + Sync),
-    stream: &Stream,
-    author: &VerifyingKey,
+    lane: &Lane,
     name: &str,
     from: u64,
     width: usize,
@@ -323,7 +325,7 @@ fn fetch(
     let collected: Vec<Result<Option<Segment>, Complaint>> = std::thread::scope(|scope| {
         let running: Vec<_> = indices
             .iter()
-            .map(|index| scope.spawn(move || peek(waypoint, stream, *index, author)))
+            .map(|index| scope.spawn(move || peek(waypoint, lane, *index)))
             .collect();
         running
             .into_iter()

@@ -12,14 +12,22 @@
 //! a shell script nobody runs.
 
 mod assembly;
+mod lane;
 mod membership;
+mod port;
 mod request;
+mod roots;
+mod slot;
+mod tools;
 mod traffic;
 mod walk;
 mod world;
 
-pub use assembly::{HOST_ADDRESS, default_host_dir, default_root, run};
-pub use request::{Request, Whose};
+pub use assembly::{HOST_ADDRESS, run};
+pub use lane::Lane;
+pub use port::serve;
+pub use request::{Habit, Request, Whose};
+pub use roots::{default_host_dir, default_root};
 pub use walk::{Held, Reach, WINDOW, Walked, peek, track, walk};
 pub use world::{SystemClock, fresh_fence, fresh_seed};
 
@@ -28,4 +36,4 @@ pub use world::{SystemClock, fresh_fence, fresh_seed};
 // re-exported rather than re-declared so that there is one definition of a
 // channel record and one of an outcome, not two.
 pub use kusanagi_door::{CONTRACT, Carried, Complaint, Entry, Fence, Measured, Outcome, Summary};
-pub use kusanagi_site::{Channel, Invite, Peer, Site, SiteError, Standing};
+pub use kusanagi_site::{Cadence, Channel, Invite, Peer, Retention, Site, SiteError, Standing};

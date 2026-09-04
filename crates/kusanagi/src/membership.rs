@@ -12,12 +12,16 @@
 //! moves a payload.
 
 use kusanagi_grant::{Ability, Grant, Scope};
-use kusanagi_kernel::{Instant, PutOutcome, Reader, Segment, Signer, VerifyingKey, Waypoint as _};
+use kusanagi_kernel::{
+    Freight, Instant, PutOutcome, Reader, Segment, Signer, VerifyingKey, Waypoint as _,
+};
 use kusanagi_seal::{Fit, Secret, derive, offer, open as open_sealed, seal};
 use kusanagi_site::{Channel, Invite, Offer, Peer, Roster, Site, Standing};
 use kusanagi_waypoint::{Conditional as _, Locator, Place, TtlOutcome};
 
 use crate::assembly::{open, signer};
+use crate::lane::Lane;
+use crate::request::Habit;
 use crate::walk::peek;
 use crate::world::fresh_seed;
 use kusanagi_door::Complaint;
@@ -75,6 +79,7 @@ pub(crate) fn invite(
     waypoint: &str,
     lifetime: u64,
     abilities: kusanagi_grant::Abilities,
+    habit: Habit,
     now: Instant,
 ) -> Result<Outcome, Complaint> {
     if site.holds(name)? {
@@ -131,6 +136,8 @@ pub(crate) fn invite(
         introduction: bearer.verifying_key(),
         locator: waypoint.to_owned(),
         standing: Standing::Root,
+        cadence: habit.cadence,
+        retention: habit.retention,
         peer: None,
     })?;
 
@@ -147,6 +154,7 @@ pub(crate) fn join(
     site: &Site,
     text: &str,
     name: &str,
+    habit: Habit,
     now: Instant,
 ) -> Result<Outcome, Complaint> {
     if site.holds(name)? {
@@ -189,7 +197,7 @@ pub(crate) fn join(
     let hello = Segment::genesis(
         &bearer,
         &introduction.trail(&bearer),
-        greeting(&me.verifying_key(), &mine),
+        Freight::message(greeting(&me.verifying_key(), &mine))?,
     )?;
     let (greeting_at, greeting_key) = derive(&introduction, INTRODUCTION);
     let sealed = seal(&greeting_key, Fit::Veil, &hello.to_canonical_bytes())?;
@@ -207,6 +215,8 @@ pub(crate) fn join(
         introduction: bearer.verifying_key(),
         locator: invitation.locator.clone(),
         standing: Standing::Granted(mine),
+        cadence: habit.cadence,
+        retention: habit.retention,
         peer: Some(Peer {
             key: announcement.inviter,
             standing: Standing::Root,
@@ -235,8 +245,16 @@ pub(crate) fn greet(
     place: &Place,
     now: Instant,
 ) -> Result<Channel, Complaint> {
-    let introduction = channel.secret.stream(&channel.introduction.handle());
-    let Some(said) = peek(place, &introduction, INTRODUCTION, &channel.introduction)? else {
+    // The introduction stream never releases and never ratchets: it carries one
+    // segment, written by a key that exists for that one purpose, and both ends
+    // need it openable until somebody reads it.
+    let introduction = Lane {
+        keys: kusanagi_seal::Keyring::Standing(
+            channel.secret.stream(&channel.introduction.handle()),
+        ),
+        author: channel.introduction,
+    };
+    let Some(said) = peek(place, &introduction, INTRODUCTION)? else {
         return Err(Complaint::NoPeerYet {
             name: name.to_owned(),
         });

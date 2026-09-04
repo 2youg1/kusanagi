@@ -36,6 +36,7 @@ fn an_endpoint_cannot_accept_its_own_invitation() {
                 waypoint: host.clone(),
                 lifetime: 3600,
                 abilities: Abilities::ALL,
+                habit: kusanagi::Habit::default(),
             })
             .expect("the invitation was refused"),
     )["invite"]
@@ -47,6 +48,7 @@ fn an_endpoint_cannot_accept_its_own_invitation() {
         .run(&Request::Join {
             invite: invitation1.clone(),
             name: "two".to_owned(),
+            habit: kusanagi::Habit::default(),
         })
         .unwrap_err();
     assert_eq!(refused2.code(), "kusanagi.own_invitation");

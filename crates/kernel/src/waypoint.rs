@@ -14,6 +14,13 @@
 //! segment in its lifetime, so the storage layer — not this code — is what
 //! refuses a second write. An adapter that cannot refuse one must say so through
 //! [`WaypointError::OverwriteNotRefused`] rather than pretend.
+//!
+//! `delete` exists for one reason and it is not tidiness. A channel that has
+//! chosen to release keeps no history on the host at all: once the peer says
+//! they have read something, the bytes are removed and the only remaining copy
+//! is the reader's own site. A host that quietly kept a copy would defeat that,
+//! which is why the ratchet burns the key as well — deletion is the honest
+//! host's half and the ratchet is the dishonest host's half.
 
 use crate::address::DropAddr;
 
@@ -48,6 +55,24 @@ pub trait Waypoint {
     /// address is `Ok(None)`, not an error: nothing has arrived yet is the normal
     /// state of this network.
     fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError>;
+
+    /// Removes whatever is at `addr`, if anything is.
+    ///
+    /// **Deleting an empty address is success, not a failure.** A caller that
+    /// released the same drop twice, or that is releasing a drop a host already
+    /// expired, has got what it asked for: nothing is there. Reporting that as
+    /// an error would make an idempotent operation look like a broken one.
+    ///
+    /// A host is not believed about this any more than about a write. Whoever
+    /// needs to know reads the address back.
+    ///
+    /// # Errors
+    ///
+    /// [`WaypointError`] when the store failed, and
+    /// [`WaypointError::DeletionRefused`] when this kind of place cannot remove
+    /// anything at all — which a channel that releases must find out before it
+    /// relies on it, rather than after.
+    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError>;
 }
 
 /// Why a waypoint could not do what was asked.
@@ -66,6 +91,9 @@ pub enum WaypointError {
     /// The store accepted a write that should have been refused.
     #[error("this waypoint does not refuse overwrites; write-once semantics are unavailable")]
     OverwriteNotRefused,
+    /// The store will not remove anything, so nothing can be released on it.
+    #[error("this waypoint does not delete, so a channel cannot release on it")]
+    DeletionRefused,
     /// The address is not usable as a key in this store.
     #[error("address is not a usable key here: {reason}")]
     UnusableAddress {
@@ -113,6 +141,7 @@ impl WaypointError {
         match self {
             Self::Io { .. } => "waypoint.io",
             Self::OverwriteNotRefused => "waypoint.overwrite_not_refused",
+            Self::DeletionRefused => "waypoint.deletion_refused",
             Self::UnusableAddress { .. } => "waypoint.unusable_address",
             Self::Redirected { .. } => "waypoint.redirected",
             Self::Unwritten { .. } => "waypoint.unwritten",

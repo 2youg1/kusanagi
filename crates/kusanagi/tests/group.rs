@@ -48,6 +48,7 @@ fn cohort(tag: &str, names: &[&str]) -> Cohort {
             .run(&Request::Join {
                 invite: invitation,
                 name: "alice".to_owned(),
+                habit: kusanagi::Habit::default(),
             })
             .unwrap_or_else(|error| panic!("{name} could not join: {}", error.render(false)));
         readers.push(reader);

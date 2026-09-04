@@ -41,6 +41,7 @@ fn pair(tag: &str) -> (std::path::PathBuf, Endpoint, Endpoint) {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .expect("bob could not join");
     (ground, alice, bob)

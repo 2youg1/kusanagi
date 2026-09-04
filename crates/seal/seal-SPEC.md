@@ -63,8 +63,9 @@
 
 ```
 lib.rs        模块索引
-secret.rs     Secret / Stream / derive —— 隐私主张的全部代码在这里
+secret.rs     Secret / Stream / derive / address_of / phase —— 隐私主张的全部代码在这里
 envelope.rs   Key / seal / open —— 标准件的装配
+ratchet.rs    Ratchet / Keyring / Burned —— 只往前走的钥匙（I5）
 ```
 
 依赖：`kernel`（`DropAddr`、`Handle`）、`blake3`、`chacha20poly1305`。不依赖 `waypoint`、`chain`、`grant`。
@@ -123,7 +124,7 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 
 **步骤 5：一个尺寸，没有梯子。** 密文长度是宕主不需要任何密码分析就能拿到的一个事实，而一份记录的长度剖面在加密之后原封不动地存活。`veil::pad` 把「4 字节长度前缀 + 段的规范字节 + 零填充」凑成固定的 `DROP - 16` 字节。
 
-**尺寸本身也是推出来的**：本协议能产生的最大工件是 ML-DSA-87 下的一次引荐——八跳 grant 58 345 字节加一把 2 592 字节公钥，其上 genesis 段的固定字段占 4 704——所以 128 KiB 是让这个设计能生成的任何东西都不需要分块的最小 2 的幂。先试过 64 KiB，差 125 字节。
+**尺寸本身也是推出来的**：本协议能产生的最大工件是 ML-DSA-87 下的一次引荐——八跳 grant 58 345 字节加一把 2 592 字节公钥，其上 genesis 段的固定字段占 4 713——所以 128 KiB 是让这个设计能生成的任何东西都不需要分块的最小 2 的幂。先试过 64 KiB，差 125 字节。
 
 **一个尺寸，不是一组分档。** 分档仍然告诉宿主落在哪一档，而每一个边界都是一个**有人选的参数**；两个持有不同参数的构建就是两个可区分的人群——可配置性就是匿名集分割。
 
@@ -179,6 +180,29 @@ key‖nonce = derive_key("kusanagi 2026-01-01 drop key and nonce", stream ‖ in
 
 `backup_key(recovery, nonce)` 不从 stream 派生：归档没有地址。nonce 由调用方现取并随密文走，
 因为一把恢复密钥在一个站点的一生中会封多个归档。
+
+### 棘轮，以及 `Keyring` 这个门面（I5）
+
+```
+state_0     = KDF("…ratchet root…", stream)
+state_{i+1} = KDF("…ratchet step…", state_i)
+key_i       = KDF("…ratchet key…",  state_i)
+```
+
+`derive` 给每个高度一把**永远算得出**的钥匙，这既让端点只凭通道记录就能恢复，也让一个偷留了副本
+的宿主在拿到记录的那天把旧 drop 全部打开。棘轮把后一半关掉：状态每高度推进一次、旧状态被覆盖，
+于是走过去的钥匙**谁也算不回来，包括它的主人**。
+
+**地址不进棘轮。** 一个地址在被使用的那一刻就交给宿主了，事后藏它什么也保护不到；而棘轮化的地址
+会让 walk 无法在不烧掉脚下这一格的前提下往前看一格。所以 `address_of` 从 `derive` 里独立出来，
+成为一个只吃 `(stream, index)` 的纯函数。
+
+**`Keyring` 是给上层的唯一门面**：`Standing` 与 `Ratcheting` 两支回答同样两个问题——这个高度的
+地址在哪、拿什么开。哪一支由通道的 `Retention` 一次settled，于是**没有任何动词需要分支**；
+一个需要知道的调用方就是一个会忘记的调用方。
+
+`phase(secret, who)` 与它们同住 `secret.rs`，因为它也是从通道秘密派生的一个数——I3 用它把
+两端的时隙边界错开，见 `site-SPEC`。
 
 ## 14 硬编码声明
 

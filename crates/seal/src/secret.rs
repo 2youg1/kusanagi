@@ -97,6 +97,7 @@ const KEY_CONTEXT: &str = "kusanagi 2026-01-01 drop key and nonce";
 const TRAIL_CONTEXT: &str = "kusanagi 2026-01-01 trail seed for one lane";
 const BACKUP_CONTEXT: &str = "kusanagi 2026-01-01 backup archive";
 const OFFER_CONTEXT: &str = "kusanagi 2026-01-01 offer drop";
+const PHASE_CONTEXT: &str = "kusanagi 2026-01-01 slot phase for one endpoint";
 
 /// What an author signs once to obtain the seed of their trail on a lane.
 ///
@@ -168,6 +169,11 @@ impl core::fmt::Debug for Secret {
 pub struct Stream([u8; 32]);
 
 impl Stream {
+    /// The lane's own bytes, for the derivations that start from it.
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
     /// The trail this author uses on this lane.
     ///
     /// Two properties, and the design needs both. **Only the author can compute
@@ -211,11 +217,7 @@ impl core::fmt::Debug for Stream {
 /// than an argument about a hash's internals.
 #[must_use]
 pub fn derive(stream: &Stream, index: u64) -> (DropAddr, Key) {
-    let mut address = [0_u8; 20];
-    let mut hasher = blake3::Hasher::new_derive_key(ADDRESS_CONTEXT);
-    hasher.update(&stream.0);
-    hasher.update(&index.to_be_bytes());
-    hasher.finalize_xof().fill(&mut address);
+    let address = *address_of(stream, index).as_bytes();
 
     let mut cipher_key = [0_u8; 32];
     let mut nonce = [0_u8; 12];
@@ -230,6 +232,40 @@ pub fn derive(stream: &Stream, index: u64) -> (DropAddr, Key) {
     cipher_key.zeroize();
     nonce.zeroize();
     (DropAddr::from_bytes(address), key)
+}
+
+/// Where in its period one endpoint's slots begin, on one channel.
+///
+/// **Each end of a channel gets its own**, because it is derived through that
+/// end's own handle. Two ends sharing a phase would change slot at the same
+/// instant, and a host watching two streams tick together would have paired them
+/// without opening one byte — the one thing derived addresses exist to prevent.
+///
+/// The caller reduces this modulo the period; nothing here knows what a period
+/// is, so a channel may change its own without changing where anybody stands.
+#[must_use]
+pub fn phase(secret: &Secret, who: &Handle) -> u64 {
+    let mut hasher = blake3::Hasher::new_derive_key(PHASE_CONTEXT);
+    hasher.update(secret.as_bytes());
+    hasher.update(who.as_bytes());
+    let mut eight = [0_u8; 8];
+    hasher.finalize_xof().fill(&mut eight);
+    u64::from_be_bytes(eight)
+}
+
+/// Where one height of one lane sits, which is all a host ever learns.
+///
+/// Apart from [`derive`] because a ratcheting channel needs the address without
+/// the key: an address is published the moment it is used, so it stays a pure
+/// function of the lane even where the key does not.
+#[must_use]
+pub fn address_of(stream: &Stream, index: u64) -> DropAddr {
+    let mut address = [0_u8; 20];
+    let mut hasher = blake3::Hasher::new_derive_key(ADDRESS_CONTEXT);
+    hasher.update(&stream.0);
+    hasher.update(&index.to_be_bytes());
+    hasher.finalize_xof().fill(&mut address);
+    DropAddr::from_bytes(address)
 }
 
 #[cfg(test)]

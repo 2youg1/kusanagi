@@ -121,6 +121,10 @@ data Outcome
   | -- | The channel, the handle that signed every segment reported, the
     -- verified head, and the segments themselves.
     Read ChannelName Handle (Maybe Word64) [Entry]
+  | -- | The channel, and how many payloads are now waiting for a slot.
+    Queued ChannelName Word64
+  | -- | The channel, the slot, and the height written if one was.
+    Ticked ChannelName Word64 (Maybe Word64)
   | Revoked ChannelName Text
   | -- | The channel dropped here, and the locator its drops stay at.
     Forgotten ChannelName Text
@@ -138,6 +142,8 @@ instance FromJSON Outcome where
       "joined" -> Joined <$> o .: "name" <*> o .: "handle" <*> o .: "peer"
       "sent" -> Sent <$> o .: "name" <*> o .: "index" <*> o .: "address"
       "read" -> Read <$> o .: "name" <*> o .: "author" <*> o .: "height" <*> o .: "segments"
+      "queued" -> Queued <$> o .: "name" <*> o .: "waiting"
+      "ticked" -> Ticked <$> o .: "name" <*> o .: "slot" <*> o .: "wrote"
       "revoked" -> Revoked <$> o .: "name" <*> o .: "step"
       "forgotten" -> Forgotten <$> o .: "name" <*> o .: "waypoint"
       "examined" -> Examined <$> o .: "waypoint" <*> o .: "tier"

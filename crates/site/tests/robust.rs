@@ -45,6 +45,8 @@ use proptest::prelude::*;
 /// One channel record, made without touching a signature scheme twice.
 fn channel() -> Channel {
     Channel {
+        cadence: kusanagi_site::Cadence::OnDemand,
+        retention: kusanagi_site::Retention::Keep,
         name: "peer".to_owned(),
         secret: Secret::from_bytes([7; 32]),
         root: Handle::from_bytes([3; 32]),

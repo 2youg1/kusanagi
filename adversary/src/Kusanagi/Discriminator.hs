@@ -45,6 +45,7 @@ module Kusanagi.Discriminator
   , separating
   , report
   , sampleWorld
+  , slottedWorld
   , volumeSaysNothing
   , presenceSaysOnlyHowMany
   ) where
@@ -293,6 +294,48 @@ sampleWorld door lengths = withGround $ \ground ->
 -- | What a host holds in one world, or why there is no world.
 weighed :: Door -> [Int] -> IO (Either String [Reading])
 weighed door lengths = fmap (features . sampleHeld) <$> sampleWorld door lengths
+
+-- | One throwaway world on a slotted channel, driven by @tick@ rather than by
+-- what anybody has to say.
+--
+-- The parameter is what the writer *queues*, and the number of ticks is fixed
+-- regardless: that is the whole experiment. A world with three messages and a
+-- world with none must both produce exactly @ticks@ drops, at the same rhythm,
+-- because the slot is what decides both.
+slottedWorld :: Door -> Int -> [Int] -> IO (Either String Sample)
+slottedWorld door ticks lengths = withGround $ \ground ->
+  withRelay door (waypoint ground) $ \relay -> do
+    opened <- converseSlotted door ground (Relay.locator relay) ticks lengths
+    case opened of
+      Left reason -> pure (Left reason)
+      Right () -> do
+        held <- stored ground
+        seen <- observed relay
+        pure (Right Sample {sampleHeld = held, sampleSeen = seen})
+
+-- | Opens a slotted channel, queues @lengths@, and ticks @ticks@ times.
+--
+-- The period is an hour, so every tick after the first finds its slot already
+-- filled and writes nothing. That is deliberate: what is being measured is the
+-- traffic a *schedule* produces, and a schedule that fired twice in one period
+-- must produce one drop, not two. A shorter period would measure the clock.
+converseSlotted :: Door -> Ground -> FilePath -> Int -> [Int] -> IO (Either String ())
+converseSlotted door ground at ticks lengths = do
+  minted <- Door.ask door writer (Door.InviteEvery channel at 3600)
+  case minted of
+    Accepted (Invited _ invitation _) -> do
+      joined <- Door.ask door reader (Door.Join invitation channel)
+      case joined of
+        Accepted Joined {} -> do
+          mapM_ (\len -> Door.ask door writer (Door.Send channel (Text.replicate len "x"))) lengths
+          mapM_ (\_ -> Door.ask door writer (Door.Tick channel)) [1 .. ticks]
+          pure (Right ())
+        other -> pure (Left ("the slotted channel could not be joined: " <> show other))
+    other -> pure (Left ("the slotted invitation was refused: " <> show other))
+  where
+    writer = siteIn ground "one"
+    reader = siteIn ground "two"
+    channel = ChannelName "peer"
 
 -- | Opens a channel between two fresh endpoints and says these things on it.
 converse :: Door -> Ground -> FilePath -> [Int] -> IO (Either String ())

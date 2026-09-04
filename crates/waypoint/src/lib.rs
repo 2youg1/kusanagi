@@ -17,12 +17,14 @@
 //! occupied address, and [`probe::examine`] measures that rather than assuming it.
 
 mod access;
+mod carrier;
 mod certificate;
 mod client;
 mod conditional;
 pub mod conformance;
 mod dir;
 mod http;
+mod locator;
 mod memory;
 mod place;
 pub mod probe;
@@ -30,12 +32,14 @@ mod s3;
 mod sigv4;
 
 pub use access::{Access, Proxy};
+pub use carrier::{Carrier, CarrierWaypoint};
 pub use certificate::{Capability, Certificate, Finding, Tier, Verdict};
 pub use client::{MAX_OBJECT, PATIENCE};
 pub use conditional::{Conditional, Fetched, TtlOutcome, Validator};
 pub use dir::DirWaypoint;
 pub use http::{HttpWaypoint, TTL_HEADER};
+pub use locator::{Locator, LocatorError};
 pub use memory::MemoryWaypoint;
-pub use place::{Locator, LocatorError, Place};
+pub use place::Place;
 pub use s3::S3Waypoint;
 pub use sigv4::Credentials;

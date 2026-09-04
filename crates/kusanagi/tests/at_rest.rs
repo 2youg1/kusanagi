@@ -54,6 +54,7 @@ fn a_site_holds_no_message_it_has_sent_or_received() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
 
@@ -102,6 +103,7 @@ fn what_a_site_keeps_is_a_closed_list() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     alice.send("bob", FROM_ALICE);
@@ -185,6 +187,7 @@ fn nothing_a_site_writes_is_readable_without_this_windows_account() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     alice.send("bob", "something worth keeping");

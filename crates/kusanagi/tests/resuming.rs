@@ -42,6 +42,7 @@ fn losing_every_cairn_changes_what_a_read_costs_and_nothing_else() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     for round in 0..HEIGHT {
@@ -101,6 +102,7 @@ fn a_read_that_shows_segments_shows_every_one_it_was_asked_for() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     for round in 0..HEIGHT {

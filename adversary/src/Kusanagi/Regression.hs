@@ -222,6 +222,16 @@ verb = \case
   Read {} -> "Read"
   Revoke {} -> "Revoke"
 
+-- | How a channel is opened, on a trace that never varies it.
+--
+-- The adversary opens on-demand channels that keep their history, because that
+-- is what every property here is about. The field is spelled out rather than
+-- left off so that the rendered test says which of the four combinations it is
+-- exercising; a default that changed under it would be a silent change to what
+-- these traces mean.
+habit :: Text
+habit = "habit: kusanagi::Habit::default(),"
+
 fields :: Action World a -> [Text]
 fields = \case
   Invite _ name lifetime abilities ->
@@ -229,10 +239,12 @@ fields = \case
     , "waypoint: host.clone(),"
     , "lifetime: " <> Text.pack (show (seconds lifetime)) <> ","
     , "abilities: " <> permission abilities <> ","
+    , habit
     ]
   Join _ held name ->
     [ "invite: " <> ticket held <> ".clone(),"
     , "name: " <> quoted (spelled name) <> ".to_owned(),"
+    , habit
     ]
   -- A payload is bytes on the Rust side, so the literal is a byte string. The
   -- adversary only ever sends words, and a word is its own ASCII.

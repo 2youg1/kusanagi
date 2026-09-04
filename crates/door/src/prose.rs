@@ -73,6 +73,8 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             id,
             address,
         } => format!("sent on `{name}` #{index}\n  id      {id}\n  address {address}"),
+        Outcome::Queued { .. } | Outcome::Ticked { .. } => scheduled(outcome),
+        Outcome::Served { calls } => format!("answered {calls} call(s); the agent closed the pipe"),
         Outcome::Read {
             name,
             author,
@@ -224,15 +226,65 @@ fn listing(channels: &[Summary]) -> String {
             (Some(peer), None) => peer.clone(),
             (Some(peer), Some(code)) => format!("{peer} — cut off ({code})"),
         };
+        // How it writes and what it keeps, in one narrow column. `release` is
+        // shown even though it is not the default precisely because it is not:
+        // on such a channel this disk is the only copy of the conversation.
+        let habit = match channel.period {
+            None => channel.retention.to_owned(),
+            Some(seconds) => format!("{}/{seconds}s", channel.retention),
+        };
         // The waypoint goes last because it is the one column with no bound on
         // its width: a long locator then runs off the end instead of pushing
         // everything after it out of line.
         format!(
-            "  {:<16} {:<8} {:<30} {:<40} {}",
-            channel.name, channel.standing, authority, peer, channel.waypoint,
+            "  {:<16} {:<8} {:<12} {:<30} {:<40} {}",
+            channel.name, channel.standing, habit, authority, peer, channel.waypoint,
         )
     }));
     lines.join("\n")
+}
+
+/// The two outcomes a channel with a rhythm produces.
+///
+/// Apart from the match above because both need several lines to say one thing:
+/// **the caller's message did not go out when they asked, and that is the
+/// point.** A person reading either of these has to be told where their words
+/// are and what will move them.
+fn scheduled(outcome: &Outcome) -> String {
+    match outcome {
+        Outcome::Queued {
+            name,
+            waiting,
+            period,
+        } => format!(
+            "queued on `{name}`; {waiting} waiting
+             this channel writes one drop every {} seconds whether or not there is              anything to say, so nothing goes out until `kusanagi tick --from {name}`              reaches its next slot.",
+            period.unwrap_or(0)
+        ),
+        Outcome::Ticked {
+            name,
+            slot,
+            period,
+            wrote,
+            carried,
+            waiting,
+            heard,
+        } => format!(
+            "slot {slot} on `{name}`, one every {period}s
+  wrote     {}
+               carried   {carried}
+  waiting   {waiting}
+  heard     {}",
+            wrote.map_or_else(
+                || "nothing; this slot was already filled".to_owned(),
+                |at| format!("#{at}")
+            ),
+            heard.map_or_else(|| "nothing yet".to_owned(), |at| format!("up to #{at}"))
+        ),
+        // Unreachable by construction: the caller matched these two variants.
+        // Modelled rather than asserted away, because this crate does not panic.
+        _ => String::new(),
+    }
 }
 
 /// One verified stream, header then payloads inside a fence.

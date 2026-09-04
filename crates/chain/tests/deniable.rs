@@ -39,7 +39,7 @@
 )]
 
 use kusanagi_chain::{ChainError, Verifier, verify};
-use kusanagi_kernel::{Segment, Signer, Trail, VerifyingKey};
+use kusanagi_kernel::{Freight, Segment, Signer, Trail, VerifyingKey};
 
 fn alice() -> Signer {
     Signer::from_seed(&[1_u8; 32])
@@ -57,11 +57,24 @@ fn trail() -> Trail {
 fn transcript(words: &[&str]) -> Vec<Segment> {
     let mut said = words.iter();
     let first = said.next().expect("a stream opens with something");
-    let mut chain = vec![Segment::genesis(&alice(), &trail(), first.as_bytes().to_vec()).unwrap()];
+    let mut chain = vec![
+        Segment::genesis(
+            &alice(),
+            &trail(),
+            Freight::message(first.as_bytes().to_vec()).unwrap(),
+        )
+        .unwrap(),
+    ];
     for word in said {
         let head = chain.last().unwrap().head();
         chain.push(
-            Segment::extend(&trail(), alice().handle(), word.as_bytes().to_vec(), head).unwrap(),
+            Segment::extend(
+                &trail(),
+                alice().handle(),
+                Freight::message(word.as_bytes().to_vec()).unwrap(),
+                head,
+            )
+            .unwrap(),
         );
     }
     chain
@@ -69,14 +82,15 @@ fn transcript(words: &[&str]) -> Vec<Segment> {
 
 /// Where the payload sits in a following segment's canonical bytes.
 ///
-/// tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32 + len 4.
-const FOLLOWS_PAYLOAD_AT: usize = 141;
+/// tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32 + ack 8 +
+/// purpose 1 + len 4.
+const FOLLOWS_PAYLOAD_AT: usize = 150;
 
 /// Where the payload sits in a genesis segment's canonical bytes.
 ///
-/// tag 1 + index 8 + author 32 + commit 32 + len 4, and the signature follows
-/// the payload rather than preceding it.
-const GENESIS_PAYLOAD_AT: usize = 77;
+/// tag 1 + index 8 + author 32 + commit 32 + ack 8 + purpose 1 + len 4, and the
+/// signature follows the payload rather than preceding it.
+const GENESIS_PAYLOAD_AT: usize = 86;
 
 /// How long an ML-DSA-87 signature is, which is what trails a genesis payload.
 const SIGNATURE: usize = 4_627;
@@ -119,7 +133,7 @@ fn a_peer_cannot_write_at_a_height_its_author_has_not_reached() {
     let ahead = Segment::extend(
         &stranger,
         alice().handle(),
-        b"alice never said this".to_vec(),
+        Freight::message(b"alice never said this".to_vec()).unwrap(),
         real[1].head(),
     )
     .unwrap();

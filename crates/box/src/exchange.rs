@@ -183,3 +183,19 @@ impl Response {
         stream.flush()
     }
 }
+/// The lifetime a `Cache-Control` value asks for, if it asks for one.
+///
+/// `max-age` is the header a browser, a CDN and a package manager all send
+/// anyway, so a lifetime asks for itself the way everything else on the wire
+/// does. A header named after this product would be a fingerprint in every
+/// request, readable by every proxy and log on the path.
+///
+/// An unparsable directive is ignored rather than refused, which is what
+/// RFC 9111 §5.2 asks of a recipient and also what keeps a malformed value from
+/// being a way to tell this host apart from a cache.
+pub(crate) fn max_age(value: &str) -> Option<u64> {
+    value
+        .split(',')
+        .filter_map(|directive| directive.trim().strip_prefix("max-age="))
+        .find_map(|seconds| seconds.trim().parse::<u64>().ok())
+}

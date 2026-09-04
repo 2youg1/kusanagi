@@ -47,6 +47,8 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `grant.wrong_root` | a grant chain is rooted in a handle that is not this channel's | ask whoever invited you for a new invitation |
 | `kusanagi.address_unavailable` | this machine would not hand over the address `kusanagi host` was told to listen on | `--bind 0` takes any free port and prints it; `--bind ADDRESS` names one this machine has |
 | `kusanagi.argument` | an argument is not something this verb can act on | the answer names the flag and what to pass instead |
+| `kusanagi.needs_cairn` | a channel opened with `--release` was read, and the record of what had already been read is gone; the host no longer holds those drops | run `kusanagi import` with the archive `kusanagi export` made |
+| `kusanagi.not_slotted` | `tick` was run on a channel that writes when it is asked to | send on it with `kusanagi send --to NAME`, or open the channel with `--every SECONDS` |
 | `kusanagi.bad_recovery_key` | an archive did not open under the recovery key that was offered | check the key: it is the 64 hexadecimal digits `kusanagi export` printed once, and it goes in on the first line of stdin |
 | `kusanagi.bad_greeting` | the introduction on a channel is not one this build can read | keep the bytes and report it |
 | `kusanagi.cannot_revoke_root` | the peer of this channel is the authority that invited you | `kusanagi forget --channel NAME` instead |
@@ -66,9 +68,12 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `kusanagi.unknown_group` | no group by that name has been made here | run `kusanagi channels` to see the groups, or write the roster with `kusanagi group --name NAME` |
 | `locator.bad_proxy` | `KUSANAGI_PROXY` does not name a proxy | `socks5://host:port` or `http://host:port` |
 | `locator.bucket_incomplete` | a bucket locator does not name a bucket | `s3://ENDPOINT/BUCKET[?region=R]` |
+| `locator.carrier_missing` | a `carry://` locator was used and this machine has no carrier | set `KUSANAGI_CARRIER` to the program that moves the bytes |
+| `locator.bad_carrier` | `KUSANAGI_CARRIER` is set to something that is not a program | it is a program name followed by any leading arguments, separated by spaces |
 | `locator.credentials_missing` | a bucket was named without credentials | set `KUSANAGI_S3_ACCESS_KEY` and `KUSANAGI_S3_SECRET_KEY` |
 | `locator.empty` | a waypoint was named as an empty string | a waypoint is a path, an `http://` url, or `s3://…` |
 | `locator.unknown_scheme` | a locator names a scheme this build does not speak | a waypoint is a path, an `http://` url, or `s3://…` |
+| `seal.burned` | a key this endpoint destroyed on purpose was asked for again; the channel releases what its peer has read | restore from the archive `kusanagi export` made, or accept that those segments are gone |
 | `seal.oversize` | a payload is larger than a drop can carry | send less in one segment |
 | `seal.rejected` | sealed bytes did not open under the key this address derives | keep the bytes and report it |
 | `seal.unusable` | the sealing key or nonce is not the width the cipher takes | report it: this is a defect, not an input |
@@ -79,6 +84,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `segment.not_the_author` | a segment names an author who is not the one expected here | keep the bytes and report it: the host served a stream nobody asked for |
 | `segment.payload_too_large` | a segment declares a payload larger than one may carry | keep the bytes and report it |
 | `segment.payload_unrepresentable` | a segment declares a payload larger than this machine can address | keep the bytes and report it |
+| `segment.purpose` | a segment says it is neither a message nor a filler | keep the bytes and report it |
 | `segment.tag` | a segment's first byte is neither genesis nor follows | keep the bytes and report it |
 | `segment.trailing` | bytes follow a complete segment | keep the bytes and report it |
 | `segment.truncated` | a segment ends in the middle of a field | keep the bytes and report it |
@@ -89,4 +95,5 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `waypoint.redirected` | the host answered with somewhere else to go, and was not followed | this host is not a box; check the waypoint url |
 | `waypoint.timeout` | the host did not answer inside the deadline | retry; if it persists the host is down |
 | `waypoint.unusable_address` | the address is not a usable key in this store | run `kusanagi doctor <waypoint>` |
+| `waypoint.deletion_refused` | this kind of host cannot remove anything, so a channel that releases cannot keep its promise on it | open the channel without `--release`, or move it to a host that deletes |
 | `waypoint.unwritten` | a write did not land, and the host said nothing about why | the host is full, or it is not a box; run `kusanagi doctor <waypoint>` |

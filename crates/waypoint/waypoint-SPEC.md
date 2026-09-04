@@ -67,7 +67,9 @@ memory.rs       内存适配器
 http.rs         盒子的客户端一半
 s3.rs           对象存储适配器
 sigv4.rs        Signature Version 4：凭据、日期、签名
-place.rs        Locator / Place / Access —— 唯一知道存在多个适配器的地方
+locator.rs      Locator / LocatorError —— 一串文本指向哪里
+place.rs        Place —— 唯一知道存在多个适配器的地方
+carrier.rs      CarrierWaypoint —— 别人的客户端搬字节（I4）
 proxy.rs        Proxy —— 请求从哪个套接字出去；是插口，不是机制
 probe.rs        examine —— 唯一实测宿主的地方
 certificate.rs  Capability / Verdict / Tier / Certificate —— 实测结果的公开词汇
@@ -177,6 +179,39 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 | `hmac` + `sha2` | SigV4 规定 HMAC-SHA256，不是我们能选的 | 无 |
 | `blake3` | ETag，与全仓同源，且让稳定性成为构造性质 | 用 mtime 或计数器会让 ETag 不稳定 |
 | 服务端不引入 HTTP 框架 | 三个请求、两百行、零依赖 | 一个框架的表面积比它要服务的协议大一个数量级 |
+
+### `delete`，以及为什么它进了接缝（C4）
+
+`Waypoint` 加第三个方法。**删空地址是成功而不是失败**：重复释放、或释放一个宿主已经过期清掉的
+drop，得到的正是它要的结果——那里什么都没有。把幂等操作报成故障会让调用方去处理一个不存在的问题。
+
+四个适配器各一份：目录 `remove_file`（写侧用硬链接占位，所以这里的文件就是唯一那条链接）、
+盒子 `DELETE`（应答仍是恒定的空 404，见 `box-SPEC`）、S3 `DeleteObject`、内存删键。
+契约新增一条 `release-removes-and-stays-removed`，因为选择释放的通道**把自己的历史押在这条上**。
+一种不能删的宿主必须说出来（`WaypointError::DeletionRefused`），而不是假装删了。
+
+### 载体：不模仿协议，直接调用真正的客户端（I4）
+
+其余每个适配器都在**说**一种协议，于是路径观察者看到的握手是本程序的握手——§3 承认的属性 0
+就丢在这里。`carrier.rs` 换一条路：让持有 drop 的那个服务的**真客户端**（`rclone`、`aws`、`git`、
+厂商自己的工具）去连，于是线上的流量是那个客户端的流量，因为它**就是**；凭据也归它，本程序
+不读、不持有、不传输。
+
+```
+PROGRAM get    OBJECT   字节到 stdout   0 = 有，3 = 那里没有
+PROGRAM put    OBJECT   字节从 stdin    0 = 发出去了
+PROGRAM delete OBJECT                   0 = 没了，3 = 本来就没有
+```
+
+**三个退出码而不是两个**：把失败与「不存在」报成同一件事，会让一次断网变成「这条流到此为止」，
+walk 提前停下并把一条短链当成完整的报上去——一个自信的错误答案，本仓库唯一不许产出的那种失败。
+
+**程序名来自 `KUSANAGI_CARRIER`，永远不来自 locator。** 这是安全边界不是配置风格：
+locator 装在别人给的邀请里，一个能指定程序的 locator 就是拼作「waypoint」的远程代码执行。
+locator 只说前缀（`carry://remote:drops`），这台机器的主人说什么是载体。
+
+**写一次的语义由本地判定**：真客户端不都提供条件写，提供的那个回答的也是它自己存储的事，
+不是这个地址的事。所以先读、写、再读回比较，与 http 适配器同一形状、同一证据。
 
 ## 14 硬编码声明
 

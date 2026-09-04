@@ -84,7 +84,7 @@ pub fn fork(left: &Segment, right: &Segment) -> Option<Fork> {
 )]
 mod tests {
     use super::fork;
-    use kusanagi_kernel::{Segment, Signer, Trail};
+    use kusanagi_kernel::{Freight, Segment, Signer, Trail};
 
     fn trail() -> Trail {
         Trail::from_seed([4_u8; 32])
@@ -96,8 +96,10 @@ mod tests {
 
     #[test]
     fn one_author_two_segments_one_height_is_a_fork() {
-        let left = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
-        let right = Segment::genesis(&alice(), &trail(), b"b".to_vec()).unwrap();
+        let left =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"a".to_vec()).unwrap()).unwrap();
+        let right =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"b".to_vec()).unwrap()).unwrap();
         let found = fork(&left, &right).unwrap();
         assert_eq!(found.author(), alice().handle());
         assert_eq!(found.index(), 0);
@@ -107,23 +109,35 @@ mod tests {
 
     #[test]
     fn a_redelivery_is_not_a_fork() {
-        let segment = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
+        let segment =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"a".to_vec()).unwrap()).unwrap();
         assert!(fork(&segment, &segment.clone()).is_none());
     }
 
     #[test]
     fn two_authors_are_not_a_fork() {
-        let left = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
-        let right =
-            Segment::genesis(&Signer::from_seed(&[2_u8; 32]), &trail(), b"b".to_vec()).unwrap();
+        let left =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"a".to_vec()).unwrap()).unwrap();
+        let right = Segment::genesis(
+            &Signer::from_seed(&[2_u8; 32]),
+            &trail(),
+            Freight::message(b"b".to_vec()).unwrap(),
+        )
+        .unwrap();
         assert!(fork(&left, &right).is_none());
     }
 
     #[test]
     fn two_heights_are_not_a_fork() {
-        let first = Segment::genesis(&alice(), &trail(), b"a".to_vec()).unwrap();
-        let second =
-            Segment::extend(&trail(), alice().handle(), b"b".to_vec(), first.head()).unwrap();
+        let first =
+            Segment::genesis(&alice(), &trail(), Freight::message(b"a".to_vec()).unwrap()).unwrap();
+        let second = Segment::extend(
+            &trail(),
+            alice().handle(),
+            Freight::message(b"b".to_vec()).unwrap(),
+            first.head(),
+        )
+        .unwrap();
         assert!(fork(&first, &second).is_none());
     }
 }

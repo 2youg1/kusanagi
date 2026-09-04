@@ -32,7 +32,7 @@ pub(crate) fn all(root: &Path) -> Result<Revocations, SiteError> {
     let Some(bytes) = permissions::read(&root.join("revoked"), "read the revocation list")? else {
         return Ok(Revocations::new());
     };
-    let text = String::from_utf8(bytes).map_err(|_| SiteError::BadRecord {
+    let text = core::str::from_utf8(&bytes).map_err(|_| SiteError::BadRecord {
         what: "the revocation list",
         reason: "this file is not text".to_owned(),
     })?;

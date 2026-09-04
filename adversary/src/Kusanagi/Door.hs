@@ -100,7 +100,16 @@ data Verb
   = Identity
   | Channels
   | Invite ChannelName FilePath Lifetime Abilities
+  | -- | An invitation on a channel that writes one drop every N seconds.
+    --
+    -- Apart from 'Invite' rather than a field on it, because every existing
+    -- property builds an on-demand channel and none of them should have to say
+    -- so. A new constructor makes the slotted world the thing that is opted
+    -- into, which is what it is.
+    InviteEvery ChannelName FilePath Word
   | Join Invitation ChannelName
+  | -- | Fill this channel's current slot and look once.
+    Tick ChannelName
   | Send ChannelName Text
   | Read ChannelName
   | ReadAfter ChannelName Word64
@@ -237,7 +246,9 @@ piped = \case
   Identity -> Nothing
   Channels -> Nothing
   Invite name _ _ _ -> Just (line name)
+  InviteEvery name _ _ -> Just (line name)
   Join (Invitation invitation) name -> Just (line name <> Text.encodeUtf8 invitation)
+  Tick name -> Just (line name)
   Send name text -> Just (line name <> Text.encodeUtf8 text)
   Read name -> Just (line name)
   ReadAfter name _ -> Just (line name)
@@ -261,7 +272,19 @@ spoken = \case
     , "--can"
     , listed abilities
     ]
+  InviteEvery _ waypoint period ->
+    [ "invite"
+    , "--name"
+    , onStdin
+    , "--waypoint"
+    , waypoint
+    , "--for"
+    , show (seconds Forever)
+    , "--every"
+    , show period
+    ]
   Join _ _ -> ["join", "--name", onStdin]
+  Tick _ -> ["tick", "--from", onStdin]
   Send _ _ -> ["send", "--to", onStdin]
   Read _ -> ["read", "--from", onStdin]
   ReadAfter _ floor' -> ["read", "--from", onStdin, "--after", show floor']

@@ -35,6 +35,7 @@ fn a_payload_that_is_not_text_survives_the_round_trip() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
 
@@ -77,6 +78,7 @@ fn reading_after_a_height_reports_only_what_follows() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
     for line in ["one", "two", "three"] {
@@ -141,6 +143,7 @@ fn the_largest_payload_that_fits_a_drop_goes_through_and_one_more_does_not() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
 
@@ -203,6 +206,7 @@ fn nothing_a_peer_writes_can_close_the_fence_around_it() {
     bob.run(&Request::Join {
         invite: invitation,
         name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
     })
     .unwrap();
 
