@@ -252,16 +252,16 @@ impl Outcome {
     /// `segments`: one call then answers both of a caller's questions — how far
     /// the stream goes, and what of it is new.
     ///
-    /// The segments arrive as `(index, payload)` rather than as the walk they
-    /// came from, because a walk is a thing this crate must not be able to
-    /// perform. Which of them to show is the verb's decision and stays with the
-    /// verb; how to render them is this crate's and stays here.
+    /// The segments arrive as `(index, acknowledged, payload)` rather than as
+    /// the walk they came from, because a walk is a thing this crate must not
+    /// be able to perform. Which of them to show is the verb's decision and
+    /// stays with the verb; how to render them is this crate's and stays here.
     #[must_use]
     pub fn read<'a>(
         name: &str,
         author: &str,
         height: Option<u64>,
-        segments: impl IntoIterator<Item = (u64, &'a [u8])>,
+        segments: impl IntoIterator<Item = (u64, u64, &'a [u8])>,
     ) -> Self {
         Self::Read {
             name: name.to_owned(),
@@ -269,8 +269,9 @@ impl Outcome {
             height,
             segments: segments
                 .into_iter()
-                .map(|(index, payload)| Entry {
+                .map(|(index, acknowledged, payload)| Entry {
                     index,
+                    acknowledged,
                     carried: Carried::of(payload),
                 })
                 .collect(),

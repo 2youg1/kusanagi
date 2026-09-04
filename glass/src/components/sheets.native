@@ -1,0 +1,180 @@
+<!-- The three sheets that make or keep a channel: mint an invitation, accept
+     one, and back the site up — plus settings, where everything about this
+     endpoint lives: its handle, its facts, its look, its maintenance. The
+     four characters are the whole point of the first two
+     (ARCHITECTURE.md §8): both ends print them, two people read them
+     to each other, and an invitation swapped in transit fails the comparison.
+     So the code is the largest thing on the sheet. Long prose never shares a
+     row with a fixed-width field: a row's flex does not shrink, so an
+     over-long intrinsic width clips instead of wrapping. -->
+<template name="endpoint-fact" args="name value">
+  <column gap="2">
+    <text size="sm" foreground="text_muted">{name}</text>
+    <text><span mono="true">{value}</span></text>
+  </column>
+</template>
+
+<template name="settings-sheet">
+  <sheet label="Settings" on-dismiss="close_sheet">
+    <column gap="14" padding="20" width="420" grow="1">
+      <text size="heading">Settings</text>
+      <scroll grow="1">
+        <column gap="14">
+          <card padding="14">
+            <column gap="8">
+              <row gap="10" cross="center">
+                <avatar size="sm">me</avatar>
+                <text grow="1" size="sm" foreground="text_muted">Handle</text>
+                <button size="sm" variant="ghost" icon="copy" label="Copy the handle" on-press="copy_handle"></button>
+              </row>
+              <text><span mono="true">{handleBlock}</span></text>
+              <text size="sm" foreground="text_muted" wrap="true">A hash of the public key: what a peer sees, never a name.</text>
+            </column>
+          </card>
+          <card padding="14">
+            <column gap="10">
+              <use template="endpoint-fact" name="Site" value="{siteShown}"/>
+              <use template="endpoint-fact" name="Sealed at rest by" value="{sealShown}"/>
+              <use template="endpoint-fact" name="Route" value="{routeShown}"/>
+              <use template="endpoint-fact" name="Binary" value="{binaryShown}"/>
+            </column>
+          </card>
+          <column gap="6">
+            <text size="sm" foreground="text_muted" padding="4">Look</text>
+            <toggle-group gap="2" label="Look">
+              <for each="looks" as="l">
+                <toggle-button size="sm" grow="1" selected="{l == look}" on-toggle="set_look:{l}">{l}</toggle-button>
+              </for>
+            </toggle-group>
+          </column>
+          <column gap="6">
+            <text size="sm" foreground="text_muted" padding="4">Maintenance</text>
+            <button variant="outline" icon="wrench" on-press="show_doctor" disabled="{isBusy}">Measure a host</button>
+            <button variant="outline" icon="save" on-press="show_backup" disabled="{isBusy}">Back up this site</button>
+            <button variant="outline" icon="refresh-cw" on-press="refresh" disabled="{isBusy}">Refresh</button>
+          </column>
+          <text size="sm" foreground="text_muted" wrap="true">To restore a backup, run kusanagi import in a terminal: the key and the archive go in on stdin, and this window never holds either.</text>
+        </column>
+      </scroll>
+      <row main="end"><button variant="ghost" on-press="close_sheet">Close</button></row>
+    </column>
+  </sheet>
+</template>
+<template name="check-card">
+  <card padding="20">
+    <column gap="10" cross="center">
+      <text size="sm" foreground="text_muted" wrap="true" text-alignment="center">Read these four characters to the other person. Theirs must be the same.</text>
+      <text size="display" label="check code"><span mono="true">{checkSpaced}</span></text>
+      <row gap="8" cross="center">
+        <badge variant="outline">{checkFor}</badge>
+        <button size="sm" variant="ghost" icon="copy" on-press="copy_check">Copy</button>
+      </row>
+    </column>
+  </card>
+</template>
+
+<template name="invite-form">
+  <column gap="10">
+    <text-field text="{invite.nameText}" placeholder="What to call them here (a-z, 0-9, -)" on-input="invite_name_edit" on-submit="mint" label="Name" autofocus="true"/>
+    <text-field text="{invite.waypointText}" placeholder="Where the drops live: http://host:port, s3://bucket, or a path" on-input="invite_waypoint_edit" on-submit="mint" label="Waypoint"/>
+    <text-field text="{invite.everyText}" placeholder="Slot period in seconds; leave empty to write when asked" on-input="invite_every_edit" on-submit="mint" label="Slot period"/>
+    <text size="sm" foreground="text_muted" wrap="true">A period fills every slot, whether or not there is anything to say.</text>
+    <switch checked="{invite.release}" on-toggle="toggle_invite_release">Release each drop once they have read it</switch>
+    <if test="{invite.release}">
+      <text size="sm" foreground="text_muted" wrap="true">This site then becomes the only copy. Back it up.</text>
+    </if>
+    <row gap="8" main="end">
+      <button variant="ghost" on-press="close_sheet">Cancel</button>
+      <button variant="primary" on-press="mint" disabled="{isBusy}">Mint</button>
+    </row>
+  </column>
+</template>
+
+<template name="invite-handover">
+  <column gap="12">
+    <card padding="14">
+      <column gap="8">
+        <text size="sm" foreground="text_muted" wrap="true">The invitation. One line, one use, a bearer credential: it carries the channel secret, so hand it over the way you would a key.</text>
+        <text><span mono="true">{invite.lineText}</span></text>
+        <button size="sm" variant="secondary" icon="copy" on-press="copy_invite">Copy the invitation</button>
+      </column>
+    </card>
+    <use template="check-card"/>
+    <button variant="primary" on-press="close_sheet">Done</button>
+  </column>
+</template>
+
+<template name="invite-sheet">
+  <sheet label="New invitation" on-dismiss="close_sheet">
+    <column gap="14" padding="20" width="420">
+      <text size="heading">New invitation</text>
+      <if test="{invite.minted}"><use template="invite-handover"/></if>
+      <else><use template="invite-form"/></else>
+    </column>
+  </sheet>
+</template>
+
+<template name="join-sheet">
+  <sheet label="Accept an invitation" on-dismiss="close_sheet">
+    <column gap="14" padding="20" width="460">
+      <text size="heading">Accept an invitation</text>
+      <if test="{hasCheck}">
+        <column gap="12">
+          <use template="check-card"/>
+          <button variant="primary" on-press="close_sheet">Done</button>
+        </column>
+      </if>
+      <else>
+        <column gap="10">
+          <text-field text="{join.nameText}" placeholder="What to call them here (a-z, 0-9, -)" on-input="join_name_edit" on-submit="accept" label="Name" autofocus="true"/>
+          <textarea text="{join.invitationText}" placeholder="Paste the kusanagi2: line here" on-input="join_text_edit" label="Invitation" height="120"/>
+          <text size="sm" foreground="text_muted" wrap="true">The line never touches the command line or a shell history; it goes straight to the verb's stdin.</text>
+          <switch checked="{join.release}" on-toggle="toggle_join_release">Release each drop once they have read it</switch>
+          <row gap="8" main="end">
+            <button variant="ghost" on-press="close_sheet">Cancel</button>
+            <button variant="primary" on-press="accept" disabled="{isBusy}">Join</button>
+          </row>
+        </column>
+      </else>
+    </column>
+  </sheet>
+</template>
+
+<template name="backup-sheet">
+  <sheet label="Backup" on-dismiss="close_sheet">
+    <column gap="14" padding="20" width="460">
+      <text size="heading">Backup</text>
+      <if test="{backup.hasRecovery}">
+        <column gap="12">
+          <card padding="20">
+            <column gap="10" cross="center">
+              <text size="sm" foreground="text_muted" wrap="true" text-alignment="center">The recovery key. Shown once, kept nowhere. Whoever holds it and the archive holds this endpoint.</text>
+              <text size="heading" label="recovery key"><span mono="true">{backup.recoveryKey}</span></text>
+              <button size="sm" variant="secondary" icon="copy" on-press="copy_recovery">Copy the key</button>
+            </column>
+          </card>
+          <if test="{backup.written}">
+            <alert text="Archive written">
+              <text wrap="true">{backup.pathText}</text>
+            </alert>
+          </if>
+          <else>
+            <row gap="8" cross="center"><spinner/><text size="sm" foreground="text_muted">writing the archive…</text></row>
+          </else>
+          <text size="sm" foreground="text_muted" wrap="true">To restore on another machine: `kusanagi import --root NEW`, with the key on the first line of stdin and the archive after it.</text>
+          <button variant="primary" on-press="close_sheet">Done</button>
+        </column>
+      </if>
+      <else>
+        <column gap="10">
+          <text wrap="true">Seals the identity, every channel, every cairn and every roster into one file, under a key drawn now and shown once.</text>
+          <text size="sm" foreground="text_muted" wrap="true">A channel that releases its drops has no other copy anywhere. Back up after opening one, and after any conversation you would mind losing.</text>
+          <row gap="8" main="end">
+            <button variant="ghost" on-press="close_sheet">Cancel</button>
+            <button variant="primary" icon="save" on-press="export_now" disabled="{isBusy}">Export</button>
+          </row>
+        </column>
+      </else>
+    </column>
+  </sheet>
+</template>

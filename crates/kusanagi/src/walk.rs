@@ -169,7 +169,12 @@ pub fn track(
         confirm(&walked, &known, name)?;
     }
 
-    if let Some(cairn) = walked.cairn() {
+    // Only when the position moved. A poll that finds nothing is the common
+    // invocation, and rewriting an identical record costs a flush to disk —
+    // measured at 4 ms, more than everything else the poll does put together.
+    if let Some(cairn) = walked.cairn()
+        && recorded != Some(cairn)
+    {
         site.mark(name, &cairn)?;
     }
     Ok(walked)

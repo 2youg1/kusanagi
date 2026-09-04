@@ -132,3 +132,59 @@ fn a_read_that_shows_segments_shows_every_one_it_was_asked_for() {
 
     std::fs::remove_dir_all(&ground).ok();
 }
+
+/// Every file under `cairns/`, with when each was last written.
+fn cairn_files(endpoint: &Endpoint) -> Vec<(std::path::PathBuf, std::time::SystemTime)> {
+    let mut seen = Vec::new();
+    let mut pending = vec![endpoint.site_root().join("cairns")];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                pending.push(entry.path());
+            } else {
+                seen.push((entry.path(), entry.metadata().unwrap().modified().unwrap()));
+            }
+        }
+    }
+    seen.sort();
+    seen
+}
+
+#[test]
+fn a_poll_that_finds_nothing_writes_nothing() {
+    let ground = scratch("unwatched-idle");
+    let host = ground.join("host");
+    let alice = Endpoint::new(ground.join("alice"));
+    let bob = Endpoint::new(ground.join("bob"));
+
+    let invitation = invite_line(&alice, "bob", &host.display().to_string());
+    bob.run(&Request::Join {
+        invite: invitation,
+        name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
+    })
+    .unwrap();
+    alice.send("bob", "once");
+    let poll = || {
+        bob.run(&Request::Read {
+            name: "alice".to_owned(),
+            after: Some(0),
+            whose: kusanagi::Whose::Peer,
+        })
+        .unwrap();
+    };
+
+    // The first poll writes the cairn. Every poll after it that finds the
+    // stream where it left it must leave the disk exactly as it found it: a
+    // record rewritten with its own contents is a flush paid for nothing, and
+    // the idle poll is the invocation a scheduler makes most.
+    poll();
+    let written = cairn_files(&bob);
+    assert!(!written.is_empty(), "the first poll left no cairn");
+    poll();
+    poll();
+    assert_eq!(cairn_files(&bob), written, "an idle poll rewrote a cairn");
+
+    std::fs::remove_dir_all(&ground).ok();
+}

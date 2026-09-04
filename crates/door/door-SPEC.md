@@ -24,9 +24,13 @@
 ## 3 假设与歧义
 
 **歧义:`Outcome::read` 曾接收 `&Walked`。** `Walked` 是「走一条流」的结果，属执行层；
-door 若认识它，就等于 door 能触发一次网络往返。**裁决:door 接收 `(index, payload)` 的迭代器,
+door 若认识它，就等于 door 能触发一次网络往返。**裁决:door 接收 `(index, acknowledged, payload)` 的迭代器,
 `--after` 的过滤留在动词那侧**（`traffic::reported`）。`impl From<Walked> for Outcome` 装不下
 `name`/`author`/`after` 三个参数，故不采用。
+
+**`acknowledged` 进 `Entry`（F2）。** 两条流不带时钟，它们之间唯一的先后关系就是 C4 写进密封部分的那个计数：
+一段站在它数过的每一段之后。一个要把对话排成一条线的前端（`glass/`）靠它做因果归并，不用任何时间戳。
+只进 JSON，不进散文；增字段不动 `CONTRACT`。
 
 ## 4 现状分析
 
@@ -80,7 +84,7 @@ impl Outcome {
     pub fn summarise(name: &str, channel: &Channel, who: &Handle,
                      now: Instant, revoked: &Revocations) -> Summary;
     pub fn read<'a>(name: &str, author: &str, height: Option<u64>,
-                    segments: impl IntoIterator<Item = (u64, &'a [u8])>) -> Self;
+                    segments: impl IntoIterator<Item = (u64, u64, &'a [u8])>) -> Self;
     pub fn examined(waypoint: &str, kind: &'static str, certificate: &Certificate) -> Self;
     pub fn render(&self, json: bool, fence: Fence) -> String;
 }

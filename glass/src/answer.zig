@@ -1,0 +1,259 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
+
+//! What a verb answered, read into the model.
+//!
+//! `kusanagi --json` writes one object per call: an outcome tagged `command`,
+//! or a complaint carrying `code` and `recover`. Both arrive on the spawn's exit
+//! message — stdout for outcomes, stderr for complaints and for `export`, whose
+//! stdout is the archive itself. This file reads only the keys it needs and
+//! ignores the rest, which is what lets the verbs grow a field without this
+//! window noticing.
+
+const std = @import("std");
+const native_sdk = @import("native_sdk");
+const model_mod = @import("model.zig");
+const verbs = @import("verbs.zig");
+
+const Model = model_mod.Model;
+const Value = std.json.Value;
+
+fn str(fields: std.json.ObjectMap, name: []const u8) []const u8 {
+    const value = fields.get(name) orelse return "";
+    return switch (value) {
+        .string => |s| s,
+        else => "",
+    };
+}
+
+fn uint(fields: std.json.ObjectMap, name: []const u8) ?u64 {
+    const value = fields.get(name) orelse return null;
+    return switch (value) {
+        .integer => |i| if (i >= 0) @intCast(i) else null,
+        else => null,
+    };
+}
+
+fn boolean(fields: std.json.ObjectMap, name: []const u8) bool {
+    const value = fields.get(name) orelse return false;
+    return switch (value) {
+        .bool => |b| b,
+        else => false,
+    };
+}
+
+fn items(fields: std.json.ObjectMap, name: []const u8) []const Value {
+    const value = fields.get(name) orelse return &.{};
+    return switch (value) {
+        .array => |a| a.items,
+        else => &.{},
+    };
+}
+
+fn object(value: Value) ?std.json.ObjectMap {
+    return switch (value) {
+        .object => |o| o,
+        else => null,
+    };
+}
+
+/// Reads one exit into the model. Every path ends with the status line saying
+/// what happened, so nothing a verb reported goes unshown.
+pub fn apply(m: *Model, exit: native_sdk.EffectExit) void {
+    const key = verbs.keyOf(exit.key) orelse return;
+    switch (exit.reason) {
+        .exited => {},
+        .spawn_failed => return failed(m, "glass.no_binary", "kusanagi could not be started", "put kusanagi beside glass, or on PATH"),
+        .rejected => return failed(m, "glass.busy", "that command was refused by the window", "wait for the running command to finish"),
+        .cancelled => return failed(m, "glass.cancelled", "the command was cancelled", "run it again"),
+        .signaled => return failed(m, "glass.killed", "kusanagi was killed", "run it again"),
+    }
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // A complaint is the one shape every failure has; `export` puts its
+    // outcome on stderr too, because its stdout is the archive.
+    const source = if (exit.code != 0 or key == .export_) exit.stderr_tail else exit.output;
+    const parsed = std.json.parseFromSliceLeaky(Value, arena, std.mem.trim(u8, source, " \r\n\t"), .{}) catch {
+        return failed(m, "glass.unreadable", "kusanagi answered something that is not JSON", "run the same verb in a terminal");
+    };
+    const answer = object(parsed) orelse return failed(m, "glass.unreadable", "the answer was not an object", "run the same verb in a terminal");
+    if (exit.code != 0) {
+        m.status.clear();
+        m.status.code.set(str(answer, "code"));
+        m.status.error_text.set(str(answer, "error"));
+        m.status.recover.set(str(answer, "recover"));
+        return;
+    }
+    m.output_cut = exit.output_truncated;
+    m.status.clear();
+    switch (key) {
+        .here => here(m, answer),
+        .identity => m.handle.set(str(answer, "handle")),
+        .channels => channels(m, answer),
+        .read_theirs => read(m, &m.theirs, answer),
+        .read_mine => read(m, &m.mine, answer),
+        .send => sent(m, answer),
+        .invite => invited(m, answer),
+        .join => joined(m, answer),
+        .export_ => exported(m, answer, exit.output),
+        .doctor => examined(m, answer),
+        .group => m.status.note.set("group saved"),
+        .fanout => fannedOut(m, answer),
+        .forget => m.status.note.set("channel forgotten here; the host keeps its bytes"),
+        .revoke => m.status.note.set("peer revoked; every later read refuses them"),
+        .tick => ticked(m, answer),
+        else => {},
+    }
+}
+
+fn failed(m: *Model, code: []const u8, text: []const u8, recover: []const u8) void {
+    m.status.clear();
+    m.status.code.set(code);
+    m.status.error_text.set(text);
+    m.status.recover.set(recover);
+}
+
+fn here(m: *Model, answer: std.json.ObjectMap) void {
+    m.site.set(str(answer, "site"));
+    m.at_rest.set(str(answer, "at_rest"));
+    m.proxy = boolean(answer, "proxy");
+    m.binary.set(str(answer, "binary"));
+}
+
+fn channels(m: *Model, answer: std.json.ObjectMap) void {
+    m.channel_count = 0;
+    for (items(answer, "channels")) |value| {
+        const row = object(value) orelse continue;
+        if (m.channel_count == model_mod.max_channels) break;
+        var out: model_mod.ChannelRow = .{ .slot = m.channel_count };
+        out.name.set(str(row, "name"));
+        out.waypoint.set(str(row, "waypoint"));
+        out.peer.set(str(row, "peer"));
+        out.root = std.mem.eql(u8, str(row, "standing"), "root");
+        out.period = @intCast(@min(uint(row, "period") orelse 0, std.math.maxInt(u32)));
+        out.releases = std.mem.eql(u8, str(row, "retention"), "release");
+        for (items(row, "can")) |ability| {
+            if (ability == .string and std.mem.eql(u8, ability.string, "send")) out.can_send = true;
+        }
+        out.refused.set(str(row, "refused"));
+        out.peer_refused.set(str(row, "peer_refused"));
+        out.expires_in = uint(row, "expires_in") orelse 0;
+        m.channels[m.channel_count] = out;
+        m.channel_count += 1;
+    }
+    m.group_count = 0;
+    for (items(answer, "groups")) |value| {
+        const row = object(value) orelse continue;
+        if (m.group_count == model_mod.max_groups) break;
+        var out: model_mod.GroupRow = .{ .slot = m.group_count };
+        out.name.set(str(row, "name"));
+        for (items(row, "members")) |member| {
+            if (member != .string or out.count == model_mod.max_members) continue;
+            out.members[out.count].set(member.string);
+            out.count += 1;
+        }
+        m.groups[m.group_count] = out;
+        m.group_count += 1;
+    }
+    if (m.selected >= m.channel_count) m.selected = 0;
+    if (m.selected_group >= m.group_count) m.selected_group = 0;
+}
+
+fn read(m: *Model, lane: *model_mod.Lane, answer: std.json.ObjectMap) void {
+    lane.height = uint(answer, "height");
+    for (items(answer, "segments")) |value| {
+        const row = object(value) orelse continue;
+        var message: model_mod.Message = .{
+            .index = uint(row, "index") orelse 0,
+            .acknowledged = uint(row, "acknowledged") orelse 0,
+        };
+        const text = str(row, "text");
+        if (text.len > 0 or row.get("text") != null) {
+            message.text.set(text);
+        } else {
+            message.text.set(str(row, "payload"));
+            message.is_hex = true;
+        }
+        // A resumed read may repeat the last known segment; the index says so.
+        if (lane.count > 0 and lane.items[lane.count - 1].index >= message.index) continue;
+        lane.push(message);
+    }
+    if (m.output_cut) m.status.note.set("history too long to show whole; the newest part is here");
+}
+
+fn sent(m: *Model, answer: std.json.ObjectMap) void {
+    if (std.mem.eql(u8, str(answer, "command"), "queued")) {
+        m.status.note.set("queued for the next slot");
+        return;
+    }
+    var message: model_mod.Message = .{
+        .index = uint(answer, "index") orelse 0,
+        .acknowledged = m.theirHeight(),
+    };
+    message.text.set(m.draft.text());
+    m.mine.push(message);
+    m.mine.height = message.index;
+    m.draft.clear();
+}
+
+fn invited(m: *Model, answer: std.json.ObjectMap) void {
+    m.invite.line.set(str(answer, "invite"));
+    m.check.set(str(answer, "check"));
+    m.check_for.set(str(answer, "name"));
+    m.status.note.set("invitation minted; hand over the line and read the code aloud");
+}
+
+fn joined(m: *Model, answer: std.json.ObjectMap) void {
+    m.invite.line.clear();
+    m.check.set(str(answer, "check"));
+    m.check_for.set(str(answer, "name"));
+    m.join.invitation.clear();
+    m.status.note.set("joined; read the code aloud and compare");
+}
+
+fn exported(m: *Model, answer: std.json.ObjectMap, archive: []const u8) void {
+    m.backup.keep(str(answer, "recovery"), archive);
+}
+
+fn examined(m: *Model, answer: std.json.ObjectMap) void {
+    const doctor = &m.doctor;
+    doctor.tier.set(str(answer, "tier"));
+    doctor.measured.set(str(answer, "waypoint"));
+    doctor.finding_count = 0;
+    for (items(answer, "capabilities")) |value| {
+        const row = object(value) orelse continue;
+        if (doctor.finding_count == model_mod.max_rows) break;
+        var out: model_mod.CheckRow = .{ .slot = doctor.finding_count };
+        out.name.set(str(row, "capability"));
+        out.checked = std.mem.eql(u8, str(row, "verdict"), "held");
+        const detail = str(row, "detail");
+        out.note.set(if (detail.len > 0) detail else str(row, "verdict"));
+        doctor.findings[doctor.finding_count] = out;
+        doctor.finding_count += 1;
+    }
+}
+
+fn fannedOut(m: *Model, answer: std.json.ObjectMap) void {
+    m.delivered_count = 0;
+    for (items(answer, "delivered")) |value| {
+        const row = object(value) orelse continue;
+        if (m.delivered_count == model_mod.max_rows) break;
+        var out: model_mod.CheckRow = .{ .slot = m.delivered_count };
+        out.name.set(str(row, "member"));
+        out.checked = std.mem.eql(u8, str(row, "status"), "sent");
+        out.note.set(if (out.checked) "delivered" else str(row, "error"));
+        m.delivered[m.delivered_count] = out;
+        m.delivered_count += 1;
+    }
+    m.draft.clear();
+}
+
+fn ticked(m: *Model, answer: std.json.ObjectMap) void {
+    const carried = str(answer, "carried");
+    if (uint(answer, "heard")) |heard| m.theirs.height = heard;
+    m.status.note.set(if (std.mem.eql(u8, carried, "message")) "slot filled with your message" else if (std.mem.eql(u8, carried, "filler")) "slot filled" else "slot already filled");
+}

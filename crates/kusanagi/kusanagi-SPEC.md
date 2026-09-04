@@ -382,6 +382,8 @@ impl Walked { pub fn cairn(&self) -> Option<Cairn>; pub fn extended(&self, &Segm
 
 **`send` 在写入成功后推进位置。** 主机在一个空地址上接受了写入，所以本端点无需读回即知段已在那里；`Walked::extended` 把验证器再前进一格。否则记录会永远落后一格，每次发送都要多问一个地址去重新发现自己刚写的东西。
 
+**位置没动就不写。** `track` 只在走完的 cairn 与读进来的那份不同时才 `mark`。实测（G1）：一次 `permissions::write` 是 4 ms，其中几乎全是 `sync_all` 的磁盘刷写，而 fsync 不能省——释放通道上的 cairn 是唯一副本，rename 覆盖一份未刷写的数据正是造出 `needs_cairn` 的那种崩溃。省的是**空轮询**那一次：它是排班器最常发出的调用，以前每次都把同样 73 字节重写一遍。由 `a_poll_that_finds_nothing_writes_nothing` 守住。
+
 **`confirm`——只对整链行走做。** 续读不可能与它续的记录矛盾，因为它就从那里开始；整链行走可以，而那是主机唯一能靠「少给」说谎的形状：交回一条更短但验证完美的链，没有记忆的读者会相信。两种矛盾各自具名：流比记录短，或已读高度上的段换了一个。
 
 **`Complaint::HistoryChanged`，码 `kusanagi.history_changed`。** 恢复命令指向 `kusanagi doctor <waypoint>`：只有 write-once 的主机能承诺这件事不发生，而这一台刚刚做了。

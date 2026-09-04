@@ -31,7 +31,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - name: build
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          export RUSTFLAGS="$(bash scripts/hermetic.sh)"
+          cargo build --release --locked --target ${{ matrix.target }}
       - name: package
         shell: bash
         run: |

@@ -1,0 +1,33 @@
+{
+    "$schema": "https://schema.native-sdk.dev/app/v1.json",
+    "id": "dev.kusanagi.glass",
+    "name": "glass",
+    "display_name": "kusanagi",
+    "description": "A window onto one kusanagi site: the same verbs a shell runs, with nothing of its own.",
+    "version": "0.0.1",
+    "icons": ["assets/icon.png"],
+    "platforms": ["windows", "macos", "linux"],
+    "permissions": ["view", "command", "filesystem", "clipboard"],
+    "capabilities": ["native_views", "gpu_surfaces"],
+    "shell": {
+        "windows": [
+            {
+                "label": "main",
+                "title": "kusanagi",
+                "width": 1080,
+                "height": 720,
+                "restore_state": true,
+                "views": [
+                    { "label": "glass-canvas", "kind": "gpu_surface", "fill": true, "role": "Conversations", "accessibility_label": "kusanagi", "gpu_present_mode": "timer", "gpu_vsync": true }
+                ]
+            }
+        ]
+    },
+    "security": {
+        "navigation": {
+            "allowed_origins": ["zero://app", "zero://inline"],
+            "external_links": { "action": "deny" }
+        }
+    },
+    "web_engine": "system"
+}

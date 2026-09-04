@@ -1,0 +1,31 @@
+<!-- The whole window: the rail on the paper, the plate with the open
+     conversation, and the sheets a verb opens. The plate itself is drawn by
+     plate.zig under these widgets; the pane's padding is the plate's inset,
+     so what is laid out here starts at the plate's edge. Everything binds a
+     Model field or method and dispatches a Msg; nothing here decides
+     anything. Validate with: native markup check src/app.native -->
+<import src="components/rail.native"/>
+<import src="components/thread.native"/>
+<import src="components/sheets.native"/>
+<import src="components/more.native"/>
+<stack grow="1">
+  <row grow="1">
+    <column width="248" label="Conversations">
+      <use template="rail"/>
+    </column>
+    <column grow="1" padding="12" label="Thread">
+      <if test="{onWelcome}"><use template="welcome"/></if>
+      <else>
+        <if test="{onGroup}"><use template="group-pane"/></if>
+        <else><use template="thread-pane"/></else>
+      </else>
+    </column>
+  </row>
+  <if test="{sheetInvite}"><use template="invite-sheet"/></if>
+  <if test="{sheetJoin}"><use template="join-sheet"/></if>
+  <if test="{sheetBackup}"><use template="backup-sheet"/></if>
+  <if test="{sheetRoster}"><use template="roster-sheet"/></if>
+  <if test="{sheetDoctor}"><use template="doctor-sheet"/></if>
+  <if test="{sheetForget}"><use template="forget-dialog"/></if>
+  <if test="{sheetSettings}"><use template="settings-sheet"/></if>
+</stack>

@@ -5,33 +5,21 @@
 # machine. Two things stop it doing so by default: absolute paths compiled into
 # the binary, and incremental state carried between builds.
 #
-# The paths go first. `rustc` records the file names of everything it compiles
-# so that a panic can name a line, and those names include the checkout
-# directory and the registry cache — both of which differ per machine and per
-# user. Remapping them to fixed strings costs nothing at runtime and makes a
-# panic message say `/kusanagi/crates/...` instead of somebody's home directory,
-# which is also one fewer thing a crash report gives away.
+# **The paths are not handled here, and that is deliberate.** `rustc` records
+# the file name of everything it compiles so that a panic can name a line, and
+# those names include the checkout directory, the registry cache and the
+# toolchain — all of which differ per machine and per account. Remapping them
+# takes `--remap-path-prefix`, and cargo does not expand `$CARGO_HOME` or any
+# other variable inside this file, so a remap written here matched nothing and
+# the binary carried the building account's name. The flags are computed by
+# `scripts/hermetic.sh`, which the release recipes and CI pass as `RUSTFLAGS`;
+# an ordinary `cargo build` does not pay for them and does not need to.
 #
-# The registry remap has to come first: `CARGO_HOME` sits inside a home
-# directory on some systems, and `rustc` applies these in order.
-#
-# What this file cannot pin is the linker. On Windows the release artefact is
+# What no flag can pin is the linker. On Windows the release artefact is
 # `x86_64-pc-windows-msvc`, so `link.exe` and the Windows SDK decide part of the
 # output, and their versions are recorded by hand at release time —
-# `docs/VERIFY.md` says where. `/Brepro` asks the linker to leave out its
-# timestamp, which is the one field that changes on every single link.
-[build]
-rustflags = [
-  "--remap-path-prefix=$CARGO_HOME/registry=/cargo/registry",
-  "--remap-path-prefix=$CARGO_HOME/git=/cargo/git",
-]
-
-[target.x86_64-pc-windows-msvc]
-rustflags = [
-  "--remap-path-prefix=$CARGO_HOME/registry=/cargo/registry",
-  "--remap-path-prefix=$CARGO_HOME/git=/cargo/git",
-  "-Clink-arg=/Brepro",
-]
+# `docs/VERIFY.md` says where. `/Brepro`, which asks the linker to leave out its
+# timestamp, travels with the other flags in that script.
 
 [profile.release]
 # Nothing is carried between builds, so nothing about the previous one can reach

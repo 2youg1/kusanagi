@@ -158,10 +158,10 @@ fn identity(site: &Site) -> Result<Outcome, Complaint> {
 /// request leaves this machine — expiry and revocation are local facts.
 fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
     let revoked = site.revocations()?;
+    let me = signer(site)?.handle();
     let mut channels = Vec::new();
     for name in site.names()? {
         let channel = site.channel(&name)?;
-        let me = signer(site)?.handle();
         channels.push(Outcome::summarise(&name, &channel, &me, now, &revoked));
     }
     let groups = site

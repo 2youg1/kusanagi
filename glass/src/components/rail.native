@@ -1,0 +1,94 @@
+<!-- The rail: the left column, sitting directly on the paper. One page:
+     who this endpoint is (the row opens the settings sheet), a search over
+     its channels, one row per channel, one row per group, and — once there
+     is something to list — the two doors that make more of them. A row
+     shows a name and, only when the protocol has something to say, a
+     second line: a peer who has not arrived yet. No presence, no unread
+     count, no preview, no handle — the name was chosen at the introduction
+     and the handle lives in the conversation header and in settings.
+     Nothing here holds state. -->
+<template name="rail-identity">
+  <list-item on-press="show_settings" label="This endpoint">
+    <row gap="10" cross="center" padding="6">
+      <avatar>me</avatar>
+      <column grow="1" gap="2">
+        <text>This endpoint</text>
+      </column>
+      <icon name="settings" foreground="text_muted" label="open settings"/>
+    </row>
+  </list-item>
+</template>
+
+<template name="rail-channel-rows">
+  <column gap="2">
+  <for each="visibleChannels" key="slot" as="c">
+    <list-item key="{c.slot}" selected="{c.slot == selected}" on-press="select:{c.slot}" label="{c.title}">
+      <row gap="10" cross="center" padding="6">
+        <avatar size="sm">{c.initials}</avatar>
+        <column grow="1" gap="2">
+          <text>{c.title}</text>
+          <if test="{c.waiting}"><text size="sm" foreground="text_muted">waiting for them</text></if>
+        </column>
+        <if test="{c.slotted}"><icon name="clock" foreground="text_muted" label="slotted"/></if>
+        <if test="{c.releases}"><icon name="archive" foreground="text_muted" label="releases"/></if>
+        <if test="{c.isVoid}"><badge variant="destructive" label="this channel no longer permits anything">void</badge></if>
+      </row>
+      <context-menu>
+        <menu-item on-press="show_doctor">Measure its host</menu-item>
+        <menu-item on-press="revoke">Revoke the peer</menu-item>
+        <separator/>
+        <menu-item on-press="show_forget">Forget this channel</menu-item>
+      </context-menu>
+    </list-item>
+  </for>
+  <else>
+    <text size="sm" foreground="text_muted" padding="8" wrap="true">No channels yet. Mint an invitation, or accept one.</text>
+  </else>
+  </column>
+</template>
+
+<template name="rail-group-rows">
+  <column gap="2">
+  <for each="groupRows" key="slot" as="g">
+    <list-item key="{g.slot}" selected="{g.slot == selected_group and onGroup}" on-press="select_group:{g.slot}" label="{g.title}">
+      <row gap="10" cross="center" padding="6">
+        <avatar size="sm">{g.initials}</avatar>
+        <column grow="1" gap="2">
+          <text>{g.title}</text>
+          <text size="sm" foreground="text_muted">{g.count} {plural(g.count, 'member', 'members')}</text>
+        </column>
+      </row>
+    </list-item>
+  </for>
+  </column>
+</template>
+
+<template name="rail-channels">
+  <column grow="1" gap="10">
+    <use template="rail-identity"/>
+    <search-field placeholder="Find a channel" text="{searchText}" on-input="search_edit" label="Find a channel"/>
+    <scroll grow="1">
+      <column gap="2">
+        <text size="sm" foreground="text_muted" padding="4">Channels</text>
+        <use template="rail-channel-rows"/>
+        <row gap="4" cross="center" padding="4">
+          <text size="sm" foreground="text_muted" grow="1">Groups</text>
+          <button size="sm" variant="ghost" icon="plus" label="New group" on-press="show_roster" disabled="{isBusy}"></button>
+        </row>
+        <use template="rail-group-rows"/>
+      </column>
+    </scroll>
+    <if test="{railDoors}">
+      <column gap="6">
+        <button variant="primary" icon="plus" on-press="show_invite" disabled="{isBusy}">New invitation</button>
+        <button variant="outline" icon="download" on-press="show_join" disabled="{isBusy}">Join with an invitation</button>
+      </column>
+    </if>
+  </column>
+</template>
+
+<template name="rail">
+  <column grow="1" padding="16">
+    <use template="rail-channels"/>
+  </column>
+</template>

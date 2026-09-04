@@ -1,0 +1,300 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// Copyright (c) 2026 2youg1 and the kusanagi contributors
+
+//! Every message the window can receive, and what each one changes.
+//!
+//! One arm per message; a side effect is only ever a spawn, a timer, a file
+//! write or a clipboard write on the effects channel. The verbs run in a
+//! subprocess and answer as JSON, so this function never touches the disk, the
+//! network or a secret. Killing the window mid-anything loses the window.
+
+const std = @import("std");
+const native_sdk = @import("native_sdk");
+const canvas = native_sdk.canvas;
+const model_mod = @import("model.zig");
+const verbs = @import("verbs.zig");
+const answer = @import("answer.zig");
+
+pub const Model = model_mod.Model;
+
+pub const Msg = union(enum) {
+    appearance: native_sdk.Appearance,
+    show_settings,
+    set_look: model_mod.Look,
+    copy_handle,
+    select: usize,
+    select_group: usize,
+    refresh,
+    show_invite,
+    show_join,
+    show_backup,
+    show_roster,
+    show_doctor,
+    show_forget,
+    close_sheet,
+    dismiss_status,
+    search_edit: canvas.TextInputEvent,
+    draft_edit: canvas.TextInputEvent,
+    send,
+    invite_name_edit: canvas.TextInputEvent,
+    invite_waypoint_edit: canvas.TextInputEvent,
+    invite_every_edit: canvas.TextInputEvent,
+    toggle_invite_release,
+    mint,
+    copy_invite,
+    copy_check,
+    join_name_edit: canvas.TextInputEvent,
+    join_text_edit: canvas.TextInputEvent,
+    toggle_join_release,
+    accept,
+    export_now,
+    copy_recovery,
+    roster_name_edit: canvas.TextInputEvent,
+    toggle_member: usize,
+    save_roster,
+    broadcast,
+    doctor_edit: canvas.TextInputEvent,
+    examine,
+    confirm_forget,
+    revoke,
+    exited: native_sdk.EffectExit,
+    filed: native_sdk.EffectFileResult,
+    poll: native_sdk.EffectTimer,
+    slot: native_sdk.EffectTimer,
+
+    pub const view_unbound = .{ "appearance", "exited", "filed", "poll", "slot" };
+};
+
+pub const Effects = native_sdk.Effects(Msg);
+
+/// How often an open on-demand thread asks the host for one address.
+pub const poll_ms: u64 = 20_000;
+
+/// Boot: this machine's report, this endpoint's handle, and the channel list.
+pub fn boot(m: *Model, fx: *Effects) void {
+    if (m.noBinary()) return;
+    verbs.here(fx, m);
+    verbs.identity(fx, m);
+    verbs.channels(fx, m);
+}
+
+pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
+    switch (msg) {
+        .appearance => |appearance| m.appearance = appearance,
+        .show_settings => m.sheet = .settings,
+        .set_look => |look| m.look = look,
+        .copy_handle => copy(fx, m.handle.slice()),
+        .select => |slot| open(m, fx, slot),
+        .select_group => |slot| openGroup(m, fx, slot),
+        .refresh => {
+            verbs.channels(fx, m);
+            if (m.onThread()) fetch(m, fx);
+        },
+        .show_invite => showInvite(m),
+        .show_join => {
+            m.sheet = .join;
+            m.check.clear();
+        },
+        .show_backup => m.sheet = .backup,
+        .show_roster => {
+            m.sheet = .roster;
+            m.roster.prefill(m.channelRows(), if (m.onGroup()) m.currentGroup() else null);
+        },
+        .show_doctor => showDoctor(m),
+        .show_forget => m.sheet = .forget,
+        .close_sheet => m.sheet = .none,
+        .dismiss_status => m.status.clear(),
+        .search_edit => |edit| m.search.apply(edit),
+        .draft_edit => |edit| m.draft.apply(edit),
+        .send => sendDraft(m, fx),
+        .invite_name_edit => |edit| m.invite.name.apply(edit),
+        .invite_waypoint_edit => |edit| m.invite.waypoint.apply(edit),
+        .invite_every_edit => |edit| m.invite.every.apply(edit),
+        .toggle_invite_release => m.invite.release = !m.invite.release,
+        .mint => mint(m, fx),
+        .copy_invite => copy(fx, m.invite.lineText()),
+        .copy_check => copy(fx, m.check.slice()),
+        .join_name_edit => |edit| m.join.name.apply(edit),
+        .join_text_edit => |edit| m.join.invitation.apply(edit),
+        .toggle_join_release => m.join.release = !m.join.release,
+        .accept => accept(m, fx),
+        .export_now => exportSite(m, fx),
+        .copy_recovery => copy(fx, m.backup.recoveryKey()),
+        .roster_name_edit => |edit| m.roster.name.apply(edit),
+        .toggle_member => |slot| m.roster.toggle(slot, m.channel_count),
+        .save_roster => saveRoster(m, fx),
+        .broadcast => broadcast(m, fx),
+        .doctor_edit => |edit| m.doctor.waypoint.apply(edit),
+        .examine => examine(m, fx),
+        .confirm_forget => {
+            if (!m.onThread()) return;
+            m.sheet = .none;
+            m.busy = verbs.key(.forget);
+            verbs.forget(fx, m, m.currentName(), &m.name_scratch);
+        },
+        .revoke => {
+            if (!m.onThread()) return;
+            m.sheet = .none;
+            m.busy = verbs.key(.revoke);
+            verbs.revoke(fx, m, m.currentName(), &m.name_scratch);
+        },
+        .exited => |exit| exited(m, fx, exit),
+        .filed => |result| filed(m, result),
+        .poll => |timer| {
+            if (timer.outcome != .fired or !m.onThread() or m.current().slotted()) return;
+            verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch);
+        },
+        .slot => |timer| {
+            if (timer.outcome != .fired or !m.onThread() or !m.current().slotted()) return;
+            verbs.tick(fx, m, m.currentName(), &m.name_scratch);
+        },
+    }
+}
+
+/// Keys the view never binds: `kusanagi`'s own shortcuts, when nothing focused
+/// wants the key.
+pub fn onKey(keyboard: canvas.WidgetKeyboardEvent) ?Msg {
+    if (!keyboard.modifiers.hasNavigationModifier()) return null;
+    if (std.ascii.eqlIgnoreCase(keyboard.key, "n")) return .show_invite;
+    if (std.ascii.eqlIgnoreCase(keyboard.key, "j")) return .show_join;
+    if (std.ascii.eqlIgnoreCase(keyboard.key, "r")) return .refresh;
+    if (std.ascii.eqlIgnoreCase(keyboard.key, "b")) return .show_backup;
+    if (std.ascii.eqlIgnoreCase(keyboard.key, ",") or std.ascii.eqlIgnoreCase(keyboard.key, "comma")) return .show_settings;
+    return null;
+}
+
+pub fn onAppearance(appearance: native_sdk.Appearance) ?Msg {
+    return .{ .appearance = appearance };
+}
+
+fn open(m: *Model, fx: *Effects, slot: usize) void {
+    if (slot >= m.channel_count) return;
+    m.selected = slot;
+    m.screen = .thread;
+    // A sheet that is open stays open: the invitation minted on the welcome
+    // page must still be on screen when the channel list answers and the
+    // window walks over to read it (D3).
+    m.mine.clear();
+    m.theirs.clear();
+    fetch(m, fx);
+    stopTimers(fx);
+    const row = m.current();
+    if (row.slotted()) {
+        fx.startTimer(.{ .key = verbs.key(.slot_timer), .interval_ms = @as(u64, row.period) * 1000, .mode = .repeating, .on_fire = Effects.timerMsg(.slot) });
+    } else {
+        fx.startTimer(.{ .key = verbs.key(.poll_timer), .interval_ms = poll_ms, .mode = .repeating, .on_fire = Effects.timerMsg(.poll) });
+    }
+}
+
+fn openGroup(m: *Model, fx: *Effects, slot: usize) void {
+    m.selected_group = @min(slot, model_mod.max_groups - 1);
+    m.screen = .group;
+    m.delivered_count = 0;
+    stopTimers(fx);
+}
+
+fn fetch(m: *Model, fx: *Effects) void {
+    // Nobody has joined: there is no stream to read, and the banner says so.
+    // Asking would only put `no_peer_yet` in the status line every poll.
+    if (!m.current().hasPeer()) return;
+    verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch);
+    verbs.read(fx, m, .read_mine, m.currentName(), m.mine.height, &m.name_scratch);
+}
+
+fn stopTimers(fx: *Effects) void {
+    fx.cancelTimer(verbs.key(.poll_timer));
+    fx.cancelTimer(verbs.key(.slot_timer));
+}
+
+fn showInvite(m: *Model) void {
+    m.sheet = .invite;
+    m.invite.line.clear();
+    m.check.clear();
+    if (m.invite.waypoint.text().len == 0 and m.onThread()) m.invite.waypoint.set(m.currentWaypoint());
+}
+
+fn showDoctor(m: *Model) void {
+    m.sheet = .doctor;
+    m.doctor.clear();
+    if (m.doctor.waypoint.text().len == 0 and m.onThread()) m.doctor.waypoint.set(m.currentWaypoint());
+}
+
+fn sendDraft(m: *Model, fx: *Effects) void {
+    if (!m.canSend()) return;
+    m.busy = verbs.key(.send);
+    verbs.send(fx, m, m.currentName(), m.draft.text(), &m.scratch);
+}
+
+fn mint(m: *Model, fx: *Effects) void {
+    if (m.isBusy() or !m.invite.ready()) return;
+    m.busy = verbs.key(.invite);
+    verbs.invite(fx, m, m.invite.nameText(), m.invite.waypointText(), .{ .every = m.invite.period(), .release = m.invite.release }, &m.scratch);
+}
+
+fn accept(m: *Model, fx: *Effects) void {
+    if (m.isBusy() or !m.join.ready()) return;
+    m.busy = verbs.key(.join);
+    verbs.join(fx, m, m.join.nameText(), m.join.invitationText(), m.join.release, &m.scratch);
+}
+
+fn exportSite(m: *Model, fx: *Effects) void {
+    if (m.isBusy()) return;
+    m.busy = verbs.key(.export_);
+    verbs.exportSite(fx, m);
+}
+
+fn saveRoster(m: *Model, fx: *Effects) void {
+    if (m.isBusy() or !m.roster.ready()) return;
+    var names: [model_mod.max_channels][]const u8 = undefined;
+    const members = m.roster.ticked(m.channel_count, &names);
+    m.sheet = .none;
+    m.busy = verbs.key(.group);
+    verbs.group(fx, m, m.roster.nameText(), members, &m.scratch);
+}
+
+fn broadcast(m: *Model, fx: *Effects) void {
+    if (m.isBusy() or !m.onGroup() or m.draft.text().len == 0) return;
+    m.busy = verbs.key(.fanout);
+    verbs.fanout(fx, m, m.groupTitle(), m.draft.text(), &m.scratch);
+}
+
+fn examine(m: *Model, fx: *Effects) void {
+    if (m.isBusy() or !m.doctor.ready()) return;
+    m.busy = verbs.key(.doctor);
+    verbs.doctor(fx, m, m.doctor.waypointText());
+}
+
+fn copy(fx: *Effects, text: []const u8) void {
+    if (text.len == 0) return;
+    fx.writeClipboard(.{ .key = verbs.key(.clipboard), .text = text });
+}
+
+fn filed(m: *Model, result: native_sdk.EffectFileResult) void {
+    m.backup.written = result.outcome == .ok;
+    if (m.backup.written) return;
+    m.status.code.set("glass.backup_unwritten");
+    m.status.error_text.set("the archive could not be written");
+    m.status.recover.set("run `kusanagi export > backup.ksnb` in a terminal");
+}
+
+fn exited(m: *Model, fx: *Effects, exit: native_sdk.EffectExit) void {
+    if (m.busy == exit.key) m.busy = 0;
+    answer.apply(m, exit);
+    const key = verbs.keyOf(exit.key) orelse return;
+    if (exit.reason != .exited or exit.code != 0) return;
+    switch (key) {
+        .channels => if (m.screen == .welcome and m.channel_count > 0) open(m, fx, 0),
+        .invite, .join, .forget, .group, .revoke => verbs.channels(fx, m),
+        .tick => verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch),
+        .export_ => writeArchive(m, fx),
+        else => {},
+    }
+}
+
+fn writeArchive(m: *Model, fx: *Effects) void {
+    const path = std.fmt.bufPrint(&m.backup.path.buf, "{s}{c}kusanagi-backup-{d}.ksnb", .{ m.home.slice(), std.fs.path.sep, fx.wallMs() }) catch return;
+    m.backup.path.len = path.len;
+    fx.writeFile(.{ .key = verbs.key(.backup_file), .path = path, .bytes = m.backup.bytes(), .on_result = Effects.fileMsg(.filed) });
+}

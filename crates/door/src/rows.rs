@@ -81,6 +81,10 @@ pub enum Landed {
 #[derive(Serialize, Debug)]
 pub struct Entry {
     pub(crate) index: u64,
+    /// How many of the reader's own segments the author had verified when
+    /// they wrote this one. Two streams carry no clock, and this is the one
+    /// fact that orders them: a segment stands after everything it counts.
+    pub(crate) acknowledged: u64,
     #[serde(flatten)]
     pub(crate) carried: Carried,
 }

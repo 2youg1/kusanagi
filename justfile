@@ -305,6 +305,9 @@ unconfine:
 repro:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Where the build happened must not reach the bytes; `scripts/hermetic.sh`
+    # says why this cannot live in `.cargo/config.toml`.
+    export RUSTFLAGS="$(bash scripts/hermetic.sh)"
     built() {
         cargo build --release --locked --message-format json 2>/dev/null \
             | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4
@@ -328,6 +331,7 @@ repro:
 dist:
     #!/usr/bin/env bash
     set -euo pipefail
+    export RUSTFLAGS="$(bash scripts/hermetic.sh)"
     cargo build --release --locked
     mkdir -p dist
     triple=$(rustc -vV | sed -n 's/^host: //p')

@@ -77,6 +77,7 @@ jobs:
       - name: build twice and compare
         shell: bash
         run: |
+          export RUSTFLAGS="$(bash scripts/hermetic.sh)"
           built() {
             cargo build --release --locked --message-format json 2>/dev/null \
               | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4
@@ -89,3 +90,36 @@ jobs:
           echo "first  $first"
           echo "second $second"
           [ "$first" = "$second" ] || { echo "::error::two builds of one source differ"; exit 1; }
+          # And nothing about this runner reached the bytes: no home directory,
+          # no checkout path. A binary that names where it was built names who
+          # built it, on a developer's machine.
+          if grep -aq "$(cygpath -w "$HOME" 2>/dev/null || echo "$HOME")" "$(built)"; then
+            echo "::error::the binary carries the building account's home directory"; exit 1
+          fi
+
+  # The hermetic build for the platforms Nix runs on. `flake.lock` pins the
+  # compiler, the linker, the C toolchain and every system library, so this
+  # runner and any machine holding the same lock produce the same bytes;
+  # `--rebuild` then builds a second time and refuses if the output differs.
+  # Until a `flake.lock` is committed, this job generates one and uploads it
+  # to be committed by hand (`.process/Roadmap.md` §J4).
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - name: build
+        run: |
+          if [ -f flake.lock ]; then
+            nix build --no-update-lock-file --print-build-logs .#kusanagi
+          else
+            nix flake lock
+            nix build --print-build-logs .#kusanagi
+          fi
+          nix build --rebuild .#kusanagi
+          sha256sum result/bin/kusanagi
+          ./result/bin/kusanagi doctor --here --json --root "$RUNNER_TEMP/site" | grep '"binary"'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flake-lock
+          path: flake.lock

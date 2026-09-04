@@ -319,7 +319,13 @@ fn reported(name: &str, author: &str, walked: &Walked, after: Option<u64>) -> Ou
             .iter()
             .filter(|held| held.segment.purpose() == Purpose::Message)
             .filter(|held| after.is_none_or(|floor| held.segment.index() > floor))
-            .map(|held| (held.segment.index(), held.segment.payload())),
+            .map(|held| {
+                (
+                    held.segment.index(),
+                    held.segment.acknowledged(),
+                    held.segment.payload(),
+                )
+            }),
     )
 }
 
