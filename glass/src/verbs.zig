@@ -38,6 +38,9 @@ pub const Key = enum(u64) {
     tick,
     clipboard,
     backup_file,
+    face_stream,
+    face_file,
+    language_file,
     poll_timer,
     slot_timer,
 };

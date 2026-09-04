@@ -18,6 +18,7 @@ const update_mod = @import("update.zig");
 const theme = @import("theme.zig");
 const plate = @import("plate.zig");
 const font = @import("font.zig");
+const strings = @import("strings.zig");
 
 pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 
@@ -68,10 +69,9 @@ const GlassApp = native_sdk.UiApp(Model, Msg);
 /// writes Chinese. `font.zig` says why having none is an ordinary state; the
 /// bytes come from an arena that lives as long as the window, because the name
 /// the runner teaches with outlives registration.
-fn bodyFonts(io: std.Io, arena: std.mem.Allocator, home: []const u8) []const GlassApp.FontRegistration {
-    const choice = font.choose(io, arena, home);
+fn bodyFonts(choice: font.Choice, arena: std.mem.Allocator) []const GlassApp.FontRegistration {
     if (choice.refused.len > 0)
-        std.debug.print("glass: the chosen face `{s}` cannot write Chinese, so the window stays in English\n", .{choice.refused});
+        std.debug.print("glass: the chosen face `{s}` cannot be used ({s}), so the window stays in English\n", .{ choice.refused, choice.reason });
     const face = choice.face orelse return &.{};
     // A face is decoration here: failing to hold it costs Chinese, not the app,
     // so an allocator saying no takes the same road as a machine with none.
@@ -85,7 +85,7 @@ pub fn initialModel() Model {
 }
 
 fn tokensFor(m: *const Model) canvas.DesignTokens {
-    return theme.tokens(m.appearanceFor());
+    return theme.tokensWith(m.appearanceFor(), m.has_cjk);
 }
 
 /// The binary beside this one, or `kusanagi` on PATH. Never taken from
@@ -112,6 +112,7 @@ fn locateBinary(io: std.Io, into: *model_mod.Text(model_mod.path_cap)) void {
 pub fn main(init: std.process.Init) !void {
     var face_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const home = init.environ_map.get("USERPROFILE") orelse init.environ_map.get("HOME") orelse ".";
+    const choice = font.choose(init.io, face_arena.allocator(), home);
     const app_state = try GlassApp.create(std.heap.page_allocator, .{
         .name = "glass",
         .scene = shell_scene,
@@ -120,8 +121,9 @@ pub fn main(init: std.process.Init) !void {
         .init_fx = boot,
         .on_key = onKey,
         .on_appearance = update_mod.onAppearance,
+        .on_drop = update_mod.onDrop,
         .tokens_fn = tokensFor,
-        .fonts = bodyFonts(init.io, face_arena.allocator(), home),
+        .fonts = bodyFonts(choice, face_arena.allocator()),
         .chrome = .{ .prefix_commands = plate.prefix_commands, .build = plate.build },
         .markup = .{
             .source = app_markup,
@@ -134,6 +136,15 @@ pub fn main(init: std.process.Init) !void {
     app_state.model = initialModel();
     locateBinary(init.io, &app_state.model.bin);
     app_state.model.home.set(home);
+    // Chinese is offered only once a face can draw it; the system's language
+    // is then the default and the settings sheet can change it.
+    app_state.model.has_cjk = choice.face != null;
+    if (choice.face) |face| app_state.model.face.registered.set(face.file);
+    if (choice.refused.len > 0) {
+        const noted = std.fmt.bufPrint(&app_state.model.scratch, "{s}: {s}", .{ choice.refused, choice.reason }) catch choice.refused;
+        app_state.model.face.refused.set(noted);
+    }
+    app_state.model.setLanguage(strings.remembered(init.io, home) orelse strings.detect(init.environ_map));
 
     try runner.runWithOptions(app_state.app(), .{
         .app_name = "glass",
@@ -155,4 +166,6 @@ test {
     _ = @import("theme.zig");
     _ = @import("plate.zig");
     _ = @import("font.zig");
+    _ = @import("strings.zig");
+    _ = @import("wording.zig");
 }

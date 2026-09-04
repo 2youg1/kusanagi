@@ -1,18 +1,41 @@
 <!-- The rest: the welcome pane, the group pane and its roster sheet, the
      host doctor, and the forget dialog. -->
+<template name="welcome-door" args="title body">
+  <column gap="6" cross="start">
+    <text><span weight="medium">{title}</span></text>
+    <text size="sm" foreground="text_muted" wrap="true">{body}</text>
+    <spacer height="6"/>
+  </column>
+</template>
+
+<!-- First run. What it is, what the server in between cannot do, and the
+     two ways in — phrased as the reader's situation, not as verbs. No word
+     of cryptography and no protocol noun; those live on the settings sheet. -->
 <template name="welcome-hero">
-  <column grow="1" main="center" cross="center" gap="12" padding="48">
-    <text size="display"><span mono="true">kusanagi</span></text>
-    <text foreground="text_muted" wrap="true" text-alignment="center" max-width="440">Two agents on two machines exchange authorised, mutually unlinkable messages through a host that neither of them trusts and neither of them runs.</text>
-    <spacer height="12"/>
-    <row gap="10">
-      <button size="lg" variant="primary" icon="plus" on-press="show_invite" disabled="{isBusy}">New invitation</button>
-      <button size="lg" variant="secondary" icon="download" on-press="show_join" disabled="{isBusy}">Join</button>
+  <column grow="1" main="center" cross="center" gap="28" padding="48">
+    <column cross="center" gap="10">
+      <text size="display"><span mono="true">kusanagi</span></text>
+      <text size="heading" text-alignment="center">{t.tagline}</text>
+      <text foreground="text_muted" text-alignment="center" wrap="true" max-width="480">{t.tagline_body}</text>
+    </column>
+    <row gap="14">
+      <card padding="20" width="264">
+        <column gap="6" cross="start">
+          <use template="welcome-door" title="{t.open_channel}" body="{t.open_channel_body}"/>
+          <button variant="primary" icon="plus" on-press="show_invite" disabled="{isBusy}">{t.new_invitation}</button>
+        </column>
+      </card>
+      <card padding="20" width="264">
+        <column gap="6" cross="start">
+          <use template="welcome-door" title="{t.have_invitation}" body="{t.have_invitation_body}"/>
+          <button variant="secondary" icon="download" on-press="show_join" disabled="{isBusy}">{t.join}</button>
+        </column>
+      </card>
     </row>
-    <text size="sm" foreground="text_muted">Ctrl+N invite · Ctrl+J join · Ctrl+B backup · Ctrl+, settings</text>
+    <text size="sm" foreground="text_muted">{t.shortcuts}</text>
     <if test="{noBinary}">
-      <alert text="kusanagi is not beside this window" variant="destructive">
-        <text wrap="true">Put the kusanagi binary next to glass, or on PATH, and start again.</text>
+      <alert text="{t.no_binary_title}" variant="destructive">
+        <text wrap="true">{t.no_binary_body}</text>
       </alert>
     </if>
   </column>
@@ -28,12 +51,12 @@
 <template name="delivery-rows">
   <card padding="14">
     <column gap="6">
-      <text size="sm" foreground="text_muted">Last broadcast</text>
+      <text size="sm" foreground="text_muted">{t.last_broadcast}</text>
       <for each="deliveredRows" key="slot" as="d">
         <column gap="2" key="{d.slot}">
           <row gap="10" cross="center">
-            <if test="{d.checked}"><icon name="check-circle" foreground="success" label="delivered"/></if>
-            <else><icon name="x-circle" foreground="destructive" label="failed"/></else>
+            <if test="{d.checked}"><icon name="check-circle" foreground="success" label="{t.delivered}"/></if>
+            <else><icon name="x-circle" foreground="destructive" label="{t.failed}"/></else>
             <text grow="1">{d.title}</text>
           </row>
           <if test="{d.hasNote}"><text size="sm" foreground="text_muted" wrap="true">{d.detail}</text></if>
@@ -49,23 +72,27 @@
       <avatar>{groupInitials}</avatar>
       <column grow="1" gap="2">
         <text size="heading">{groupTitle}</text>
-        <text size="sm" foreground="text_muted" overflow="ellipsis">{groupSize} {plural(groupSize, 'member', 'members')} · {groupMembers}</text>
+        <text size="sm" foreground="text_muted" overflow="ellipsis">{groupSize} {plural(groupSize, t.member, t.members)} · {groupMembers}</text>
       </column>
       <if test="{isBusy}"><spinner/></if>
-      <button size="sm" variant="ghost" icon="edit" on-press="show_roster" disabled="{isBusy}">Edit members</button>
+      <button size="sm" variant="ghost" icon="edit" on-press="show_roster" disabled="{isBusy}">{t.edit_members}</button>
     </row>
     <separator/>
     <column grow="1" padding="24" gap="12">
-      <alert text="A group is a list, not a room">
-        <text wrap="true">One drop per member, each on their own channel under their own key. A member learns nothing about the others, and their replies come back to you alone — read them in each conversation.</text>
-      </alert>
-      <if test="{hasDelivery}"><use template="delivery-rows"/></if>
-      <spacer grow="1"/>
-      <input-group label="Broadcast">
-        <textarea text="{draftText}" placeholder="Write to everybody on this list…" on-input="draft_edit" on-submit="broadcast" submit-on-enter="true" autofocus="true" label="Broadcast"/>
+      <if test="{hasDelivery}">
+        <scroll grow="1"><use template="delivery-rows"/></scroll>
+      </if>
+      <else>
+        <column main="center" cross="center" grow="1" gap="6" padding="48">
+          <text size="heading" foreground="text_muted">{t.group_is_list}</text>
+          <text foreground="text_muted" wrap="true" text-alignment="center" max-width="480">{t.group_body}</text>
+        </column>
+      </else>
+      <input-group label="{t.broadcast}">
+        <textarea text="{draftText}" placeholder="{t.write_to_everybody}" on-input="draft_edit" on-submit="broadcast" submit-on-enter="true" autofocus="true" label="{t.broadcast}" height="64"/>
         <input-group-actions gap="6">
           <spacer grow="1"/>
-          <button variant="primary" size="sm" icon="send" on-press="broadcast" disabled="{isBusy}">Send to all</button>
+          <button variant="primary" size="sm" icon="send" on-press="broadcast" disabled="{isBusy}">{t.send_to_all}</button>
         </input-group-actions>
       </input-group>
       <use template="status-line"/>
@@ -74,47 +101,47 @@
 </template>
 
 <template name="roster-sheet">
-  <sheet label="Group members" on-dismiss="close_sheet">
+  <sheet label="{t.group_members}" on-dismiss="close_sheet">
     <column gap="12" padding="20" width="420">
-      <text size="heading">Group members</text>
-      <text-field text="{roster.nameText}" placeholder="What to call the group (a-z, 0-9, -)" on-input="roster_name_edit" on-submit="save_roster" label="Group name" autofocus="true"/>
-      <text size="sm" foreground="text_muted" wrap="true">Tick the channels this name stands for. Saving replaces the whole list; an empty list retires the group.</text>
+      <text size="heading">{t.group_members}</text>
+      <text-field text="{roster.nameText}" placeholder="{t.group_name_placeholder}" on-input="roster_name_edit" on-submit="save_roster" label="{t.group_name}" autofocus="true"/>
+      <text size="sm" foreground="text_muted" wrap="true">{t.tick_hint}</text>
       <scroll height="260">
         <column gap="4">
           <for each="rosterRows" key="slot" as="r">
             <checkbox key="{r.slot}" checked="{r.checked}" on-toggle="toggle_member:{r.slot}">{r.title}</checkbox>
           </for>
-          <else><text size="sm" foreground="text_muted">No channels to choose from yet.</text></else>
+          <else><text size="sm" foreground="text_muted">{t.no_channels_to_choose}</text></else>
         </column>
       </scroll>
       <row gap="8" main="end">
-        <button variant="ghost" on-press="close_sheet">Cancel</button>
-        <button variant="primary" on-press="save_roster" disabled="{isBusy}">Save</button>
+        <button variant="ghost" on-press="close_sheet">{t.cancel}</button>
+        <button variant="primary" on-press="save_roster" disabled="{isBusy}">{t.save}</button>
       </row>
     </column>
   </sheet>
 </template>
 
 <template name="doctor-sheet">
-  <sheet label="Measure a host" on-dismiss="close_sheet">
+  <sheet label="{t.measure_a_host}" on-dismiss="close_sheet">
     <column gap="12" padding="20" width="460">
-      <text size="heading">Measure a host</text>
-      <text size="sm" foreground="text_muted" wrap="true">Hosts are measured, not believed: this writes twice and reads back before naming a tier. Nothing about this project is sent.</text>
+      <text size="heading">{t.measure_a_host}</text>
+      <text size="sm" foreground="text_muted" wrap="true">{t.measure_hint}</text>
       <row gap="8">
-        <text-field grow="1" text="{doctor.waypointText}" placeholder="http://host:port, s3://bucket, or a path" on-input="doctor_edit" on-submit="examine" label="Waypoint" autofocus="true"/>
-        <button variant="primary" on-press="examine" disabled="{isBusy}">Measure</button>
+        <text-field grow="1" text="{doctor.waypointText}" placeholder="{t.waypoint_short}" on-input="doctor_edit" on-submit="examine" label="{t.waypoint}" autofocus="true"/>
+        <button variant="primary" on-press="examine" disabled="{isBusy}">{t.measure}</button>
       </row>
-      <if test="{isBusy}"><row gap="8" cross="center"><spinner/><text size="sm" foreground="text_muted">reaching the host…</text></row></if>
+      <if test="{isBusy}"><row gap="8" cross="center"><spinner/><text size="sm" foreground="text_muted">{t.reaching_host}</text></row></if>
       <if test="{doctor.hasTier}">
         <card padding="14">
           <column gap="8">
-            <row gap="8" cross="center"><text>Tier</text><badge variant="primary">{doctor.tierName}</badge></row>
+            <row gap="8" cross="center"><text>{t.tier}</text><badge variant="primary">{doctor.tierName}</badge></row>
             <text size="sm" foreground="text_muted"><span mono="true">{doctor.measuredText}</span></text>
             <for each="findingRows" key="slot" as="f">
               <column gap="2" key="{f.slot}">
                 <row gap="10" cross="center">
-                  <if test="{f.checked}"><icon name="check-circle" foreground="success" label="held"/></if>
-                  <else><icon name="alert" foreground="warning" label="not held"/></else>
+                  <if test="{f.checked}"><icon name="check-circle" foreground="success" label="{t.held}"/></if>
+                  <else><icon name="alert" foreground="warning" label="{t.not_held}"/></else>
                   <text grow="1">{f.title}</text>
                 </row>
                 <if test="{f.hasNote}"><text size="sm" foreground="text_muted" wrap="true">{f.detail}</text></if>
@@ -123,19 +150,19 @@
           </column>
         </card>
       </if>
-      <row main="end"><button variant="ghost" on-press="close_sheet">Close</button></row>
+      <row main="end"><button variant="ghost" on-press="close_sheet">{t.close}</button></row>
     </column>
   </sheet>
 </template>
 
 <template name="forget-dialog">
-  <dialog label="Forget this channel?" on-dismiss="close_sheet" width="440" height="200">
+  <dialog label="{t.forget_question}" on-dismiss="close_sheet" width="440" height="200">
     <column gap="12" padding="20">
-      <text size="heading">Forget this channel?</text>
-      <text wrap="true">The channel secret is deleted here and nowhere else. The host keeps its bytes, the peer is not told, and no invitation can reopen it.</text>
+      <text size="heading">{t.forget_question}</text>
+      <text wrap="true">{t.forget_body}</text>
       <row gap="8" main="end">
-        <button variant="ghost" on-press="close_sheet">Keep it</button>
-        <button variant="destructive" icon="trash" on-press="confirm_forget" disabled="{isBusy}">Forget</button>
+        <button variant="ghost" on-press="close_sheet">{t.keep_it}</button>
+        <button variant="destructive" icon="trash" on-press="confirm_forget" disabled="{isBusy}">{t.forget}</button>
       </row>
     </column>
   </dialog>

@@ -16,6 +16,8 @@ const canvas = native_sdk.canvas;
 const model_mod = @import("model.zig");
 const verbs = @import("verbs.zig");
 const answer = @import("answer.zig");
+const font = @import("font.zig");
+const strings = @import("strings.zig");
 
 pub const Model = model_mod.Model;
 
@@ -23,6 +25,16 @@ pub const Msg = union(enum) {
     appearance: native_sdk.Appearance,
     show_settings,
     set_look: model_mod.Look,
+    set_language: model_mod.Language,
+    face_path_edit: canvas.TextInputEvent,
+    try_face,
+    /// A file dropped onto the window. The path is borrowed from the drop
+    /// event: the runtime dispatches inside the callback, so `update` copies
+    /// it into the model before the event goes away. A Msg is stored in every
+    /// control slot of every widget, so it must stay small.
+    dropped: []const u8,
+    streamed: native_sdk.EffectFileResult,
+    preferred: native_sdk.EffectFileResult,
     copy_handle,
     select: usize,
     select_group: usize,
@@ -64,7 +76,7 @@ pub const Msg = union(enum) {
     poll: native_sdk.EffectTimer,
     slot: native_sdk.EffectTimer,
 
-    pub const view_unbound = .{ "appearance", "exited", "filed", "poll", "slot" };
+    pub const view_unbound = .{ "appearance", "exited", "filed", "poll", "slot", "dropped", "streamed", "preferred" };
 };
 
 pub const Effects = native_sdk.Effects(Msg);
@@ -85,6 +97,27 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
         .appearance => |appearance| m.appearance = appearance,
         .show_settings => m.sheet = .settings,
         .set_look => |look| m.look = look,
+        .set_language => |language| {
+            m.setLanguage(language);
+            // The choice applies now whatever the disk says; the file only
+            // spares the next start from guessing, so its result needs no arm.
+            const where = std.fmt.bufPrint(&m.scratch, "{s}{c}{s}", .{ m.home.slice(), std.fs.path.sep, strings.preference_file }) catch return;
+            // A second choice before the first write landed replaces it.
+            fx.cancel(verbs.key(.language_file));
+            fx.writeFile(.{ .key = verbs.key(.language_file), .path = where, .bytes = @tagName(m.language) });
+        },
+        .face_path_edit => |edit| m.face.path.apply(edit),
+        .try_face => tryFace(m, fx),
+        .dropped => |path| {
+            m.face.path.set(path);
+            m.sheet = .settings;
+            tryFace(m, fx);
+        },
+        .streamed => |result| streamed(m, fx, result),
+        .preferred => |result| {
+            m.face.saved = result.outcome == .ok;
+            if (!m.face.saved) m.face.verdict.set(m.t.face_unsaved);
+        },
         .copy_handle => copy(fx, m.handle.slice()),
         .select => |slot| open(m, fx, slot),
         .select_group => |slot| openGroup(m, fx, slot),
@@ -167,6 +200,43 @@ pub fn onKey(keyboard: canvas.WidgetKeyboardEvent) ?Msg {
 
 pub fn onAppearance(appearance: native_sdk.Appearance) ?Msg {
     return .{ .appearance = appearance };
+}
+
+/// The first path dropped onto the window is offered as the body face; the
+/// settings sheet then says what became of it.
+pub fn onDrop(drop: native_sdk.platform.FileDropEvent) ?Msg {
+    return if (drop.paths.len == 0) null else .{ .dropped = drop.paths[0] };
+}
+
+/// Judge the face at the path typed or dropped, by streaming its bytes into a
+/// buffer the size of what the renderer will hold. The verdict is the same
+/// function the start-up search runs, so what passes here passes there.
+fn tryFace(m: *Model, fx: *Effects) void {
+    const path = m.face.begin(font.max_face_bytes) orelse return;
+    fx.readFileStream(.{ .key = verbs.key(.face_stream), .path = path, .on_result = Effects.fileMsg(.streamed) });
+}
+
+fn streamed(m: *Model, fx: *Effects, result: native_sdk.EffectFileResult) void {
+    switch (result.event) {
+        .chunk => if (!m.face.take(result.bytes)) {
+            fx.cancel(verbs.key(.face_stream));
+            m.face.verdict.set(m.t.face_too_large);
+            m.face.finish();
+        },
+        .done => {
+            defer m.face.finish();
+            if (font.verdict(m.face.bytes())) |why| {
+                m.face.verdict.set(if (std.mem.eql(u8, why, font.no_han)) m.t.face_no_han else why);
+                return;
+            }
+            const where = std.fmt.bufPrint(&m.scratch, "{s}{c}{s}", .{ m.home.slice(), std.fs.path.sep, font.preference_file }) catch return;
+            fx.writeFile(.{ .key = verbs.key(.face_file), .path = where, .bytes = m.face.path.text(), .on_result = Effects.fileMsg(.preferred) });
+        },
+        .terminal => {
+            if (result.outcome != .cancelled) m.face.verdict.set(m.t.face_unreadable);
+            m.face.finish();
+        },
+    }
 }
 
 fn open(m: *Model, fx: *Effects, slot: usize) void {
@@ -275,8 +345,8 @@ fn filed(m: *Model, result: native_sdk.EffectFileResult) void {
     m.backup.written = result.outcome == .ok;
     if (m.backup.written) return;
     m.status.code.set("glass.backup_unwritten");
-    m.status.error_text.set("the archive could not be written");
-    m.status.recover.set("run `kusanagi export > backup.ksnb` in a terminal");
+    m.status.error_text.set(m.t.err_backup_unwritten);
+    m.status.recover.set(m.t.rec_backup_unwritten);
 }
 
 fn exited(m: *Model, fx: *Effects, exit: native_sdk.EffectExit) void {

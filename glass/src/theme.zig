@@ -100,6 +100,14 @@ fn colorOverrides(p: Palette) canvas.ColorTokenOverrides {
 /// SDK's loud register untouched: accessibility beats brand, the same rule
 /// the runtime applies to its own accent channel.
 pub fn tokens(appearance: native_sdk.Appearance) canvas.DesignTokens {
+    return tokensWith(appearance, false);
+}
+
+/// The same set with the mono face pointed at the body face. One mono token
+/// serves both `<span mono>` and markdown code, and the SDK's mono face has no
+/// Chinese, so while a Chinese face is registered a `改` inside backticks would
+/// be a box; hex handles then lose their fixed width, which is the smaller loss.
+pub fn tokensWith(appearance: native_sdk.Appearance, mono_follows_body: bool) canvas.DesignTokens {
     const scheme: canvas.ColorScheme = switch (appearance.color_scheme) {
         .dark => .dark,
         .light => .light,
@@ -111,7 +119,7 @@ pub fn tokens(appearance: native_sdk.Appearance) canvas.DesignTokens {
         .pack = .house,
     });
     const shaped = base.withOverrides(.{
-        .typography = .{ .font_id = body_font_id, .title_size = 18, .heading_size = 22, .display_size = 40 },
+        .typography = .{ .font_id = body_font_id, .mono_font_id = if (mono_follows_body) body_font_id else null, .title_size = 18, .heading_size = 22, .display_size = 40 },
         .radius = .{ .sm = 8, .md = 10, .lg = 14, .xl = 20 },
         .controls = .{ .bubble = .{ .radius = 18 } },
     });
@@ -125,6 +133,9 @@ pub fn tokens(appearance: native_sdk.Appearance) canvas.DesignTokens {
         .controls = .{
             .button_secondary = .{ .background = p.subtle, .border = p.border },
             .button_outline = .{ .border = p.border },
+            // A peer's bubble sits one step brighter than the plate's subtle
+            // fill, so a run of grey bubbles still reads as separate cards.
+            .bubble = .{ .background = p.pressed },
         },
     });
 }

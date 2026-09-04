@@ -9,32 +9,35 @@
     <avatar>{currentInitials}</avatar>
     <column grow="1" gap="2">
       <text size="heading">{currentName}</text>
-      <text size="sm" foreground="text_muted"><span mono="true">{currentPeer}</span> · {currentCadence}</text>
+      <if test="{currentSlotted}">
+        <text size="sm" foreground="text_muted"><span mono="true">{currentPeer}</span> · {currentCadence}</text>
+      </if>
+      <else><text size="sm" foreground="text_muted"><span mono="true">{currentPeer}</span></text></else>
     </column>
-    <if test="{currentReleases}"><badge variant="outline">releases</badge></if>
+    <if test="{currentReleases}"><badge variant="outline">{t.releases}</badge></if>
     <if test="{isBusy}"><spinner/></if>
-    <button size="sm" variant="ghost" icon="wrench" label="Measure this host" on-press="show_doctor" disabled="{isBusy}"></button>
-    <button size="sm" variant="ghost" icon="trash" label="Forget this channel" on-press="show_forget" disabled="{isBusy}"></button>
+    <button size="sm" variant="ghost" icon="wrench" label="{t.measure_this_host}" on-press="show_doctor" disabled="{isBusy}"></button>
+    <button size="sm" variant="ghost" icon="trash" label="{t.forget_channel}" on-press="show_forget" disabled="{isBusy}"></button>
   </row>
 </template>
 
 <template name="thread-banners">
   <column gap="8">
     <if test="{currentReleases}">
-      <alert text="This site is the only copy of this conversation">
+      <alert text="{t.only_copy_title}">
         <column gap="8" cross="start">
-          <text wrap="true">Each drop is deleted once they have read it, and its key is burned. Keep a backup, or a lost disk is a lost conversation.</text>
-          <button size="sm" variant="secondary" icon="save" on-press="show_backup">Back up now</button>
+          <text wrap="true">{t.only_copy_body}</text>
+          <button size="sm" variant="secondary" icon="save" on-press="show_backup">{t.back_up_now}</button>
         </column>
       </alert>
     </if>
     <if test="{waitingForPeer}">
-      <alert text="Waiting for them to accept">
-        <text wrap="true">Nobody has joined this channel yet. Hand over the invitation line and read the four characters to each other; the first read after they join learns who they are.</text>
+      <alert text="{t.waiting_title}">
+        <text wrap="true">{t.waiting_body}</text>
       </alert>
     </if>
     <if test="{currentVoid}">
-      <alert text="This channel no longer permits anything" variant="destructive">
+      <alert text="{t.void_hint}" variant="destructive">
         <text wrap="true">{currentRefusal}</text>
       </alert>
     </if>
@@ -42,27 +45,31 @@
 </template>
 
 <template name="thread-bubbles">
-  <scroll grow="1" label="Messages">
-    <column gap="8" padding="4">
+  <scroll grow="1" label="{t.messages}">
+    <column gap="8" padding="4" grow="1" main="end">
+      <spacer height="4"/>
       <for each="thread" key="key" as="b">
         <if test="{b.turn}"><spacer height="16"/></if>
         <if test="{b.mine}">
           <row main="end">
-            <bubble variant="primary" label="you">
+            <bubble variant="primary" label="{t.you}" padding="12">
               <column gap="4">
-                <text wrap="true">{b.text}</text>
-                <if test="{b.cut}"><text size="sm">… cut to fit this window</text></if>
+                <markdown source="{b.text}"/>
+                <if test="{b.cut}"><text size="sm">{t.cut_to_fit}</text></if>
               </column>
             </bubble>
           </row>
         </if>
         <else>
           <row main="start">
-            <bubble label="them">
+            <bubble label="{t.them}" padding="12">
               <column gap="4">
-                <if test="{b.is_hex}"><text size="sm" foreground="text_muted">bytes that are not text, as hex</text></if>
-                <text wrap="true">{b.text}</text>
-                <if test="{b.cut}"><text size="sm" foreground="text_muted">… cut to fit this window</text></if>
+                <if test="{b.is_hex}">
+                  <text size="sm" foreground="text_muted">{t.not_text}</text>
+                  <text><span mono="true">{b.text}</span></text>
+                </if>
+                <else><markdown source="{b.text}"/></else>
+                <if test="{b.cut}"><text size="sm" foreground="text_muted">{t.cut_to_fit}</text></if>
               </column>
             </bubble>
           </row>
@@ -70,8 +77,8 @@
       </for>
       <else>
         <column main="center" cross="center" grow="1" gap="6" padding="48">
-          <text size="heading" foreground="text_muted">Nothing here yet</text>
-          <text foreground="text_muted" wrap="true" text-alignment="center">What you send lands at an address only the two of you can derive.</text>
+          <text size="heading" foreground="text_muted">{t.nothing_here}</text>
+          <text foreground="text_muted" wrap="true" text-alignment="center">{t.nothing_here_body}</text>
         </column>
       </else>
     </column>
@@ -79,12 +86,12 @@
 </template>
 
 <template name="thread-composer">
-  <input-group label="Message">
-    <textarea text="{draftText}" placeholder="Write something…" on-input="draft_edit" on-submit="send" submit-on-enter="true" autofocus="true" label="Message" disabled="{composerDisabled}" height="64"/>
+  <input-group label="{t.message}">
+    <textarea text="{draftText}" placeholder="{t.write_something}" on-input="draft_edit" on-submit="send" submit-on-enter="true" autofocus="true" label="{t.message}" disabled="{composerDisabled}" height="64"/>
     <input-group-actions gap="6">
-      <text size="sm" foreground="text_muted"><span mono="true">{theirHeight}</span> verified of theirs · <span mono="true">{myHeight}</span> of yours</text>
+      <text size="sm" foreground="text_muted">{tally}</text>
       <spacer grow="1"/>
-      <button variant="primary" size="sm" icon="send" on-press="send" disabled="{sendDisabled}">Send</button>
+      <button variant="primary" size="sm" icon="send" on-press="send" disabled="{sendDisabled}">{t.send}</button>
     </input-group-actions>
   </input-group>
 </template>
@@ -97,17 +104,17 @@
         <row gap="8" cross="center">
           <column grow="1" gap="2">
             <text wrap="true">{statusText}</text>
-            <text size="sm" foreground="text_muted" wrap="true">try: {statusRecover}</text>
+            <text size="sm" foreground="text_muted" wrap="true">{t.try_prefix} {statusRecover}</text>
           </column>
-          <button size="sm" variant="ghost" icon="x" label="Dismiss" on-press="dismiss_status"></button>
+          <button size="sm" variant="ghost" icon="x" label="{t.dismiss}" on-press="dismiss_status"></button>
         </row>
       </alert>
     </if>
     <else>
       <row gap="8" cross="center" padding="4">
-        <icon name="info" foreground="text_muted" label="note"/>
+        <icon name="info" foreground="text_muted" label="{t.note}"/>
         <text grow="1" size="sm" foreground="text_muted">{statusText}</text>
-        <button size="sm" variant="ghost" icon="x" label="Dismiss" on-press="dismiss_status"></button>
+        <button size="sm" variant="ghost" icon="x" label="{t.dismiss}" on-press="dismiss_status"></button>
       </row>
     </else>
   </if>

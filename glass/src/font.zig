@@ -28,7 +28,7 @@ const font_ttf = canvas.font_ttf;
 
 /// The largest face the SDK will hold. Reading no further than this is what
 /// turns an oversized family into a skip rather than a wasted 40 MB.
-const max_face_bytes = 24 * 1024 * 1024;
+pub const max_face_bytes = 24 * 1024 * 1024;
 
 /// 中. Every face that writes Chinese maps it; one that does not is not a
 /// Chinese face, whatever it is called on disk.
@@ -51,7 +51,21 @@ pub const Choice = struct {
     /// A named face that could not be used, kept so that losing a person's own
     /// choice is never silent. Empty when nothing was chosen.
     refused: []const u8 = "",
+    /// Why, in the SDK's own words where it has them; empty with `refused`.
+    reason: []const u8 = "",
 };
+
+/// Said when the bytes parse as a face that cannot draw this script. The
+/// other verdicts are the SDK's own sentences, passed on unchanged.
+pub const no_han = "the face has no glyph for \u{4E2D}";
+
+/// Why these bytes cannot be the body face, or null when they can. The one
+/// judgement both the start-up search and the settings sheet use, so a face
+/// accepted on the sheet is accepted at the next start.
+pub fn verdict(bytes: []const u8) ?[]const u8 {
+    if (font_ttf.parseFailureReason(bytes)) |reason| return reason;
+    return if (usable(bytes)) null else no_han;
+}
 
 /// Families tried in order, favouring what arrives with the platform over what
 /// somebody installed: those exist on more machines, and they do not need this
@@ -88,13 +102,16 @@ pub fn usable(bytes: []const u8) bool {
 /// bytes and the name in `Choice`, and the runner copies the bytes it keeps.
 pub fn choose(io: std.Io, arena: std.mem.Allocator, home: []const u8) Choice {
     var path: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    if (chosen(io, arena, home)) |named|
-        return if (open(io, arena, named, std.fs.path.basename(named))) |face|
-            .{ .face = face }
+    if (chosen(io, arena, home)) |named| {
+        // The choice was the person's own, so saying which name failed and why
+        // beats quietly searching a list they did not ask for.
+        const bytes = std.Io.Dir.cwd().readFileAlloc(io, named, arena, .limited(max_face_bytes)) catch
+            return .{ .refused = std.fs.path.basename(named), .reason = "the file could not be read" };
+        return if (verdict(bytes)) |why|
+            .{ .refused = std.fs.path.basename(named), .reason = why }
         else
-            // The choice was the person's own, so saying which name failed beats
-            // quietly searching a list they did not ask for.
-            .{ .refused = std.fs.path.basename(named) };
+            .{ .face = .{ .file = std.fs.path.basename(named), .ttf = bytes } };
+    }
 
     for (directories) |directory| {
         for (candidates) |name| {
@@ -129,11 +146,17 @@ fn chosen(io: std.Io, arena: std.mem.Allocator, home: []const u8) ?[]const u8 {
 
 test "a face is judged by whether it draws this script, not by its name" {
     // Nothing, nonsense, and the two shapes the SDK teaches against: a
-    // collection and a CFF build. All four are refused rather than trusted.
+    // collection and a CFF build. All four are refused rather than trusted,
+    // and the reason given is the SDK's own sentence.
     try std.testing.expect(!usable(&.{}));
     try std.testing.expect(!usable("not a font at all"));
     try std.testing.expect(!usable("ttcf" ++ [_]u8{0} ** 48));
     try std.testing.expect(!usable("OTTO" ++ [_]u8{0} ** 48));
+    try std.testing.expectEqualStrings(
+        "font is a TrueType collection (.ttc); extract the single face to register",
+        verdict("ttcf" ++ [_]u8{0} ** 48).?,
+    );
+    try std.testing.expect(std.mem.indexOf(u8, verdict("OTTO" ++ [_]u8{0} ** 48).?, "TrueType 'glyf'") != null);
 }
 
 test "the search holds only names, and every one of them a single face" {

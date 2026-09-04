@@ -8,13 +8,14 @@
      and the handle lives in the conversation header and in settings.
      Nothing here holds state. -->
 <template name="rail-identity">
-  <list-item on-press="show_settings" label="This endpoint">
+  <list-item on-press="show_settings" label="{t.this_endpoint}">
     <row gap="10" cross="center" padding="6">
-      <avatar>me</avatar>
+      <avatar>{handleInitials}</avatar>
       <column grow="1" gap="2">
-        <text>This endpoint</text>
+        <text>{t.this_endpoint}</text>
+        <text size="sm" foreground="text_muted"><span mono="true">{handleShort}</span></text>
       </column>
-      <icon name="settings" foreground="text_muted" label="open settings"/>
+      <icon name="settings" foreground="text_muted" label="{t.open_settings}"/>
     </row>
   </list-item>
 </template>
@@ -22,27 +23,27 @@
 <template name="rail-channel-rows">
   <column gap="2">
   <for each="visibleChannels" key="slot" as="c">
-    <list-item key="{c.slot}" selected="{c.slot == selected}" on-press="select:{c.slot}" label="{c.title}">
+    <list-item key="{c.slot}" selected="{c.slot == selected and onThread}" on-press="select:{c.slot}" label="{c.title}">
       <row gap="10" cross="center" padding="6">
         <avatar size="sm">{c.initials}</avatar>
         <column grow="1" gap="2">
           <text>{c.title}</text>
-          <if test="{c.waiting}"><text size="sm" foreground="text_muted">waiting for them</text></if>
+          <if test="{c.waiting}"><text size="sm" foreground="text_muted">{t.waiting_for_them}</text></if>
         </column>
-        <if test="{c.slotted}"><icon name="clock" foreground="text_muted" label="slotted"/></if>
-        <if test="{c.releases}"><icon name="archive" foreground="text_muted" label="releases"/></if>
-        <if test="{c.isVoid}"><badge variant="destructive" label="this channel no longer permits anything">void</badge></if>
+        <if test="{c.slotted}"><icon name="clock" foreground="text_muted" label="{t.slotted}"/></if>
+        <if test="{c.releases}"><icon name="archive" foreground="text_muted" label="{t.releases}"/></if>
+        <if test="{c.isVoid}"><badge variant="destructive" label="{t.void_hint}">{t.void_badge}</badge></if>
       </row>
       <context-menu>
-        <menu-item on-press="show_doctor">Measure its host</menu-item>
-        <menu-item on-press="revoke">Revoke the peer</menu-item>
+        <menu-item on-press="show_doctor">{t.measure_its_host}</menu-item>
+        <menu-item on-press="revoke">{t.revoke_peer}</menu-item>
         <separator/>
-        <menu-item on-press="show_forget">Forget this channel</menu-item>
+        <menu-item on-press="show_forget">{t.forget_channel}</menu-item>
       </context-menu>
     </list-item>
   </for>
   <else>
-    <text size="sm" foreground="text_muted" padding="8" wrap="true">No channels yet. Mint an invitation, or accept one.</text>
+    <text size="sm" foreground="text_muted" padding="8" wrap="true">{t.no_channels_yet}</text>
   </else>
   </column>
 </template>
@@ -55,7 +56,7 @@
         <avatar size="sm">{g.initials}</avatar>
         <column grow="1" gap="2">
           <text>{g.title}</text>
-          <text size="sm" foreground="text_muted">{g.count} {plural(g.count, 'member', 'members')}</text>
+          <text size="sm" foreground="text_muted">{g.count} {plural(g.count, t.member, t.members)}</text>
         </column>
       </row>
     </list-item>
@@ -66,22 +67,22 @@
 <template name="rail-channels">
   <column grow="1" gap="10">
     <use template="rail-identity"/>
-    <search-field placeholder="Find a channel" text="{searchText}" on-input="search_edit" label="Find a channel"/>
+    <search-field placeholder="{t.find_channel}" text="{searchText}" on-input="search_edit" label="{t.find_channel}"/>
     <scroll grow="1">
       <column gap="2">
-        <text size="sm" foreground="text_muted" padding="4">Channels</text>
+        <text size="sm" foreground="text_muted" padding="4">{t.channels}</text>
         <use template="rail-channel-rows"/>
         <row gap="4" cross="center" padding="4">
-          <text size="sm" foreground="text_muted" grow="1">Groups</text>
-          <button size="sm" variant="ghost" icon="plus" label="New group" on-press="show_roster" disabled="{isBusy}"></button>
+          <text size="sm" foreground="text_muted" grow="1">{t.groups}</text>
+          <button size="sm" variant="ghost" icon="plus" label="{t.new_group}" on-press="show_roster" disabled="{isBusy}"></button>
         </row>
         <use template="rail-group-rows"/>
       </column>
     </scroll>
     <if test="{railDoors}">
       <column gap="6">
-        <button variant="primary" icon="plus" on-press="show_invite" disabled="{isBusy}">New invitation</button>
-        <button variant="outline" icon="download" on-press="show_join" disabled="{isBusy}">Join with an invitation</button>
+        <button variant="primary" icon="plus" on-press="show_invite" disabled="{isBusy}">{t.new_invitation}</button>
+        <button variant="outline" icon="download" on-press="show_join" disabled="{isBusy}">{t.join_with_invitation}</button>
       </column>
     </if>
   </column>

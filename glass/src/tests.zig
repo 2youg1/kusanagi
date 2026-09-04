@@ -266,7 +266,7 @@ test "the settings sheet opens from the rail and a chosen look overrides the sys
         \\{"contract":1,"command":"id","handle":"89958e2fc5440a1b"}
     );
     var tree = try f.tree();
-    const door = try expectByText(tree.root, .list_item, "This endpoint");
+    const door = try expectByText(tree.root, .list_item, "You");
     f.dispatch(tree.msgForPointer(door.id, .up).?);
     try testing.expect(f.model.sheetSettings());
     tree = try f.tree();
@@ -281,6 +281,84 @@ test "the settings sheet opens from the rail and a chosen look overrides the sys
     try testing.expectEqual(model_mod.Sheet.none, f.model.sheet);
     tree = try f.tree();
     _ = try expectByText(tree.root, .list_item, "bob");
+}
+
+test "chinese is offered only once a face can draw it, and then every label follows" {
+    var f = Fixture.init();
+    defer f.deinit();
+    f.model.home.set("H");
+    // No face: one row, and asking for Chinese anyway stays English.
+    try testing.expectEqual(@as(usize, 1), f.model.languageRows().len);
+    f.dispatch(.{ .set_language = .zh });
+    try testing.expectEqual(model_mod.Language.en, f.model.language);
+    var tree = try f.tree();
+    _ = try expectByText(tree.root, .list_item, "You");
+
+    f.model.has_cjk = true;
+    try testing.expectEqual(@as(usize, 2), f.model.languageRows().len);
+    f.dispatch(.{ .set_language = .zh });
+    try testing.expectEqual(model_mod.Language.zh, f.model.language);
+    // The choice is remembered beside the font preference, as one tag.
+    // Remembered as one tag; a newer choice replaces an unlanded write.
+    const remembered = f.fx.pendingFileAt(0).?;
+    try testing.expectEqualStrings("H\\kusanagi-glass.language", remembered.path);
+    try testing.expectEqualStrings("zh", remembered.bytes);
+    f.dispatch(.show_settings);
+    tree = try f.tree();
+    _ = try expectByText(tree.root, .list_item, "你");
+    _ = try expectByText(tree.root, .text, "设置");
+    try testing.expect(findByText(tree.root, .list_item, "You") == null);
+}
+
+fn streamed(f: *Fixture, event: native_sdk.EffectFileEvent, bytes: []const u8) void {
+    f.dispatch(.{ .streamed = .{ .key = verbs.key(.face_stream), .op = .read_stream, .event = event, .outcome = .ok, .bytes = bytes } });
+}
+
+test "a collection offered as the face is refused in the renderer's own words" {
+    var f = Fixture.init();
+    defer f.deinit();
+    f.model.home.set("H");
+    f.dispatch(.{ .dropped = "\"C:\\Windows\\Fonts\\msyh.ttc\"" });
+    try testing.expect(f.model.sheetSettings());
+    try testing.expect(f.model.face.probing());
+    try testing.expectEqualStrings("C:\\Windows\\Fonts\\msyh.ttc", f.model.face.pathText());
+    streamed(&f, .chunk, "ttcf" ++ [_]u8{0} ** 48);
+    streamed(&f, .done, "");
+    try testing.expect(!f.model.face.probing());
+    try testing.expectEqualStrings("font is a TrueType collection (.ttc); extract the single face to register", f.model.face.verdictText());
+    try testing.expectEqual(@as(usize, 0), f.fx.pendingFileCount());
+    const tree = try f.tree();
+    _ = try expectByText(tree.root, .alert, f.model.face.verdictText());
+}
+
+test "a face bigger than the renderer holds is stopped before it is read whole" {
+    var f = Fixture.init();
+    defer f.deinit();
+    f.model.face.path.set("big.ttf");
+    f.dispatch(.try_face);
+    f.model.face.len = @import("font.zig").max_face_bytes;
+    streamed(&f, .chunk, "one byte too many");
+    try testing.expect(!f.model.face.probing());
+    try testing.expectEqualStrings(f.model.t.face_too_large, f.model.face.verdictText());
+}
+
+test "a face that draws chinese is written as the preference, by path" {
+    var f = Fixture.init();
+    defer f.deinit();
+    var threaded = std.Io.Threaded.init(std.heap.page_allocator, .{});
+    defer threaded.deinit();
+    const ttf = std.Io.Dir.cwd().readFileAlloc(threaded.io(), "C:\\Windows\\Fonts\\simhei.ttf", f.arena(), .limited(@import("font.zig").max_face_bytes)) catch return error.SkipZigTest;
+    f.model.home.set("H");
+    f.model.face.path.set("C:\\Windows\\Fonts\\simhei.ttf");
+    f.dispatch(.try_face);
+    streamed(&f, .chunk, ttf);
+    streamed(&f, .done, "");
+    try testing.expect(!f.model.face.hasVerdict());
+    const written = f.fx.pendingFileAt(0).?;
+    try testing.expectEqualStrings("H\\kusanagi-glass.font", written.path);
+    try testing.expectEqualStrings("C:\\Windows\\Fonts\\simhei.ttf", written.bytes);
+    f.dispatch(.{ .preferred = .{ .key = verbs.key(.face_file), .op = .write, .outcome = .ok } });
+    try testing.expect(f.model.face.saved);
 }
 
 test "a mint on the welcome page keeps its sheet when the channel list answers" {

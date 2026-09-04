@@ -65,10 +65,10 @@ pub fn apply(m: *Model, exit: native_sdk.EffectExit) void {
     const key = verbs.keyOf(exit.key) orelse return;
     switch (exit.reason) {
         .exited => {},
-        .spawn_failed => return failed(m, "glass.no_binary", "kusanagi could not be started", "put kusanagi beside glass, or on PATH"),
-        .rejected => return failed(m, "glass.busy", "that command was refused by the window", "wait for the running command to finish"),
-        .cancelled => return failed(m, "glass.cancelled", "the command was cancelled", "run it again"),
-        .signaled => return failed(m, "glass.killed", "kusanagi was killed", "run it again"),
+        .spawn_failed => return failed(m, "glass.no_binary", m.t.err_no_binary, m.t.rec_no_binary),
+        .rejected => return failed(m, "glass.busy", m.t.err_busy, m.t.rec_busy),
+        .cancelled => return failed(m, "glass.cancelled", m.t.err_cancelled, m.t.rec_run_again),
+        .signaled => return failed(m, "glass.killed", m.t.err_killed, m.t.rec_run_again),
     }
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
@@ -78,9 +78,9 @@ pub fn apply(m: *Model, exit: native_sdk.EffectExit) void {
     // outcome on stderr too, because its stdout is the archive.
     const source = if (exit.code != 0 or key == .export_) exit.stderr_tail else exit.output;
     const parsed = std.json.parseFromSliceLeaky(Value, arena, std.mem.trim(u8, source, " \r\n\t"), .{}) catch {
-        return failed(m, "glass.unreadable", "kusanagi answered something that is not JSON", "run the same verb in a terminal");
+        return failed(m, "glass.unreadable", m.t.err_unreadable, m.t.rec_terminal);
     };
-    const answer = object(parsed) orelse return failed(m, "glass.unreadable", "the answer was not an object", "run the same verb in a terminal");
+    const answer = object(parsed) orelse return failed(m, "glass.unreadable", m.t.err_not_object, m.t.rec_terminal);
     if (exit.code != 0) {
         m.status.clear();
         m.status.code.set(str(answer, "code"));
@@ -101,10 +101,10 @@ pub fn apply(m: *Model, exit: native_sdk.EffectExit) void {
         .join => joined(m, answer),
         .export_ => exported(m, answer, exit.output),
         .doctor => examined(m, answer),
-        .group => m.status.note.set("group saved"),
+        .group => m.status.note.set(m.t.note_group_saved),
         .fanout => fannedOut(m, answer),
-        .forget => m.status.note.set("channel forgotten here; the host keeps its bytes"),
-        .revoke => m.status.note.set("peer revoked; every later read refuses them"),
+        .forget => m.status.note.set(m.t.note_forgotten),
+        .revoke => m.status.note.set(m.t.note_revoked),
         .tick => ticked(m, answer),
         else => {},
     }
@@ -182,12 +182,12 @@ fn read(m: *Model, lane: *model_mod.Lane, answer: std.json.ObjectMap) void {
         if (lane.count > 0 and lane.items[lane.count - 1].index >= message.index) continue;
         lane.push(message);
     }
-    if (m.output_cut) m.status.note.set("history too long to show whole; the newest part is here");
+    if (m.output_cut) m.status.note.set(m.t.note_cut);
 }
 
 fn sent(m: *Model, answer: std.json.ObjectMap) void {
     if (std.mem.eql(u8, str(answer, "command"), "queued")) {
-        m.status.note.set("queued for the next slot");
+        m.status.note.set(m.t.note_queued);
         return;
     }
     var message: model_mod.Message = .{
@@ -204,7 +204,7 @@ fn invited(m: *Model, answer: std.json.ObjectMap) void {
     m.invite.line.set(str(answer, "invite"));
     m.check.set(str(answer, "check"));
     m.check_for.set(str(answer, "name"));
-    m.status.note.set("invitation minted; hand over the line and read the code aloud");
+    m.status.note.set(m.t.note_minted);
 }
 
 fn joined(m: *Model, answer: std.json.ObjectMap) void {
@@ -212,7 +212,7 @@ fn joined(m: *Model, answer: std.json.ObjectMap) void {
     m.check.set(str(answer, "check"));
     m.check_for.set(str(answer, "name"));
     m.join.invitation.clear();
-    m.status.note.set("joined; read the code aloud and compare");
+    m.status.note.set(m.t.note_joined);
 }
 
 fn exported(m: *Model, answer: std.json.ObjectMap, archive: []const u8) void {
@@ -255,5 +255,5 @@ fn fannedOut(m: *Model, answer: std.json.ObjectMap) void {
 fn ticked(m: *Model, answer: std.json.ObjectMap) void {
     const carried = str(answer, "carried");
     if (uint(answer, "heard")) |heard| m.theirs.height = heard;
-    m.status.note.set(if (std.mem.eql(u8, carried, "message")) "slot filled with your message" else if (std.mem.eql(u8, carried, "filler")) "slot filled" else "slot already filled");
+    m.status.note.set(if (std.mem.eql(u8, carried, "message")) m.t.note_slot_message else if (std.mem.eql(u8, carried, "filler")) m.t.note_slot_filler else m.t.note_slot_taken);
 }

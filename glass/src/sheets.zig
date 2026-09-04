@@ -135,6 +135,75 @@ pub const Roster = struct {
     }
 };
 
+/// Choose the body face Chinese is drawn in: a path typed or dropped, the
+/// bytes streamed in to be judged, and what the judgement said. The buffer is
+/// held only between the first chunk and the verdict; while nothing is being
+/// judged, this window holds no font at all.
+pub const Face = struct {
+    path: canvas.TextBuffer(rows.path_cap) = .{},
+    /// The face registered at start, by file name, or empty.
+    registered: Text(rows.name_cap * 2) = .{},
+    /// Why the face a person chose earlier could not be used at start.
+    refused: Text(rows.line_cap) = .{},
+    /// The verdict on the last probe, empty while none has been given.
+    verdict: Text(rows.line_cap) = .{},
+    saved: bool = false,
+    held: ?[]u8 = null,
+    len: usize = 0,
+
+    pub fn pathText(s: *const Face) []const u8 {
+        return s.path.text();
+    }
+    pub fn ready(s: *const Face) bool {
+        return s.path.text().len > 0 and s.held == null;
+    }
+    pub fn probing(s: *const Face) bool {
+        return s.held != null;
+    }
+    pub fn hasVerdict(s: *const Face) bool {
+        return !s.verdict.isEmpty();
+    }
+    pub fn verdictText(s: *const Face) []const u8 {
+        return s.verdict.slice();
+    }
+    pub fn wasRefused(s: *const Face) bool {
+        return !s.refused.isEmpty();
+    }
+    pub fn refusedText(s: *const Face) []const u8 {
+        return s.refused.slice();
+    }
+    /// A probe begins: the path as typed, stripped of the quotes Explorer's
+    /// "copy as path" wraps around it. Null when nothing is there to probe.
+    pub fn begin(s: *Face, capacity: usize) ?[]const u8 {
+        const trimmed = std.mem.trim(u8, s.path.text(), " \t\r\n\"'");
+        if (trimmed.len == 0 or s.held != null) return null;
+        s.path.set(trimmed);
+        s.held = std.heap.page_allocator.alloc(u8, capacity) catch return null;
+        s.len = 0;
+        s.saved = false;
+        s.verdict.clear();
+        return s.path.text();
+    }
+    /// One more chunk. False when it would not fit: the face is bigger than
+    /// the renderer holds, and the stream should stop.
+    pub fn take(s: *Face, chunk: []const u8) bool {
+        const held = s.held orelse return false;
+        if (s.len + chunk.len > held.len) return false;
+        @memcpy(held[s.len .. s.len + chunk.len], chunk);
+        s.len += chunk.len;
+        return true;
+    }
+    pub fn bytes(s: *const Face) []const u8 {
+        const held = s.held orelse return &.{};
+        return held[0..s.len];
+    }
+    pub fn finish(s: *Face) void {
+        if (s.held) |held| std.heap.page_allocator.free(held);
+        s.held = null;
+        s.len = 0;
+    }
+};
+
 /// Measure a host: the waypoint asked about, the tier and findings answered.
 pub const Doctor = struct {
     waypoint: canvas.TextBuffer(rows.line_cap) = .{},

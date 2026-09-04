@@ -16,6 +16,8 @@ const canvas = native_sdk.canvas;
 const order = @import("order.zig");
 const rows = @import("rows.zig");
 const sheets = @import("sheets.zig");
+const strings = @import("strings.zig");
+const wording = @import("wording.zig");
 
 pub const Text = rows.Text;
 pub const ChannelRow = rows.ChannelRow;
@@ -38,12 +40,21 @@ pub const Screen = enum { welcome, thread, group };
 pub const Sheet = enum { none, invite, join, backup, roster, doctor, forget, settings };
 /// The colour scheme a person chose over the one the system reports.
 pub const Look = enum { system, light, dark };
+pub const LookRow = struct { tag: Look, label: []const u8 };
+pub const Language = strings.Language;
 
 pub const Model = struct {
     bin: Text(path_cap) = .{},
     home: Text(path_cap) = .{},
     appearance: native_sdk.Appearance = .{},
     look: Look = .system,
+    /// Every visible sentence, in the language chosen; the markup binds `{t.key}`.
+    t: strings.Strings = strings.of(.en),
+    language: Language = .en,
+    /// Whether a face that draws Chinese was registered at start. Without one
+    /// the Chinese column would render as boxes, so `setLanguage` refuses it.
+    has_cjk: bool = false,
+    face: sheets.Face = .{},
     screen: Screen = .welcome,
     sheet: Sheet = .none,
     busy: u64 = 0,
@@ -85,9 +96,6 @@ pub const Model = struct {
     delivered: [max_rows]CheckRow = @splat(.{}),
     delivered_count: usize = 0,
 
-    /// The three looks the endpoint page offers, in the order it lists them.
-    pub const looks = [_]Look{ .system, .light, .dark };
-
     /// State the view never binds directly: `update`, the effects and the
     /// chrome read it, and the methods below derive what the markup shows.
     pub const view_unbound = .{
@@ -97,8 +105,28 @@ pub const Model = struct {
         "status",      "output_cut", "scratch",         "name_scratch",  "site",
         "at_rest",     "proxy",      "binary",          "handle",        "check",
         "check_for",   "delivered",  "delivered_count", "channelRows",   "onThread",
-        "canSend",       "currentWaypoint",
+        "canSend",     "currentWaypoint",
     };
+
+    /// The one rule about language: Chinese needs a face that draws it.
+    pub fn setLanguage(m: *Model, wanted: Language) void {
+        m.language = if (m.has_cjk) wanted else .en;
+        m.t = strings.of(m.language);
+    }
+    /// The languages the settings sheet offers: Chinese only once it can be drawn.
+    pub fn languageRows(m: *const Model) []const strings.LanguageRow {
+        return strings.language_rows[0 .. if (m.has_cjk) 2 else 1];
+    }
+    pub fn lookRows(m: *const Model, arena: std.mem.Allocator) []const LookRow {
+        const out = arena.alloc(LookRow, 3) catch return &.{};
+        out[0] = .{ .tag = .system, .label = m.t.look_system };
+        out[1] = .{ .tag = .light, .label = m.t.look_light };
+        out[2] = .{ .tag = .dark, .label = m.t.look_dark };
+        return out;
+    }
+    pub fn faceShown(m: *const Model) []const u8 {
+        return if (m.face.registered.isEmpty()) m.t.face_none else m.face.registered.slice();
+    }
 
     /// The appearance the tokens resolve from: the system's, unless a look
     /// was chosen on the endpoint page.
@@ -153,32 +181,27 @@ pub const Model = struct {
     /// The handle in groups of eight, the way a fingerprint is read across a
     /// table; the paragraph wraps at the group boundaries.
     pub fn handleBlock(m: *const Model, arena: std.mem.Allocator) []const u8 {
-        const handle = m.handle.slice();
-        if (handle.len == 0) return "not answered yet";
-        const groups = (handle.len + 7) / 8;
-        const out = arena.alloc(u8, handle.len + groups) catch return handle;
-        var n: usize = 0;
-        for (handle, 0..) |c, i| {
-            if (i > 0 and i % 8 == 0) {
-                out[n] = ' ';
-                n += 1;
-            }
-            out[n] = c;
-            n += 1;
-        }
-        return out[0..n];
+        return if (m.handle.isEmpty()) m.t.not_answered else wording.grouped(arena, m.handle.slice(), 8);
+    }
+    /// The handle's first two characters, the avatar of this endpoint.
+    pub fn handleInitials(m: *const Model) []const u8 {
+        return m.handle.slice()[0..@min(m.handle.len, 2)];
+    }
+    /// The handle's first eight characters: enough to recognise, never to verify.
+    pub fn handleShort(m: *const Model) []const u8 {
+        return if (m.handle.isEmpty()) "…" else m.handle.slice()[0..@min(m.handle.len, 8)];
     }
     pub fn siteShown(m: *const Model) []const u8 {
-        return if (m.site.isEmpty()) "not answered yet" else m.site.slice();
+        return if (m.site.isEmpty()) m.t.not_answered else m.site.slice();
     }
     pub fn sealShown(m: *const Model) []const u8 {
-        return if (m.at_rest.isEmpty()) "not answered yet" else m.at_rest.slice();
+        return if (m.at_rest.isEmpty()) m.t.not_answered else m.at_rest.slice();
     }
     pub fn routeShown(m: *const Model) []const u8 {
-        return if (m.site.isEmpty()) "not answered yet" else if (m.proxy) "through the proxy" else "direct";
+        return if (m.site.isEmpty()) m.t.not_answered else if (m.proxy) m.t.through_proxy else m.t.direct;
     }
     pub fn binaryShown(m: *const Model) []const u8 {
-        return if (m.bin.isEmpty()) "not found" else m.bin.slice();
+        return if (m.bin.isEmpty()) m.t.not_found else m.bin.slice();
     }
 
     // ------------------------------------------------------------ the plate
@@ -205,7 +228,8 @@ pub const Model = struct {
         return m.current().name.slice();
     }
     pub fn currentPeer(m: *const Model) []const u8 {
-        return m.current().peerShown();
+        const row = m.current();
+        return if (row.hasPeer()) row.peer.slice() else m.t.waiting_for_them;
     }
     pub fn currentWaypoint(m: *const Model) []const u8 {
         return m.current().waypoint.slice();
@@ -213,8 +237,19 @@ pub const Model = struct {
     pub fn currentReleases(m: *const Model) bool {
         return m.onThread() and m.current().releases;
     }
+    pub fn currentSlotted(m: *const Model) bool {
+        return m.onThread() and m.current().slotted();
+    }
+    /// The public rhythm in words: a drop every hour, every 15 min, every 90 s.
     pub fn currentCadence(m: *const Model, arena: std.mem.Allocator) []const u8 {
-        return m.current().cadence(arena);
+        const p = m.current().period;
+        if (p == 0) return m.t.writes_when_asked;
+        const unit: struct { []const u8, u32 } = if (p % 3600 == 0) .{ m.t.every_hours, 3600 } else if (p % 60 == 0) .{ m.t.every_minutes, 60 } else .{ m.t.every_seconds, 1 };
+        return wording.counted(arena, unit[0], &.{p / unit[1]});
+    }
+    /// How much of each stream is on screen and verified, in one sentence.
+    pub fn tally(m: *const Model, arena: std.mem.Allocator) []const u8 {
+        return wording.counted(arena, m.t.tally, &.{ m.theirHeight(), m.myHeight() });
     }
     pub fn currentVoid(m: *const Model) bool {
         return m.onThread() and m.current().isVoid();
@@ -309,13 +344,7 @@ pub const Model = struct {
     }
     /// The four characters with a space between each, the way they are read aloud.
     pub fn checkSpaced(m: *const Model, arena: std.mem.Allocator) []const u8 {
-        const code = m.check.slice();
-        const out = arena.alloc(u8, code.len * 2) catch return code;
-        for (code, 0..) |c, i| {
-            out[i * 2] = c;
-            out[i * 2 + 1] = ' ';
-        }
-        return std.mem.trimEnd(u8, out, " ");
+        return wording.spaced(arena, m.check.slice());
     }
     pub fn checkFor(m: *const Model) []const u8 {
         return m.check_for.slice();

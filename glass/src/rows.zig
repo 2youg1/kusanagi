@@ -95,17 +95,6 @@ pub const ChannelRow = struct {
     pub fn initials(row: *const ChannelRow) []const u8 {
         return row.name.slice()[0..@min(row.name.len, 2)];
     }
-    pub fn peerShown(row: *const ChannelRow) []const u8 {
-        return if (row.hasPeer()) row.peer.slice() else "waiting for them";
-    }
-    /// The public rhythm in words: a drop every hour, every 15 min, every 90 s.
-    pub fn cadence(row: *const ChannelRow, arena: std.mem.Allocator) []const u8 {
-        const p = row.period;
-        if (p == 0) return "writes when asked";
-        if (p % 3600 == 0) return std.fmt.allocPrint(arena, "one drop every {d} h", .{p / 3600}) catch "";
-        if (p % 60 == 0) return std.fmt.allocPrint(arena, "one drop every {d} min", .{p / 60}) catch "";
-        return std.fmt.allocPrint(arena, "one drop every {d} s", .{p}) catch "";
-    }
 };
 
 /// One group as `channels` reports it: a name over a list of channel names.
