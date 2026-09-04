@@ -105,7 +105,7 @@ pub const Model = struct {
         "status",      "output_cut", "scratch",         "name_scratch",  "site",
         "at_rest",     "proxy",      "binary",          "handle",        "check",
         "check_for",   "delivered",  "delivered_count", "channelRows",   "onThread",
-        "canSend",     "currentWaypoint",
+        "canSend",     "currentWaypoint", "myHeight",     "theirHeight",
     };
 
     /// The one rule about language: Chinese needs a face that draws it.
