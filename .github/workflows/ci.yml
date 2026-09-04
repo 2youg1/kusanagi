@@ -41,20 +41,11 @@ jobs:
             grep -q '#\[cfg(test)\]' "$file" || { echo "::error::$file compiles a test module into every build"; exit 1; }
           done
       # The line budget is an architectural rule, so it fails the build like any
-      # other. Bash is present on all three runners.
+      # other. `scripts/budget.sh` is the one authority: this job and `just budget`
+      # used to carry two copies of the arithmetic and drift apart.
       - name: budget
         shell: bash
-        run: |
-          total=0
-          for dir in crates/*/; do
-            src=$(find "$dir/src" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
-            all=$(find "$dir" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
-            total=$((total + all))
-            printf '%-12s src=%-6s all=%s\n' "$(basename "$dir")" "$src" "$all"
-            [ "$src" -le 4000 ] || { echo "::error::$(basename "$dir") exceeds 4000 source lines"; exit 1; }
-          done
-          echo "workspace total: $total"
-          [ "$total" -le 25000 ] || { echo "::error::workspace exceeds 25000 lines"; exit 1; }
+        run: bash scripts/budget.sh
 
   supply-chain:
     runs-on: ubuntu-latest

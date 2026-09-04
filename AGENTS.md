@@ -61,7 +61,7 @@ Violating any of these turns the build red.
 | Start every `.rs` file with the MPL-2.0 notice and the copyright line. | review |
 | Take the time as a parameter. The single sampling point is `kusanagi::world::sample`, and randomness has one source beside it. | `clippy.toml` disallowed methods |
 | One name per concept, taken from `ARCHITECTURE.md` §4. A word with no implementation does not enter the code. | review |
-| Keep every file under **400** lines, whatever kind of file it is, each crate's `src/` under **4,000**, and the whole workspace, tests included, under **25,000**. A file over the limit is split or deleted; the limit is not raised. | `just budget` |
+| Keep every text file under **400** lines (a binary carries no lines), each crate's `src/` under **4,000**, and the sum of every crate's `src/` under **25,000**. Tests sit outside that total, which is why a black-box claim belongs in `adversary/` and a white-box one in Rust; every test file still answers to the 400. A file over the limit is split or deleted; the limit is not raised. | `just budget`, `just boxes` |
 | Anything hashed or signed is encoded by hand. `serde` is for `--json` output and nothing else. | review |
 
 **Two laws that are not lints, and matter more than any of them:**

@@ -17,6 +17,7 @@ const model_mod = @import("model.zig");
 const update_mod = @import("update.zig");
 const theme = @import("theme.zig");
 const plate = @import("plate.zig");
+const font = @import("font.zig");
 
 pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
 
@@ -63,12 +64,21 @@ pub const markup_sources = [_]canvas.ui_markup.SourceFile{
 
 const GlassApp = native_sdk.UiApp(Model, Msg);
 
-/// The body face: Noto Sans SC, fetched by `just glass-fonts` and checked
-/// against its published hash, so a message in Chinese is text. OFL 1.1;
-/// the licence sits beside the file.
-const app_fonts = [_]GlassApp.FontRegistration{
-    .{ .id = theme.body_font_id, .name = "NotoSansSC.ttf", .ttf = @embedFile("fonts/NotoSansSC.ttf") },
-};
+/// The one registration this machine earns, or none when it holds no face that
+/// writes Chinese. `font.zig` says why having none is an ordinary state; the
+/// bytes come from an arena that lives as long as the window, because the name
+/// the runner teaches with outlives registration.
+fn bodyFonts(io: std.Io, arena: std.mem.Allocator, home: []const u8) []const GlassApp.FontRegistration {
+    const choice = font.choose(io, arena, home);
+    if (choice.refused.len > 0)
+        std.debug.print("glass: the chosen face `{s}` cannot write Chinese, so the window stays in English\n", .{choice.refused});
+    const face = choice.face orelse return &.{};
+    // A face is decoration here: failing to hold it costs Chinese, not the app,
+    // so an allocator saying no takes the same road as a machine with none.
+    const held = arena.create(GlassApp.FontRegistration) catch return &.{};
+    held.* = .{ .id = theme.body_font_id, .name = face.file, .ttf = face.ttf };
+    return held[0..1];
+}
 
 pub fn initialModel() Model {
     return .{};
@@ -100,6 +110,8 @@ fn locateBinary(io: std.Io, into: *model_mod.Text(model_mod.path_cap)) void {
 }
 
 pub fn main(init: std.process.Init) !void {
+    var face_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const home = init.environ_map.get("USERPROFILE") orelse init.environ_map.get("HOME") orelse ".";
     const app_state = try GlassApp.create(std.heap.page_allocator, .{
         .name = "glass",
         .scene = shell_scene,
@@ -109,7 +121,7 @@ pub fn main(init: std.process.Init) !void {
         .on_key = onKey,
         .on_appearance = update_mod.onAppearance,
         .tokens_fn = tokensFor,
-        .fonts = &app_fonts,
+        .fonts = bodyFonts(init.io, face_arena.allocator(), home),
         .chrome = .{ .prefix_commands = plate.prefix_commands, .build = plate.build },
         .markup = .{
             .source = app_markup,
@@ -121,7 +133,6 @@ pub fn main(init: std.process.Init) !void {
     defer app_state.destroy();
     app_state.model = initialModel();
     locateBinary(init.io, &app_state.model.bin);
-    const home = init.environ_map.get("USERPROFILE") orelse init.environ_map.get("HOME") orelse ".";
     app_state.model.home.set(home);
 
     try runner.runWithOptions(app_state.app(), .{
@@ -143,4 +154,5 @@ test {
     _ = @import("order.zig");
     _ = @import("theme.zig");
     _ = @import("plate.zig");
+    _ = @import("font.zig");
 }

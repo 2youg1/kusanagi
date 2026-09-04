@@ -180,18 +180,18 @@ Dependencies point one way: `kernel` depends on nothing of ours, `kusanagi` on a
 
 | Limit | Applies to | What it bounds |
 |---|---|---|
-| **400 lines** | every file in the repository, whatever kind it is | how much has to be in your head to judge one line |
+| **400 lines** | every text file in the repository; a binary carries no lines | how much has to be in your head to judge one line |
 | **4,000 lines** | each crate's `src/` | how large one idea may grow |
-| **25,000 lines** | the workspace, tests included | how much there is to read at all |
+| **25,000 lines** | every crate's `src/`, tests outside it | how much implementation there is to hold in mind |
 
 The file is the unit that actually gets opened — a reviewer opens one, an editor jumps
 into one, a model reads one — so the first limit is the strictest and the one that
 decides whether this code can be read. **A file over 400 lines is split or deleted;
-that number is not raised**, and splitting the assertions about a rule away from the
-rule is legitimate, because the workspace total counts tests. `Cargo.lock` and
-`LICENSE` stay outside the count because their contents are not written here; what each
-crate spends is what `just budget` prints, never copied here, because a number kept in
-two places drifts.
+that number is not raised**. Splitting the assertions about a rule away from the rule
+stays legitimate: each test file still answers to that 400, and `just boxes` decides
+where it may stand. `Cargo.lock` and `LICENSE` are outside the count because their
+contents are not written here; what each crate spends is what `just budget` prints,
+never copied here, because a number kept in two places drifts.
 
 **The crate limit moved once, 2,500 to 4,000, because the two are met by different
 acts.** Splitting answers a long file and never a full crate, whose number counts every

@@ -72,49 +72,19 @@ deps:
     cargo tree --workspace --edges normal --prefix none | sort -u | grep -c .
 
 
-# Line counts against the budget in ARCHITECTURE.md. The budget is the mechanical
+# Line counts against the budget in ARCHITECTURE.md §5. The budget is the mechanical
 # form of "one context window is enough to read all of it": each crate's
-# implementation must stay small enough to hold in mind, and the workspace as a
-# whole — tests included, because a reader reads those too — must stay small
-# enough to hold at all.
+# implementation must stay small enough to hold in mind, and a file is the unit
+# somebody opens — a reviewer, an editor, a model reading one — so a file that no
+# longer fits in one reading is split or deleted, and the limit is not raised.
 #
-# The first gate is the strictest and the most local. A file is the unit somebody
-# opens — a reviewer, an editor, a model reading one — so a file that no longer
-# fits in one reading is split or deleted, and the limit is not raised.
-#
-# One number for every kind of file, because a limit you cannot apply from memory
-# is one you meet at the gate instead of at the keyboard. See ARCHITECTURE.md §5
-# for what the ladder of per-kind limits cost and what it bought.
+# The arithmetic lives in `scripts/budget.sh`, one authority for this recipe and
+# for CI's budget job: they used to carry two copies, and the CI copy checked only
+# the crate and workspace totals, so the strictest of the three gates was never
+# enforced by the machine that merges. Since D-15 the workspace total counts `src`
+# only; `just boxes` still decides where a test may stand.
 budget:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    # `Cargo.lock` and `LICENSE` are outside the count because their contents are
-    # not written here: cargo generates one, and the other is the licence text
-    # verbatim. `awk END{NR}` rather than `wc -l` so that a file whose last line
-    # has no newline is counted, not rounded down.
-    limit=400
-    over=$(git ls-files | grep -Ev '^(Cargo\.lock|LICENSE)$' | while IFS= read -r file; do
-        lines=$(awk 'END { print NR }' "$file")
-        if [ "$lines" -gt "$limit" ]; then printf '  %5s / %-4s %s\n' "$lines" "$limit" "$file"; fi
-    done)
-    if [ -n "$over" ]; then
-        printf 'over the per-file limit. Split it or delete it; the limit does not move.\n%s\n' "$over"
-        exit 1
-    fi
-
-    total=0
-    printf '%-12s %8s %8s %8s\n' crate src limit all
-    for dir in crates/*/; do
-        crate=$(basename "$dir")
-        src=$(find "$dir/src" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
-        all=$(find "$dir" -name '*.rs' -print0 | xargs -0 wc -l | tail -1 | awk '{print $1}')
-        total=$((total + all))
-        printf '%-12s %8s %8s %8s' "$crate" "$src" 4000 "$all"
-        if [ "$src" -gt 4000 ]; then printf '  OVER\n'; exit 1; else printf '  ok\n'; fi
-    done
-    printf '%-12s %8s %8s %8s' TOTAL "" 25000 "$total"
-    if [ "$total" -gt 25000 ]; then printf '  OVER\n'; exit 1; else printf '  ok\n'; fi
+    bash scripts/budget.sh
 
 # Two identities, one host, one verifiable exchange — in a directory that is
 # deleted afterwards. The same story over TCP is asserted by

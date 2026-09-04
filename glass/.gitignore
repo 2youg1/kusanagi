@@ -1,3 +1,9 @@
 .native/
 zig-out/
 .zig-cache/
+
+# Screenshots are evidence for a pull request, not history: they are taken, looked
+# at, and re-taken. The Chinese body face is found on the machine by `glass/src/font.zig`,
+# so nothing here needs a copy of one.
+shots/
+src/fonts/

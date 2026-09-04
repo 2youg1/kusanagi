@@ -22,8 +22,11 @@ const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 const Color = canvas.Color;
 
-/// The body face registered in `main.zig`: Noto Sans SC, so a message in
-/// Chinese is text rather than a row of boxes. Mono runs keep Geist Mono.
+/// The body face registered in `main.zig`, found on this machine by `font.zig`
+/// so a message in Chinese is text rather than a row of boxes. A machine holding
+/// no such face leaves this id unregistered and the runtime keeps its built-in
+/// Latin face; the labels are English there, so nothing comes out as a box.
+/// Mono runs keep the SDK's Geist Mono.
 pub const body_font_id: canvas.FontId = canvas.min_registered_font_id;
 
 /// The darkest and lightest values any glass colour may hold, per channel.

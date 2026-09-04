@@ -10,7 +10,7 @@
 |---|---|---|
 | F0 | **视觉语域**：一套从产品意义长出来的主题（调色、字阶、圆角、面板），跟随系统明暗，禁用纯白纯黑 | 用户：深度打磨的美学；攻壳机动队 |
 | F0a | **G4 弧边**：曲率连续到二阶导的转角，用在 glass 自己画的面上（对话面板） | 用户：每个需要弧边处都用 |
-| F0b | **中文正文**：注册一份 OFL 字体覆盖 CJK，不显示豆腐块 | 用户是中文使用者；字体须 OFL |
+| F0b | **中文正文**：注册一份能写 CJK 的字面作正文，不显示豆腐块 | 用户是中文使用者；字面由本机找，不捆绑 |
 | F1 | Native SDK 骨架：Zig 薄状态机，每个操作 `fx.spawn` 一次性动词，收 `--json` 应答 | Roadmap 31 |
 | F2a | 通道列表、对话视图、撰写与发送；同一发言人的连续段成一组 | Roadmap 32 |
 | F2b | 备份：`export` 落盘，恢复密钥只展示一次；释放通道上的备份提示 | Roadmap 32 · S1 · D-07 |
@@ -68,9 +68,16 @@
 - **每行只在协议确有话可说时才有第二行**：`waiting for them`（对端未到）；时隙与释放仍用图标说；
   作废仍用 badge。没有预览、没有未读、没有 handle——单行名单扫得快，纸面留白。
 - **字体**。Windows 渲染器把 DirectWrite 回退表**故意置空**，注册的字面也不级联到别的字族，
-  所以正文字面必须自己覆盖 CJK。Noto Sans SC（OFL，Google Fonts 的 TrueType 构建，17 772 300 字节，
-  `maxp` 最大 584 点 / 84 轮廓、无复合）作正文，Geist Mono（OFL，SDK 捆绑）作等宽。
-  字体不进 git：`just glass-fonts` 按固定 URL 下载并核对 SHA-256，`.gitignore` 排除 `*.ttf`。
+  所以正文字面必须自己覆盖 CJK——「回退到本机无衬线字体」这条路在 Windows 上**不存在**
+  （macOS 走 CoreText 级联，那边看着像有，别当成普遍行为）。字面**不进 git 也不进包体**：
+  启动前 `font.zig` 在本机找一枚能写汉字的 TrueType，`main.zig` 把它注册进 `Options.fonts`。
+  顺序 = 人在 `%USERPROFILE%\kusanagi-glass.font` 里写的那一个路径优先，否则按
+  `NotoSansSC-VF → NotoSansSC-Regular → simhei → simfang → Deng → WenQuanYi Zen Hei` 试各平台字体目录。
+  **判定只看字节**：`Face.parse` 过（它顺带管掉 24 MiB 上限与 `maxp` 轮廓配额，正是当初选中
+  Noto Sans SC 的理由：584 点 / 84 轮廓、无复合）再加 `glyphIndex(中) != 0`，名字不算证据。
+  `.ttc` 与 `.otf`/CFF 一律被拒——`msyh.ttc`（微软雅黑）恰好是这里最常被人想要的那一枚，所以拒绝
+  原样透出 SDK 的 teach 文案，不自编理由。一枚都没有是**正常状态**：id 64 未注册，运行时用回它
+  自己的内嵌字面，界面出英文而不是方块。注册是终生的（无 unregister），换字面 = 重启。
 - **对话怎么排序**。段不带时间。C4 的 `acknowledged` 是两条流之间唯一的先后关系；`order.zig` 做因果归并。
   归并后**同一发言人的连续段成一组**：组内间距 8，换人间距 24（SDK 的气泡指南是 8/32，24 更贴近
   这个面板的密度）。
@@ -104,7 +111,8 @@ glass 画的唯一一块面）、**theme**（token 语域）。界面文案英�
 ## 7 模块边界
 
 ```
-main.zig      场景、字体注册、tokens_fn、chrome、create、run —— 只有接线
+main.zig      场景、字面注册、tokens_fn、chrome、create、run —— 只有接线
+font.zig      启动前在本机找正文的中文字面：判定在字节，不在名字；纯函数 `usable` 有测试
 model.zig     Model / 有界存储 / 壳与对话的绑定方法
 sheets.zig    五张 sheet 各自的状态结构体与绑定方法（嵌套路径 {invite.nameText}）
 rows.zig      有界记录：Text、ChannelRow、GroupRow、Message、Lane、Bubble、Status、CheckRow
@@ -126,7 +134,7 @@ tests.zig     假执行器下的派发与 spawn 断言、布局绑定测试
 
 ```zig
 // theme.zig
-pub const body_font_id: canvas.FontId = 64;          // Noto Sans SC；等宽沿用 SDK 的 Geist Mono
+pub const body_font_id: canvas.FontId = 64;          // 正文：本机中文面（没有则未注册，回落英文）；等宽沿用 SDK 的 Geist Mono
 pub fn tokens(appearance: platform.Appearance) canvas.DesignTokens;
 pub fn palette(scheme: canvas.ColorScheme) canvas.ColorTokens;   // 测试用：逐通道断言不触纯白纯黑
 
@@ -151,7 +159,7 @@ Msg 增 `appearance: platform.Appearance`。
 
 ## 9 工作流程
 
-启动 → 注册字体（安装帧，首次布局前）→ `on_appearance` 送来系统明暗 → `tokens_fn` 解出语域 →
+启动前 `font.zig` 找字面 → 注册（安装帧，首次布局前）→ `on_appearance` 送来系统明暗 → `tokens_fn` 解出语域 →
 `boot`：`doctor --here`、`id`、`channels` 并发 → rail 出现 → 选中一条通道 → `read`（peer）与
 `read --mine` → 归并、分组、展示 → 定时器每 20 s `read --after h`（时隙通道改为每 period 秒 `tick`）
 → 发送：`send --to -`，stdin = `name\ntext` → 成功后自己的段直接追加进 ring，不重读。
@@ -177,8 +185,10 @@ Msg 增 `appearance: platform.Appearance`。
    sheet 内长文一律独占一行向下 wrap，不与定宽字段同行（行内 flex 不收缩，溢出即裁切——invite 提示行与
    doctor/delivery 行的教训）；invite sheet 去掉步进条（两态界面不需要三步的装饰），表单字段 `on-submit`
    直达主键（Enter 从任一字段提交）。
-6. **字体**：`assets/fonts/NotoSansSC.ttf` 由 `just glass-fonts` 下载并校验；`main.zig`
-   `@embedFile` 后在 `Options.fonts` 注册为 id 64；`theme.zig` 的 `typography.font_id = 64`。
+6. **字体**：`font.zig` 在窗口存在之前判定并读出字面（注册是终生的，没有第二个时机），
+   `main.zig` 把它放进 `Options.fonts` 注册为 id 64；`theme.zig` 的 `typography.font_id = 64` 不动——
+   未注册时运行时回落内嵌字面，那就是英文回退本身，不是一条分支。人自己写的路径被拒时
+   往 stderr 点名那个文件，静默丢掉别人的选择比没有中文更糟。
 7. **strict**：`view_unbound` 列出只被 update/fx 读的状态；派生方法只留视图真绑的。
 
 ## 11 边界枚举
@@ -186,7 +196,7 @@ Msg 增 `appearance: platform.Appearance`。
 - 窗口窄：右格随窗口缩，面板与内容一起缩；转角伸出量取 `min(corner, 宽/2, 高/2)`，面板永不自交。
 - 高对比：主色包跳过，取 house 的高对比语域；纯黑纯白的禁令只对 glass 自己的调色板负责。
 - reduce-motion：`DesignTokens.theme` 已把 motion 换成 reduced，glass 不另加动效。
-- 字体注册失败：SDK 记进派发错误环，窗口照常跑，中文成豆腐块——快照里能看见，验收会红。
+- 没有可用的中文字面：正常状态，界面英文（§2 字体那条）；人写了路径而那枚被拒：stderr 点名文件，窗口照常跑。
 - 没有通道：欢迎页在 plate 内；二进制不在：欢迎页给出「put kusanagi beside glass, or on PATH」。
 - 应答被截断（`output_truncated`）：状态行提示「history too long to show whole」，已解析部分照常。
 - 通道 `peer == null`：对话页显示「waiting for them to join」，撰写框禁用。
@@ -201,8 +211,9 @@ chrome 命令数不对会让 SDK 报 `InvalidChromeCommandCount`——`prefix_co
 
 ## 13 依赖选型
 
-Native SDK 0.10.1（Zig 0.16）；`std.json` 解析。字体：Noto Sans SC（SIL OFL 1.1，Google Fonts
-TrueType 构建）、Geist Mono（SIL OFL 1.1，SDK 捆绑）。不用系统字体（微软雅黑不是 OFL）。
+Native SDK 0.10.1（Zig 0.16）；`std.json` 解析。字面：Geist Mono（SIL OFL 1.1，SDK 捆绑）作等宽；
+正文的中文面由**用户提供**（本机已有），本项目不重分布任何一份。原来的「不用系统字体（微软雅黑
+不是 OFL）」是为捆绑 Noto 而设的，不重分布就没有许可证问题，那条随捆绑一起作废。
 
 ## 14 硬编码声明
 
