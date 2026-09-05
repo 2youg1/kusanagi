@@ -293,7 +293,7 @@ fn here(site: &Site) -> Result<Outcome, Complaint> {
     Ok(Outcome::Here {
         site: root.display().to_string(),
         under_profile: under_profile(root),
-        at_rest: kusanagi_site::store(),
+        at_rest: kusanagi_vault::store(),
         // Whether, never what. A proxy address says which network somebody
         // trusts, which is the kind of fact this report exists to protect.
         proxy: std::env::var("KUSANAGI_PROXY").is_ok_and(|set| !set.trim().is_empty()),

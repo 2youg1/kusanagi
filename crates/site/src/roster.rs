@@ -15,8 +15,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::SiteError;
-use crate::permissions;
 use crate::records;
+use kusanagi_vault as vault;
 
 /// A group: what it is called here, and the channels a message to it reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,7 +77,7 @@ fn path(root: &Path, filed: &str) -> PathBuf {
 /// [`SiteError::Local`] when the file cannot be read, and
 /// [`SiteError::BadRecord`] when it does not decode.
 pub(crate) fn read(root: &Path, filed: &str, name: &str) -> Result<Option<Roster>, SiteError> {
-    permissions::read(&path(root, filed), "read a group")?
+    vault::read(&path(root, filed), "read a group")?
         .map(|bytes| Roster::from_bytes(&bytes, name))
         .transpose()
 }
@@ -90,9 +90,9 @@ pub(crate) fn read(root: &Path, filed: &str, name: &str) -> Result<Option<Roster
 pub(crate) fn write(root: &Path, filed: &str, roster: &Roster) -> Result<(), SiteError> {
     let at = path(root, filed);
     if let Some(parent) = at.parent() {
-        permissions::create_dir(parent, "create the group directory")?;
+        vault::create_dir(parent, "create the group directory")?;
     }
-    permissions::write(&at, &roster.to_bytes(), "write a group")
+    vault::write(&at, &roster.to_bytes(), "write a group").map_err(Into::into)
 }
 
 /// Every group here, with its members, in a stable order.

@@ -26,6 +26,8 @@ blake3.workspace = true
 zeroize.workspace = true
 kusanagi-door.workspace = true
 kusanagi-site.workspace = true
+# Only to name the store that seals this platform's records, for `doctor`.
+kusanagi-vault.workspace = true
 kusanagi-waypoint.workspace = true
 clap.workspace = true
 getrandom.workspace = true

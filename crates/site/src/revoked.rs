@@ -20,7 +20,7 @@ use std::path::Path;
 use kusanagi_grant::{Revocations, StepId};
 
 use crate::error::SiteError;
-use crate::permissions;
+use kusanagi_vault as vault;
 
 /// Every step revoked at this site.
 ///
@@ -29,7 +29,7 @@ use crate::permissions;
 /// [`SiteError::Local`] when the list cannot be read, and
 /// [`SiteError::BadRecord`] when a line is not a step identifier.
 pub(crate) fn all(root: &Path) -> Result<Revocations, SiteError> {
-    let Some(bytes) = permissions::read(&root.join("revoked"), "read the revocation list")? else {
+    let Some(bytes) = vault::read(&root.join("revoked"), "read the revocation list")? else {
         return Ok(Revocations::new());
     };
     let text = core::str::from_utf8(&bytes).map_err(|_| SiteError::BadRecord {
@@ -57,10 +57,11 @@ pub(crate) fn all(root: &Path) -> Result<Revocations, SiteError> {
 pub(crate) fn add(root: &Path, step: StepId) -> Result<(), SiteError> {
     let revoked = all(root)?.revoking(step);
     let lines: Vec<String> = revoked.iter().map(ToString::to_string).collect();
-    permissions::create_dir(root, "create the site directory")?;
-    permissions::write(
+    vault::create_dir(root, "create the site directory")?;
+    vault::write(
         &root.join("revoked"),
         lines.join("\n").as_bytes(),
         "write the revocation list",
     )
+    .map_err(Into::into)
 }

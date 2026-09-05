@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use kusanagi_chain::Cairn;
 
 use crate::error::SiteError;
-use crate::permissions;
+use kusanagi_vault as vault;
 
 /// Where one channel's cairns sit, under the same filed name as its record.
 pub(crate) fn dir(root: &Path, filed: &str) -> PathBuf {
@@ -40,7 +40,7 @@ pub(crate) fn dir(root: &Path, filed: &str) -> PathBuf {
 /// characters that need no checking against [`crate::naming::check`], cannot
 /// escape a directory, and name nobody.
 pub(crate) fn read(root: &Path, filed: &str, filed_author: &str) -> Option<Cairn> {
-    permissions::read(&dir(root, filed).join(filed_author), "read a cairn")
+    vault::read(&dir(root, filed).join(filed_author), "read a cairn")
         .ok()
         .flatten()
         .and_then(|bytes| Cairn::from_bytes(&bytes).ok())
@@ -62,10 +62,11 @@ pub(crate) fn write(
     cairn: &Cairn,
 ) -> Result<(), SiteError> {
     let directory = dir(root, filed);
-    permissions::create_dir(&directory, "create the cairn directory")?;
-    permissions::write(
+    vault::create_dir(&directory, "create the cairn directory")?;
+    vault::write(
         &directory.join(filed_author),
         &cairn.to_bytes(),
         "write a cairn",
     )
+    .map_err(Into::into)
 }

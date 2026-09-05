@@ -12,28 +12,28 @@ use std::fs::{DirBuilder, File, OpenOptions};
 use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
 use std::path::Path;
 
-use crate::error::SiteError;
+use crate::error::VaultError;
 
 /// Creates `path` and every missing parent as `0700`.
-pub(super) fn create_dir(path: &Path, action: &'static str) -> Result<(), SiteError> {
+pub(crate) fn create_dir(path: &Path, action: &'static str) -> Result<(), VaultError> {
     DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(path)
-        .map_err(|source| SiteError::Local { action, source })
+        .map_err(|source| VaultError::Local { action, source })
 }
 
 /// Creates a file that must not already exist, as `0600`.
 ///
 /// `O_CREAT | O_EXCL` refuses an existing name, including a symbolic link,
 /// rather than following it.
-pub(super) fn create_file(path: &Path, action: &'static str) -> Result<File, SiteError> {
+pub(crate) fn create_file(path: &Path, action: &'static str) -> Result<File, VaultError> {
     OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(path)
-        .map_err(|source| SiteError::Local { action, source })
+        .map_err(|source| VaultError::Local { action, source })
 }
 
 /// Pins pages so that a secret read off the disk never reaches swap.
@@ -43,7 +43,7 @@ pub(super) fn create_file(path: &Path, action: &'static str) -> Result<File, Sit
 /// verified, this becomes `mlock` and its `munlock`, with the same contract —
 /// a failure is not reported, because a record that could not be pinned is
 /// still the right record.
-pub(super) const fn lock(_bytes: &[u8]) {}
+pub(crate) const fn lock(_bytes: &[u8]) {}
 
 /// Releases what `lock` pinned.
-pub(super) const fn unlock(_bytes: &[u8]) {}
+pub(crate) const fn unlock(_bytes: &[u8]) {}

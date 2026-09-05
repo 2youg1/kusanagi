@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use kusanagi_seal::Ratchet;
 
 use crate::error::SiteError;
-use crate::permissions;
+use kusanagi_vault as vault;
 
 /// Where one channel's ratchets sit, under the same filed name as its record.
 pub(crate) fn dir(root: &Path, filed: &str) -> PathBuf {
@@ -45,7 +45,7 @@ pub(crate) fn read(
     filed_author: &str,
 ) -> Result<Option<Ratchet>, SiteError> {
     let path = dir(root, filed).join(filed_author);
-    let Some(bytes) = permissions::read(&path, "read a ratchet")? else {
+    let Some(bytes) = vault::read(&path, "read a ratchet")? else {
         return Ok(None);
     };
     Ratchet::from_bytes(&bytes)
@@ -68,10 +68,11 @@ pub(crate) fn write(
     ratchet: &Ratchet,
 ) -> Result<(), SiteError> {
     let directory = dir(root, filed);
-    permissions::create_dir(&directory, "create the ratchet directory")?;
-    permissions::write(
+    vault::create_dir(&directory, "create the ratchet directory")?;
+    vault::write(
         &directory.join(filed_author),
         &ratchet.to_bytes(),
         "write a ratchet",
     )
+    .map_err(Into::into)
 }

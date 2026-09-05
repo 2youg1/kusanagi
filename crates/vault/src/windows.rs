@@ -26,7 +26,7 @@
 //!
 //! **Known limit.** These are the plain Win32 entry points, so a path over the
 //! legacy 260-character limit is refused by the operating system rather than
-//! silently truncated. It arrives as [`SiteError::Local`] carrying the real
+//! silently truncated. It arrives as [`VaultError::Local`] carrying the real
 //! error, and the answer is a shorter `--root`.
 
 #![expect(
@@ -58,7 +58,7 @@ use windows_sys::Win32::System::Threading::{GetCurrentProcess, SetProcessWorking
 
 use zeroize::Zeroize as _;
 
-use crate::error::SiteError;
+use crate::error::VaultError;
 
 /// The access list every file and directory of a site is created with.
 ///
@@ -82,7 +82,7 @@ struct Descriptor(PSECURITY_DESCRIPTOR);
 
 impl Descriptor {
     /// Builds the descriptor [`SDDL`] describes.
-    fn of_this_account() -> Result<Self, SiteError> {
+    fn of_this_account() -> Result<Self, VaultError> {
         let text = wide(OsStr::new(SDDL));
         let mut raw: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
         // SAFETY: `text` is a NUL-terminated UTF-16 buffer that outlives this
@@ -97,7 +97,7 @@ impl Descriptor {
             )
         };
         if built == 0 {
-            return Err(SiteError::Permissions {
+            return Err(VaultError::Permissions {
                 what: "build the access list a site needs",
                 source: std::io::Error::last_os_error(),
             });
@@ -109,9 +109,9 @@ impl Descriptor {
     ///
     /// The returned value points into `self`, so it must not outlive it. Every
     /// caller here builds it, uses it and drops it inside one function.
-    fn attributes(&self) -> Result<SECURITY_ATTRIBUTES, SiteError> {
+    fn attributes(&self) -> Result<SECURITY_ATTRIBUTES, VaultError> {
         let length = u32::try_from(size_of::<SECURITY_ATTRIBUTES>()).map_err(|_| {
-            SiteError::Permissions {
+            VaultError::Permissions {
                 what: "describe the access list to the operating system",
                 source: std::io::Error::other("SECURITY_ATTRIBUTES does not fit in a u32"),
             }
@@ -140,7 +140,7 @@ impl Drop for Descriptor {
 /// A parent that already exists keeps the list it has, exactly as a directory
 /// this build did not create keeps its mode on Unix. Everything inside is
 /// closed regardless.
-pub(super) fn create_dir(path: &Path, action: &'static str) -> Result<(), SiteError> {
+pub(crate) fn create_dir(path: &Path, action: &'static str) -> Result<(), VaultError> {
     let descriptor = Descriptor::of_this_account()?;
     let attributes = descriptor.attributes()?;
     // Shallowest first, so a parent exists before its child is asked for.
@@ -164,7 +164,7 @@ pub(super) fn create_dir(path: &Path, action: &'static str) -> Result<(), SiteEr
                 .raw_os_error()
                 .and_then(|raw| u32::try_from(raw).ok());
             if code != Some(ERROR_ALREADY_EXISTS) {
-                return Err(SiteError::Local {
+                return Err(VaultError::Local {
                     action,
                     source: refused,
                 });
@@ -187,7 +187,7 @@ pub(super) fn create_dir(path: &Path, action: &'static str) -> Result<(), SiteEr
 ///
 /// Sharing is denied outright — the third argument is zero — because nothing
 /// should be reading a channel secret while it is being written.
-pub(super) fn create_file(path: &Path, action: &'static str) -> Result<File, SiteError> {
+pub(crate) fn create_file(path: &Path, action: &'static str) -> Result<File, VaultError> {
     let descriptor = Descriptor::of_this_account()?;
     let attributes = descriptor.attributes()?;
     let name = wide(path.as_os_str());
@@ -206,7 +206,7 @@ pub(super) fn create_file(path: &Path, action: &'static str) -> Result<File, Sit
         )
     };
     if handle == INVALID_HANDLE_VALUE {
-        return Err(SiteError::Local {
+        return Err(VaultError::Local {
             action,
             source: std::io::Error::last_os_error(),
         });
@@ -227,12 +227,12 @@ fn wide(text: &OsStr) -> Vec<u16> {
 /// `CRYPTPROTECT_UI_FORBIDDEN` because a one-shot command must never stop for a
 /// dialogue; the extra entropy binds a blob to this program, so a blob lifted
 /// out of a site does not open under another application's call.
-pub(crate) fn protect(plain: &[u8]) -> Result<Vec<u8>, SiteError> {
+pub(crate) fn protect(plain: &[u8]) -> Result<Vec<u8>, VaultError> {
     crypt(plain, Direction::Seal)
 }
 
 /// Opens what [`protect`] sealed, under the account that sealed it.
-pub(crate) fn unprotect(sealed: &[u8]) -> Result<Vec<u8>, SiteError> {
+pub(crate) fn unprotect(sealed: &[u8]) -> Result<Vec<u8>, VaultError> {
     crypt(sealed, Direction::Open)
 }
 
@@ -251,8 +251,8 @@ enum Direction {
 const ENTROPY: &[u8] = b"kusanagi/site/1";
 
 /// One call through DPAPI, in either direction.
-fn crypt(input: &[u8], direction: Direction) -> Result<Vec<u8>, SiteError> {
-    let refused = |what: &'static str| SiteError::Permissions {
+fn crypt(input: &[u8], direction: Direction) -> Result<Vec<u8>, VaultError> {
+    let refused = |what: &'static str| VaultError::Permissions {
         what,
         source: std::io::Error::last_os_error(),
     };
@@ -318,8 +318,8 @@ fn crypt(input: &[u8], direction: Direction) -> Result<Vec<u8>, SiteError> {
 ///
 /// It borrows rather than owns: nothing here allocated the bytes and nothing
 /// here frees them, so the blob is valid exactly as long as the slice is.
-fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SiteError> {
-    let len = u32::try_from(bytes.len()).map_err(|_| SiteError::Permissions {
+fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, VaultError> {
+    let len = u32::try_from(bytes.len()).map_err(|_| VaultError::Permissions {
         what: "describe a site record to the operating system",
         source: std::io::Error::other("a record is larger than four gigabytes"),
     })?;
@@ -345,7 +345,7 @@ fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SiteError> {
 /// right record, and refusing to read it would turn a tightened working-set
 /// quota into an endpoint that cannot open its own channels. What is done
 /// instead is raising the quota once, below, so the common cause cannot arise.
-pub(super) fn lock(bytes: &[u8]) {
+pub(crate) fn lock(bytes: &[u8]) {
     if bytes.is_empty() {
         return;
     }
@@ -357,7 +357,7 @@ pub(super) fn lock(bytes: &[u8]) {
 }
 
 /// Releases what [`lock`] pinned. Call it *after* erasing, never before.
-pub(super) fn unlock(bytes: &[u8]) {
+pub(crate) fn unlock(bytes: &[u8]) {
     if bytes.is_empty() {
         return;
     }

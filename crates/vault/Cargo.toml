@@ -1,0 +1,33 @@
+[package]
+name = "kusanagi-vault"
+description = "How a file is asked to belong to one account: creation-time permissions, pinned pages, and the platform store that seals bytes at rest."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+# Erasure for every buffer a record is read into.
+zeroize.workspace = true
+
+# The access list every file is created with. Microsoft's own binding, so the
+# vendor count does not move; `vault::windows` is the only module in this
+# workspace with `unsafe` in it.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    # VirtualLock, so a secret read off the disk never reaches the page file,
+    # and the working-set quota that bounds it.
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+] }
+
+[lints]
+workspace = true

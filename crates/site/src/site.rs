@@ -58,10 +58,10 @@ use crate::cairns;
 use crate::channel::Channel;
 use crate::error::SiteError;
 use crate::naming;
-use crate::permissions;
 use crate::records;
 use crate::revoked;
 use crate::roster::{self, Roster};
+use kusanagi_vault as vault;
 
 /// One endpoint's local state.
 #[derive(Debug, Clone)]
@@ -103,7 +103,7 @@ impl Site {
     /// the one place it is meant to leave the disk.
     pub(crate) fn seed(&self) -> Result<Option<[u8; 32]>, SiteError> {
         let Some(bytes) =
-            permissions::read(&self.root.join("identity"), "read this endpoint's identity")?
+            vault::read(&self.root.join("identity"), "read this endpoint's identity")?
         else {
             return Ok(None);
         };
@@ -140,7 +140,7 @@ impl Site {
             return Ok(existing);
         }
         self.make_root()?;
-        permissions::write_new(&self.root.join("identity"), seed, "write an identity")?;
+        vault::write_new(&self.root.join("identity"), seed, "write an identity")?;
         Ok(Signer::from_seed(seed))
     }
 
@@ -151,7 +151,7 @@ impl Site {
     /// [`SiteError::UnknownChannel`] when there is no such channel.
     pub fn channel(&self, name: &str) -> Result<Channel, SiteError> {
         let path = self.channel_path(name)?;
-        match permissions::read(&path, "read a channel")? {
+        match vault::read(&path, "read a channel")? {
             None => Err(SiteError::UnknownChannel {
                 name: name.to_owned(),
             }),
@@ -198,9 +198,9 @@ impl Site {
         let filed = self.filed(&channel.name)?.ok_or(SiteError::NoIdentity)?;
         let path = self.root.join("channels").join(filed);
         if let Some(parent) = path.parent() {
-            permissions::create_dir(parent, "create the channel directory")?;
+            vault::create_dir(parent, "create the channel directory")?;
         }
-        permissions::write(&path, &channel.to_bytes(), "write a channel")
+        vault::write(&path, &channel.to_bytes(), "write a channel").map_err(Into::into)
     }
 
     /// How far one author's stream on one channel has been verified.
@@ -345,7 +345,7 @@ impl Site {
     }
 
     fn make_root(&self) -> Result<(), SiteError> {
-        permissions::create_dir(&self.root, "create the site directory")
+        vault::create_dir(&self.root, "create the site directory").map_err(Into::into)
     }
 
     /// Where the record for `name` sits, if this site could hold one at all.

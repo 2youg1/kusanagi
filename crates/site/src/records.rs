@@ -13,7 +13,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::SiteError;
-use crate::permissions::{self, Locked};
+use kusanagi_vault::{self as vault, Locked};
 
 /// The bytes of every record in `directory`, or none when it does not exist.
 ///
@@ -42,7 +42,7 @@ pub(crate) fn each(
         if entry.file_name().to_string_lossy().starts_with('.') {
             continue;
         }
-        if let Some(bytes) = permissions::read(&entry.path(), action)? {
+        if let Some(bytes) = vault::read(&entry.path(), action)? {
             found.push(bytes);
         }
     }

@@ -170,6 +170,7 @@ kernel      identifiers, identity, signed segments, canonical bytes, seams
   grant     issue, attenuate, verify, revoke
   waypoint  directory / memory / HTTP / S3, conformance, probe — how to reach a host
     box     the box server — how to be one
+  vault     how the operating system is asked to hold a file for one account
   site      one endpoint's own disk: identity, channel records, invitations
   door      what a verb answers and how a failure recovers
 kusanagi    the verbs and the one assembly point
@@ -196,15 +197,15 @@ never copied here, because a number kept in two places drifts.
 **The crate limit moved once, 2,500 to 4,000, because the two are met by different
 acts.** Splitting answers a long file and never a full crate, whose number counts every
 `.rs` under `src/`: there the answers are deleting a feature or moving one to a crate
-with a reason to hold it. The extraction still available is named in `site-SPEC.md` §7.
+with a reason to hold it — which is what `vault` is.
 
-Three crates exist because the budget forced a split, argued where it happened rather
+Four crates exist because the budget forced a split, argued where it happened rather
 than here: `kusanagi` gave up the disk formats to `site` (`site-SPEC.md` §3) and the
-output contract to `door` (`door-SPEC.md` §4), and `waypoint` gave up the server to
-`box`, **overturning `waypoint-SPEC.md` §7** because separating two jobs — *reaching* a
-host and *being* one — beat separating two implementations of one seam. What that
-reversal feared is held by a test: the box's own tests drive the shipped client against
-the shipped server.
+output contract to `door` (`door-SPEC.md` §4), `site` gave up the platform matrix to
+`vault` (`vault-SPEC.md` §1), and `waypoint` gave up the server to `box`, **overturning
+`waypoint-SPEC.md` §7** because separating two jobs — *reaching* a host and *being* one —
+beat separating two implementations of one seam. What that reversal feared is held by a
+test: the box's own tests drive the shipped client against the shipped server.
 
 **Outside the workspace.** `adversary/` is a Haskell counterexample hunter — not a crate,
 not a dependency, not released, not counted here. §8 says what stops it becoming an authority.
@@ -351,14 +352,13 @@ Reopening one requires a reason that did not exist when it was taken.
   invitation carries the channel secret, so `join` reads it from stdin and has no second
   way in; a channel name is worse, leaking who talks to whom on every message, so every
   flag that takes one accepts `-` and reads it from the first line of stdin instead.
-- **A site is readable by its owner and nobody else, and no file in it is named after
-  anybody.** `0600` and `0700` on Unix, an access list naming only the owner and `SYSTEM`
-  on Windows — established at creation and never adjusted after, because `set_permissions`
-  and `SetNamedSecurityInfoW` both resolve a path, so a build that re-permissions what it
-  did not create can be aimed at what it did not choose; a replacement renames over it. A
-  channel is filed under a keyed hash of its name, so a listing gives up a count and not a
-  graph. The attacker this answers is a second account on a shared machine, not a nation
-  state.
+- **A site is readable by its owner and nobody else, and no file in it is named after anybody.**
+  `0600` and `0700` on Unix, an access list naming only the owner and `SYSTEM` on Windows —
+  established at creation and never adjusted after, because `set_permissions` and
+  `SetNamedSecurityInfoW` both resolve a path, so a build that re-permissions what it did not
+  create can be aimed at what it did not choose; a replacement renames over it. A channel is
+  filed under a keyed hash of its name, so a listing gives up a count and not a graph. `vault` holds
+  every one of those answers, and the attacker they answer is a second account on a shared machine, not a nation state.
 - **Secrets erase themselves and cannot be compared.** `Secret`, `Stream` and `Key` are
   `ZeroizeOnDrop`, so a channel secret does not outlive its value in freed memory, a core
   dump or a swap file. None implements `PartialEq`, because a derived comparison runs in a

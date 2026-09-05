@@ -13,27 +13,14 @@ kusanagi-kernel.workspace = true
 kusanagi-chain.workspace = true
 kusanagi-grant.workspace = true
 kusanagi-seal.workspace = true
+# The one way bytes reach this disk and come back: creation-time permissions,
+# pinned pages, and the platform store that seals at rest.
+kusanagi-vault.workspace = true
 # The keyed hash that files a channel under something other than its name.
 blake3.workspace = true
 thiserror.workspace = true
 # Erasure for the identity seed on its way into an archive.
 zeroize.workspace = true
-
-# The access list every site file is created with. Microsoft's own binding, so
-# the vendor count does not move; `site::permissions::windows` is the only module
-# that touches it, and the only module in this workspace with `unsafe` in it.
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Security_Authorization",
-    "Win32_Security_Cryptography",
-    "Win32_Storage_FileSystem",
-    # VirtualLock, so a channel secret read off the disk never reaches the page
-    # file, and the working-set quota that bounds it.
-    "Win32_System_Memory",
-    "Win32_System_Threading",
-] }
 
 [dev-dependencies]
 proptest.workspace = true

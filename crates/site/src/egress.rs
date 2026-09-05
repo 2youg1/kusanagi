@@ -15,8 +15,8 @@
 use std::path::Path;
 
 use crate::error::SiteError;
-use crate::permissions;
 use crate::site::Site;
+use kusanagi_vault as vault;
 
 /// How this site is allowed to reach a host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,7 +37,7 @@ const REQUIRED: &[u8] = b"proxy-required";
 /// [`SiteError::Local`] when the record cannot be read, and
 /// [`SiteError::BadRecord`] when it holds a word this build does not know.
 fn read(root: &Path) -> Result<Egress, SiteError> {
-    let Some(bytes) = permissions::read(&root.join(FILE), "read the egress record")? else {
+    let Some(bytes) = vault::read(&root.join(FILE), "read the egress record")? else {
         return Ok(Egress::Free);
     };
     if bytes.trim_ascii() == REQUIRED {
@@ -56,10 +56,10 @@ fn read(root: &Path) -> Result<Egress, SiteError> {
 ///
 /// [`SiteError::Local`] when the record cannot be written.
 fn write(root: &Path, egress: Egress) -> Result<(), SiteError> {
-    permissions::create_dir(root, "create the site directory")?;
+    vault::create_dir(root, "create the site directory")?;
     match egress {
         Egress::ProxyRequired => {
-            permissions::write(&root.join(FILE), REQUIRED, "write the egress record")
+            vault::write(&root.join(FILE), REQUIRED, "write the egress record").map_err(Into::into)
         }
         Egress::Free => match std::fs::remove_file(root.join(FILE)) {
             Ok(()) => Ok(()),

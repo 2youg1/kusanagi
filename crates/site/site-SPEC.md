@@ -16,7 +16,7 @@
 | U4 撤销表 | `Site::revocations` / `Site::revoke` | 重复撤销不重复计数；跨进程可见 |
 | U5 邀请 | `Invite` 的 `kusanagi2:` 一行文本形式 | 往返恒等；缺前缀、改套件字节各得错误 |
 | U6 失败形状 | `SiteError` 三个变体 | 每个变体在门那一层拿到稳定码；门加不出第四个码就编译不过 |
-| U7 只有主人能读 | `permissions/`：本 crate 写盘的唯一入口，平台差异是文件不是分支 | 站点里没有任何文件或目录对其他账号可读——Unix 看模式位，Windows 看受保护 DACL；被替换的记录是新 inode / 新句柄，生下来就是关的 |
+| U7 只有主人能读 | `kusanagi-vault`：本 crate 写盘的唯一入口，平台差异是文件不是分支 | 站点里没有任何文件或目录对其他账号可读——Unix 看模式位，Windows 看受保护 DACL；被替换的记录是新 inode / 新句柄，生下来就是关的 |
 
 ## 2 验收标准
 
@@ -34,7 +34,7 @@
 | 本构建未曾创建的**目录**保持原模式 | 里面每个文件仍是 `0600`，因此暴露的是通道名的集合而不是内容。关上它需要 chmod 一个本构建未曾创建的目录，那正是上一行禁止的操作 |
 | Windows 走 `CreateDirectoryW` / `CreateFileW` + SDDL `D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)` | **缺口已关。** `D:P` 拒绝继承——落在别人打开过的目录下的站点不会跟着被打开；`OW` 是 OWNER RIGHTS，即创建者本人，因此代码不必去问「现在是谁在跑」；`SY` 是 SYSTEM，缺它则备份、索引与更新以没人能联系到本程序的方式失败。**不列 Administrators**：他们能取得任何对象的所有权，列了也防不住谁 |
 | 不用 `SetNamedSecurityInfoW`，也不用 `OpenOptionsExt::security_attributes` | 前者按路径解析，站点将去的位置上被预埋一个 junction 就会把这次修改指向别人的目录；后者在 std 里仍未稳定。所以直接 `CreateFileW` 拿句柄再 `File::from_raw_handle` | 
-| **`unsafe` 有且只有一个地址** | `site::permissions::windows`，四个 FFI 调用、每个一个 `unsafe {}` 与一行 `// SAFETY:`。根 `Cargo.toml` 由 `forbid` 降到 `deny` 并把该模块写进允许清单第三行。两个现成的封装 crate（`windows-acl` 2019、`windows-permissions` 2020）都无人维护——把 `unsafe` 塞进一个五年没动的依赖不是消除它，是把它挪到本仓库没人读的地方 |
+| **`unsafe` 有且只有一个地址** | `vault::windows`，理由与代价见 `vault-SPEC.md` §5 |
 | 通道名字符集 | `a-z0-9-`、1..=32、**首字符不是 `-`** | 放宽须同时想清路径、shell、URL 三处；首字符那条另有理由，见 §10 步骤 1 |
 | 一条通道几方 | 两方 | cohort 落地后由名册决定 |
 
@@ -76,10 +76,6 @@ site.rs     Site —— 站点的入口：identity、channels，以及向下面�
 cairns.rs   <root>/cairns/<filed>/<filed_author> —— 写会报错、读永不报错的那一对
 roster.rs   <root>/groups/<filed> —— 一个群组发给哪几条通道
 archive.rs  export / import —— 整个站点封进一串字节，再放回来
-at_rest.rs  站点静态加密：标签字节 + 每平台一个存储
-permissions/mod.rs      暂存与改名：每个平台都一样的那一半
-permissions/unix.rs     创建时定模式位：目录 0700、文件 0600
-permissions/windows.rs  创建时挂受保护 DACL —— 全仓唯一含 `unsafe` 的模块
 naming.rs   名字能长什么样，以及它的文件叫什么（两条规则，一处）
 revoked.rs  <root>/revoked —— 撤销表，活得比通道记录长
 egress.rs   <root>/egress —— 一行 `proxy-required`：本站点是否允许无代理出网（K12）；缺席即允许，写成别的字即 `site.bad_record`
@@ -102,11 +98,12 @@ error.rs    SiteError —— 本机失败的几种形状
 依赖 `kernel`、`grant`、`seal` 与 `thiserror`。**不依赖 `waypoint`**：本 crate 不做网络，
 也不知道 locator 指向什么，它只把那串文本原样存下与取出。
 
-**下一次撞到 crate 行数上限时要拆的是 `permissions/` 与 `at_rest`（约 590 行）。**
-它们不是「端点在自己盘上存了什么」，而是「怎么请操作系统把一个文件锁在一个账户上」；
-它们持有全仓唯一的 `unsafe`、唯一的 `windows-sys` 依赖与唯一的平台矩阵。单独成 crate 后，
-允许清单第三行从「一个模块」变成「一个 crate」，边界反而更硬。**今天不做**：
-行数上限已按用户裁决提到 4 000，而拆一个 crate 的代价当下高于它买到的东西。
+**`permissions/` 与 `at_rest` 已拆为 `kusanagi-vault`（714 行）。** 触发它的是 W1 盲读：
+身份记录与通道记录都要加 ward，而本 crate 已到 3 645 / 4 000。拆走的那一块不是「端点在自己
+盘上存了什么」，而是「怎么请操作系统把一个文件锁在一个账户上」；全仓唯一的 `unsafe`、唯一的
+`windows-sys` 依赖与唯一的平台矩阵随它一同过去，允许清单第三行因此从「一个模块」变成
+「一个 crate」。形状与理由在 `crates/vault/vault-SPEC.md`；本 crate 只留下一处逆向映射：
+`error.rs` 的 `From<VaultError> for SiteError`，逐臂，因为两边都不是 `#[non_exhaustive]`。
 
 **为什么 `rhythm.rs` 单独一个文件**：它装的三份记录共有一条别处没有的性质——**丢掉任何一份，
 都没有任何宿主或对端能还回来**。cairn 重走一遍流就能重建；一条排队中的正文只对调用方承诺过、
@@ -220,7 +217,7 @@ Invite  ：一行文本 ⇄ 定长字节，套件字节不匹配即拒
 | `seal` | Channel 持有 Secret |
 | `thiserror` | 与其他 crate 同一套错误派生 |
 | `zeroize` | 身份种子进归档的路上要能被擦掉；仓库已有 |
-| `windows-sys` 0.61（仅 `cfg(windows)`） | 微软自己发布的绑定，只开 `Win32_Foundation` / `Win32_Security` / `Win32_Security_Authorization` / `Win32_Storage_FileSystem` 四个特性。J3 之后它已彻底离开依赖树，所以这是**我们显式声明的**一个供应商，不是「反正已经在树里了」 |
+| `kusanagi-vault` | 本 crate 写盘与读盘的唯一入口；平台矩阵与全仓唯一的 `unsafe` 住在那里 |
 
 `serde` **不在此列**：被签名或被哈希的东西一律手写编码，磁盘格式也是手写的。
 
@@ -285,7 +282,7 @@ version 1 byte = 1 | inviter 2592 bytes | grant 其余
 - 读到本平台打不开的标签 → `SiteError::ForeignRecord`，码 `site.foreign_record`，恢复是
   「在做出它的平台上 `export`，把归档 pipe 进这里的 `import`」——`archive.rs` 写的是明文形态的
   记录，正是为了让这条恢复路径不需要为每一对平台各写一份迁移代码。
-- **封与开只有一处**：`permissions::write` / `write_new` 出去时封，新增的 `permissions::read`
+- **封与开只有一处**：`vault::write` / `write_new` 出去时封，`vault::read`
   进来时开。site 里所有 `fs::read` 都改成走它，于是「哪些文件要加密」不再是一个需要记住的清单。
 - Windows 用 `CryptProtectData` / `CryptUnprotectData`，`CRYPTPROTECT_UI_FORBIDDEN`（一次性
   动词绝不能停下来等对话框），附加熵常量 `b"kusanagi/site/1"`——它不是密钥也不假装是，买到的是
@@ -362,7 +359,7 @@ retention     1 byte    0 = 保留；1 = 对端确认后释放
 1. 本文。
 2. `ARCHITECTURE.md` §4 词表（`Site`）、§5 crate 图与行数表。
 3. `crates/kusanagi/kusanagi-SPEC.md` §7 模块边界。
-4. `AGENTS.md`「机器持有的规则」的 `unsafe` 一行与允许清单条数；根 `Cargo.toml` 的允许清单。
+4. `AGENTS.md`「机器持有的规则」的 `unsafe` 一行与允许清单条数；根 `Cargo.toml` 的允许清单；`crates/vault/vault-SPEC.md`。
 5. `crates/door/door-SPEC.md` §12——`site.permissions` 这个码。
 
 

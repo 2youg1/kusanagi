@@ -30,12 +30,12 @@
 //! The tag is a byte rather than a build assumption because **a site outlives
 //! the machine it was made on**. A record this platform cannot open is refused
 //! by name, with the one instruction that works: export it where it was made and
-//! import it here. `archive.rs` writes plaintext records for exactly that reason,
+//! import it here. `site::archive` writes plaintext records for exactly that reason,
 //! so the migration path needs no code per platform pair.
 
-use crate::error::SiteError;
+use crate::error::VaultError;
 #[cfg(windows)]
-use crate::permissions;
+use crate::platform;
 
 /// The bytes follow in the clear.
 const PLAIN: u8 = 0x00;
@@ -66,13 +66,13 @@ pub const fn store() -> &'static str {
 ///
 /// # Errors
 ///
-/// [`SiteError::Permissions`] when the platform store refuses. It is a refusal
+/// [`VaultError::Permissions`] when the platform store refuses. It is a refusal
 /// rather than a fallback: writing in the clear because encryption failed would
 /// silently withdraw the property this exists for.
-pub(crate) fn seal_at_rest(plain: &[u8]) -> Result<Vec<u8>, SiteError> {
+pub(crate) fn seal_at_rest(plain: &[u8]) -> Result<Vec<u8>, VaultError> {
     let mut out = vec![HERE];
     #[cfg(windows)]
-    out.extend_from_slice(&permissions::protect(plain)?);
+    out.extend_from_slice(&platform::protect(plain)?);
     #[cfg(not(windows))]
     out.extend_from_slice(plain);
     Ok(out)
@@ -82,18 +82,18 @@ pub(crate) fn seal_at_rest(plain: &[u8]) -> Result<Vec<u8>, SiteError> {
 ///
 /// # Errors
 ///
-/// [`SiteError::ForeignRecord`] for a tag this platform has no store for, and
-/// [`SiteError::Permissions`] when the store has one and refuses \u2014 which on
+/// [`VaultError::ForeignRecord`] for a tag this platform has no store for, and
+/// [`VaultError::Permissions`] when the store has one and refuses \u2014 which on
 /// Windows means a different account, or the same account after an
 /// administrator reset its password.
-pub(crate) fn open_at_rest(stored: &[u8]) -> Result<Vec<u8>, SiteError> {
+pub(crate) fn open_at_rest(stored: &[u8]) -> Result<Vec<u8>, VaultError> {
     let (tag, body) = stored
         .split_first()
-        .ok_or(SiteError::ForeignRecord { tag: PLAIN })?;
+        .ok_or(VaultError::ForeignRecord { tag: PLAIN })?;
     match *tag {
         PLAIN => Ok(body.to_vec()),
         #[cfg(windows)]
-        DPAPI => permissions::unprotect(body),
-        other => Err(SiteError::ForeignRecord { tag: other }),
+        DPAPI => platform::unprotect(body),
+        other => Err(VaultError::ForeignRecord { tag: other }),
     }
 }

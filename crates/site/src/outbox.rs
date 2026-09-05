@@ -31,7 +31,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::SiteError;
-use crate::permissions;
+use kusanagi_vault as vault;
 
 /// How wide a sequence number is written, which is `u64::MAX` in decimal.
 const WIDTH: usize = 20;
@@ -60,16 +60,17 @@ fn dir(root: &Path, filed: &str) -> PathBuf {
 /// [`SiteError::Local`] when the queue cannot be read or the record written.
 pub(crate) fn push(root: &Path, filed: &str, payload: &[u8]) -> Result<(), SiteError> {
     let directory = dir(root, filed);
-    permissions::create_dir(&directory, "create the outbox")?;
+    vault::create_dir(&directory, "create the outbox")?;
     let next = tickets(&directory, "read the outbox")?
         .last()
         .and_then(|ticket| ticket.parse::<u64>().ok())
         .map_or(0, |highest| highest.saturating_add(1));
-    permissions::write_new(
+    vault::write_new(
         &directory.join(format!("{next:0WIDTH$}")),
         payload,
         "queue a payload",
     )
+    .map_err(Into::into)
 }
 
 /// Everything waiting on this channel, oldest first.
@@ -87,7 +88,7 @@ pub(crate) fn all(root: &Path, filed: &str) -> Result<Vec<Queued>, SiteError> {
     let action = "read the outbox";
     let mut waiting = Vec::new();
     for ticket in tickets(&directory, action)? {
-        if let Some(payload) = permissions::read(&directory.join(&ticket), action)? {
+        if let Some(payload) = vault::read(&directory.join(&ticket), action)? {
             waiting.push(Queued {
                 ticket,
                 payload: payload.to_vec(),

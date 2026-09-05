@@ -38,7 +38,7 @@ fn the_report_says_what_this_machine_is_actually_doing() {
 
     // `at_rest.rs` decides this, and `at_rest.rs` is what the test for it reads.
     // Two names for one store would be two authorities.
-    assert_eq!(report["at_rest"], kusanagi_site::store());
+    assert_eq!(report["at_rest"], kusanagi_vault::store());
 
     // `%TEMP%` is `%LOCALAPPDATA%\Temp`, so a scratch site is under the profile
     // — which is the same fact `site/tests/unreadable_windows.rs` leans on when

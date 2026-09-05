@@ -7,6 +7,7 @@ members = [
     "crates/grant",
     "crates/waypoint",
     "crates/box",
+    "crates/vault",
     "crates/site",
     "crates/door",
     "crates/kusanagi",
@@ -27,6 +28,7 @@ kusanagi-waypoint = { path = "crates/waypoint", version = "0.0.1" }
 kusanagi-box = { path = "crates/box", version = "0.0.1" }
 kusanagi-seal = { path = "crates/seal", version = "0.0.1" }
 kusanagi-grant = { path = "crates/grant", version = "0.0.1" }
+kusanagi-vault = { path = "crates/vault", version = "0.0.1" }
 kusanagi-site = { path = "crates/site", version = "0.0.1" }
 kusanagi-door = { path = "crates/door", version = "0.0.1" }
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
@@ -72,7 +74,7 @@ ureq = { version = "3", default-features = false, features = [
     "socks-proxy",
 ] }
 proptest = "1"
-# Win32, for `site::permissions::windows` alone. Microsoft publishes it, so it
+# Win32, for `vault::windows` alone. Microsoft publishes it, so it
 # adds no vendor this tree did not already trust for the toolchain itself.
 windows-sys = { version = "0.61", default-features = false }
 
@@ -80,7 +82,7 @@ windows-sys = { version = "0.61", default-features = false }
 # A `#[expect]` in non-test code is permitted ONLY for a lint named here:
 #
 #   clippy::disallowed_methods — at exactly one function, `kusanagi::world::sample`.
-#   unsafe_code — at exactly one module, `site::permissions::windows`, whose entire
+#   unsafe_code — at exactly one module, `vault::windows`, whose entire
 #     job is to hand the operating system a security descriptor. Four FFI calls, one
 #     `unsafe {}` block each, one `// SAFETY:` line each. `forbid` was the rule until
 #     a Windows access list had to be written, and the two published wrappers for that

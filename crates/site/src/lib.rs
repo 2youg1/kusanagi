@@ -21,7 +21,6 @@
 //! (`kusanagi channels`, `--root`) that only a front end knows it has.
 
 mod archive;
-mod at_rest;
 mod blocks;
 mod cadence;
 mod cairns;
@@ -32,7 +31,6 @@ mod invite;
 mod naming;
 mod offer;
 mod outbox;
-mod permissions;
 mod ratchets;
 mod records;
 mod retention;
@@ -43,7 +41,6 @@ mod site;
 mod slots;
 
 pub use archive::{export, import};
-pub use at_rest::store;
 pub use cadence::Cadence;
 pub use channel::{Channel, Peer, Standing};
 pub use egress::Egress;

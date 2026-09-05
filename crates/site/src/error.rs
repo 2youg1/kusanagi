@@ -14,6 +14,7 @@
 
 use kusanagi_grant::GrantError;
 use kusanagi_kernel::{DigestParseError, HexError};
+use kusanagi_vault::VaultError;
 
 /// Why a site operation did not happen.
 ///
@@ -107,6 +108,21 @@ pub enum SiteError {
     /// A grant inside a record or an invitation does not decode.
     #[error(transparent)]
     Grant(#[from] GrantError),
+}
+
+/// What the disk refused, said in this layer's words.
+///
+/// One arm each, because the three shapes `kusanagi-vault` can fail in are three
+/// shapes the door already prices. Widening either enum without the other stops
+/// the build, which is the point of neither being `#[non_exhaustive]`.
+impl From<VaultError> for SiteError {
+    fn from(error: VaultError) -> Self {
+        match error {
+            VaultError::Local { action, source } => Self::Local { action, source },
+            VaultError::Permissions { what, source } => Self::Permissions { what, source },
+            VaultError::ForeignRecord { tag } => Self::ForeignRecord { tag },
+        }
+    }
 }
 
 /// Sealed bytes that will not open are one answer here, whatever went wrong.

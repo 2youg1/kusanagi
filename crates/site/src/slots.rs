@@ -22,7 +22,7 @@
 use std::path::Path;
 
 use crate::error::SiteError;
-use crate::permissions;
+use kusanagi_vault as vault;
 
 /// Which slot was last filled on this channel, if any has been.
 ///
@@ -32,7 +32,7 @@ use crate::permissions;
 /// [`SiteError::BadRecord`] when it is not a slot number.
 pub(crate) fn read(root: &Path, filed: &str) -> Result<Option<u64>, SiteError> {
     let path = root.join("slots").join(filed);
-    let Some(bytes) = permissions::read(&path, "read the last slot")? else {
+    let Some(bytes) = vault::read(&path, "read the last slot")? else {
         return Ok(None);
     };
     <[u8; 8]>::try_from(&*bytes)
@@ -50,10 +50,11 @@ pub(crate) fn read(root: &Path, filed: &str) -> Result<Option<u64>, SiteError> {
 /// [`SiteError::Local`] when the record cannot be written.
 pub(crate) fn write(root: &Path, filed: &str, slot: u64) -> Result<(), SiteError> {
     let directory = root.join("slots");
-    permissions::create_dir(&directory, "create the slot directory")?;
-    permissions::write(
+    vault::create_dir(&directory, "create the slot directory")?;
+    vault::write(
         &directory.join(filed),
         &slot.to_be_bytes(),
         "write the last slot",
     )
+    .map_err(Into::into)
 }
