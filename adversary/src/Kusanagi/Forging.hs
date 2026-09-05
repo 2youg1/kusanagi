@@ -163,15 +163,18 @@ swappedDropsAreRefused door ground = do
       pure (neverShown "swapped drops" "first" answer >> neverShown "swapped drops" "second" answer)
     _ -> pure (Left "the author did not write two segments")
 
--- | A hundred extra objects on the host change nothing a reader reports,
--- because a reader derives addresses and never lists what the host has.
+-- | A hundred extra objects in the reader's own bin change nothing a reader
+-- reports: the reader takes the bin whole and keeps what its addresses match.
 junkChangesNothing :: Door -> Ground -> IO (Either String ())
 junkChangesNothing door ground = do
   stage <- talk door ground Alice Bob (fresh "the-host-is-never-listed")
-  mapM_ (say door (talkWriter stage) (talkChannel stage)) ["one", "two", "three"]
+  said <- mapM (say door (talkWriter stage) (talkChannel stage)) ["one", "two", "three"]
   before <- hear door (talkReader stage) (talkChannel stage)
+  let bin = case said of
+        (first : _) -> binOf first
+        [] -> ""
   forM_ [0 :: Int .. 99] $ \n ->
-    plant ground (Address (Text.pack (junkName n))) (ByteString.replicate 131072 (fromIntegral n))
+    plant ground (Address (bin <> "/" <> Text.pack (junkName n))) (ByteString.replicate 131072 (fromIntegral n))
   after <- hear door (talkReader stage) (talkChannel stage)
   pure $
     if before == after
@@ -213,8 +216,9 @@ theFirstPeerIsPinned door ground = do
       then Right ()
       else Left ("the listed peer changed from " <> show peerBefore <> " to " <> show peerAfter)
 
--- | On a releasing channel an acknowledged drop leaves the host, and putting
--- a copy back does not bring it back to either reader.
+-- | On a releasing channel an acknowledged drop stays on the host — a reader
+-- names no address, and a delete would (D-20) — and it opens for nobody:
+-- neither reader reports it again, and neither disk holds it.
 aReleasedDropIsGoneAndStaysGone :: Door -> Ground -> IO (Either String ())
 aReleasedDropIsGoneAndStaysGone door ground = do
   stage <- talkWith door ground Alice Bob (Door.InviteReleasing (fresh "burn-after-reading") (waypoint ground))
@@ -230,8 +234,8 @@ aReleasedDropIsGoneAndStaysGone door ground = do
   disks <- concat <$> mapM siteBytes [talkWriter stage, talkReader stage]
   pure $ do
     if address `elem` held
-      then Left "the peer acknowledged a drop on a releasing channel and the host still holds it"
-      else Right ()
+      then Right ()
+      else Left "a release deleted a drop, which names an address to the host"
     neverShown "a released drop put back" "burn me" reader
     neverShown "a released drop put back, to its own author" "burn me" writer
     case anyContains "burn me" disks of

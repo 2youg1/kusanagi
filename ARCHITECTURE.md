@@ -77,7 +77,7 @@ Seven separate properties. Claiming them as one word is how a privacy claim beco
 | 0 | That this network is in use at all | information-theoretic once built | **leaks to a path observer, closed against a scanner** | a host answers a stranger exactly as a static file server does, and no request or response names this project; but an endpoint's own traffic is still traffic nobody else generates | `box/tests/unmarked.rs`, `waypoint/tests/unannounced.rs` |
 | 1 | Content confidentiality | computational | **held until the compute is unbounded** | ChaCha20-Poly1305 under a key used for exactly one message | `seal`'s envelope tests |
 | 2a | Who talks to whom, in what the host **stores** | computational | **held until the compute is unbounded** | every address is `KDF(secret ‖ author ‖ height)`; no address is ever reused | `kusanagi/tests/unlinkable.rs` |
-| 2b | Who talks to whom, in what the host is **asked for** | computational | **held for a poll**, leaks on a catch-up, and **leaks whole on a bucket one key signs for** | a reader resumes from a cairn, so a poll names one address instead of the stream; a credential rides on every request it signs, so `kusanagi host` asks for none (D-20 closes the poll itself) | `kusanagi/tests/unwatched.rs` |
+| 2b | Who talks to whom, in what the host is **asked for** | computational | **held**: a read names a bin, never an address; **leaks whole on a bucket one key signs for** | a reader lists one period of its ward and takes every object in it, so what it asks for is a function of public data only; a credential still rides on every request it signs, and a box asks for none | `kusanagi/tests/unwatched.rs`, `adversary/` H20, H21 |
 | 3 | Network size | information-theoretic once built | leaks the number of objects | nothing yet | `adversary/`, as an equality against a declared list |
 | 4a | Traffic analysis — **how large** | **information-theoretic** | **held** | every sealed drop is one size whatever it carries, so the observation is a constant | `adversary/`, and `seal`'s envelope tests |
 | 4b | Traffic analysis — **when, and how often** | information-theoretic once built | **held on a slotted channel**, leaks on one that answers on demand | a `Cadence` writes one drop per public period, carrying a filler when there is nothing to say (D-06) | `kusanagi/tests/slotted.rs`, and `adversary/` as an equality against a declared list |
@@ -90,11 +90,10 @@ computational defence an unbounded adversary strips away, while filling every sl
 survives being fully known. `Cadence` is that mechanism; D-06 is the ruling.
 
 Property 2 is the one this project exists for, and splitting it in two corrects a real
-error rather than refining one. Addresses derived to be unrelated stop being unrelated the
-moment one connection asks for them in ascending order, back to back — which is what a
-reader beginning at height zero did, once per poll, for the whole history.
-**The derivation was sound and the reading path gave the answer away.** A host
-needed no cryptanalysis, only an access log.
+error rather than refining one: one address, asked for, pairs its writer with its reader on
+the host's access log. **The derivation was sound and the reading path gave the answer
+away.** So a read names a bin — a public period and the reader's ward — and takes all of
+it; the address is matched on the reader's own machine (D-20, §8).
 
 The last column is the point of the section, because a privacy claim nobody runs is a
 paragraph. `adversary/` builds paired worlds — four where a byte is said, four where three
@@ -324,9 +323,11 @@ Reopening one requires a reason that did not exist when it was taken.
 - **Scale is layered, not flat.** Cohorts of about a thousand joined by transitive grants,
   because flat global reachability needs a globally resolvable name table and that table
   is a relationship graph.
-- **Bell is a waypoint capability, not a protocol requirement.** A host that can long-poll
-  needs no Bell and leaks nothing, so the alternative's cost falls only on whoever chose a
-  dumb object store.
+- **D-20 Reads name a bin, never an address.** Everyone downloads everything is the oldest
+  idea in this field and was abandoned for its volume; fixed-size drops, public periods and
+  prefix listing on dumb storage make the volume a number the reader chooses, so the host
+  can no longer pair a writer with a reader. `join` still fetches the offer by address, once,
+  and a reader deletes nothing: removing a released drop is the host's lifetime on the bin.
 - **Every sealed drop is one size, and the size is not a parameter.** `DROP` is derived
   rather than picked: the smallest power of two holding the largest artefact this protocol
   can produce — an introduction, being a full-depth grant plus the newcomer's key under a
@@ -392,8 +393,7 @@ Named so that their absence is a decision rather than an oversight.
 | **A carrier for the common case, and the fingerprint it answers** | `carry://` runs the real client of whatever holds the drops, so the handshake and the credentials are that client's rather than a `rustls` one that JA3/JA4 identifies. What is missing is the other half — a store that already receives opaque blobs on a schedule, so the traffic is unremarkable as well as unattributable. Every other scheme still makes our handshake, and mimicry has no clean answer in the Rust ecosystem |
 | **Forward secrecy on a channel that keeps its history** | `Retention::ReleaseOnAck` ratchets and burns, so a released drop is unopenable by anybody. A channel that keeps its history keeps one static secret that decrypts everything for whoever takes the site, and it keeps it deliberately: law 1 in the shape §7 states it |
 | **On-disk deniability off Windows** | every record is a DPAPI blob keyed by this account's logon credentials, so a disk without the password is noise; on a platform with no store of its own the tag says `0x00` and the records are what they always were. `VirtualLock` keeps them out of the page file on this one |
-| `Bell` | a privacy mechanism rather than a latency tweak. A reader that polls names the address it waits on, so a host watching one endpoint can follow the live edge; one that can be asked to wait is told a single address. A slotted channel and a bulk-syncing carrier each close the same leak, and whichever lands first decides whether this is built |
-| `Cohort` — a shared roster and epochs | a small group is a local `Roster` and one drop per member, which needs neither; what a shared one buys is a thousand members, and that is MLS's problem rather than this one's |
+| `Bell` | a latency mechanism now that a read names a bin and has no live edge to follow: a host that can be asked to wait turns a poll into a wait. Built when a host that long-polls is worth the code, and not before |
 | `Depot` — chunked content | optional again. `DROP` is sized to hold the largest artefact this protocol produces; what still needs chunking is user content larger than one drop, and compression is a parameter of that layer rather than a layer of its own |
 ---
 

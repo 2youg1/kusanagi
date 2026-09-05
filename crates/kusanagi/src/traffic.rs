@@ -223,16 +223,18 @@ pub(crate) fn appended(
         }
         PutOutcome::AlreadyPresent => {
             return Err(Complaint::DropTaken {
-                address: address.to_string(),
+                address: object.to_string(),
                 name: name.to_owned(),
             });
         }
     }
 
+    // The key rather than the address alone: since a drop is filed in a bin,
+    // the address by itself no longer says where on the host anything is.
     Ok(Appended {
         index: segment.index(),
         id: segment.id().to_string(),
-        address: address.to_string(),
+        address: object.to_string(),
     })
 }
 

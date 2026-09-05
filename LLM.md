@@ -121,7 +121,7 @@ has to run `tick` on that cadence, ideally with a random delay inside the slot.
 | It sees | It cannot see |
 |---|---|
 | that some object of 131 072 bytes arrived, and when | what it says, how long it really is, who wrote it |
-| how many objects it holds | which objects belong together |
+| how many objects each bin holds | which objects belong together, and which reader wanted which |
 | the IP address the request came from, unless a proxy is set | whether the object is a message or filler |
 
 Prefer a host that belongs to neither party: `kusanagi host` run by anybody, or

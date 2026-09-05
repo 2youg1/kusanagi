@@ -21,6 +21,7 @@ module Kusanagi.Ground
   , siteOf
   , waypoint
   , stored
+  , binOf
   , corrupt
   , damage
   , holding
@@ -32,6 +33,7 @@ module Kusanagi.Ground
 import Control.Monad (forM)
 import Data.ByteString qualified as ByteString
 import Data.List (sort)
+import Data.Text (Text)
 import Data.Text qualified as Text
 import System.Directory
   ( createDirectoryIfMissing
@@ -39,7 +41,7 @@ import System.Directory
   , listDirectory
   , removeFile
   )
-import System.FilePath (takeDirectory, takeFileName, (</>))
+import System.FilePath (joinPath, takeDirectory, takeFileName, (</>))
 import System.IO.Temp (withSystemTempDirectory)
 
 import Kusanagi.Answer (Address (..))
@@ -100,18 +102,24 @@ stored ground = sort <$> walk (groundHost ground)
               else do
                 bytes <- ByteString.readFile path
                 pure [(Address (Text.pack (takeFileName path)), bytes)]
-    shard prefix (Address rest, bytes) = (Address (Text.pack prefix <> rest), bytes)
+    shard prefix (Address rest, bytes) = (Address (Text.pack prefix <> "/" <> rest), bytes)
 
 -- | Where a host keeps one object.
 --
--- The first two characters of an address name a directory. That is the one
--- implementation detail this adversary depends on; when it changes, these
--- properties fail loudly rather than silently testing nothing.
+-- An address here is the whole key a host files a drop under,
+-- @period/ward/address@, which is what a send reports and what a directory
+-- host uses as a path. That is the one implementation detail this adversary
+-- depends on; when it changes, these properties fail loudly rather than
+-- silently testing nothing.
 placed :: Ground -> Address -> FilePath
-placed ground (Address address) =
-  groundHost ground </> Text.unpack shard </> Text.unpack rest
+placed ground (Address key) =
+  groundHost ground </> joinPath (map Text.unpack (Text.splitOn "/" key))
+
+-- | The bin a key sits in: everything before the address.
+binOf :: Address -> Text
+binOf (Address key) = Text.intercalate "/" (init' (Text.splitOn "/" key))
   where
-    (shard, rest) = Text.splitAt 2 address
+    init' xs = take (length xs - 1) xs
 
 -- | Flips one bit of an object, the way damage or a hostile host would.
 corrupt :: Ground -> Address -> IO ()

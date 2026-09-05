@@ -25,6 +25,7 @@ import Kusanagi.Leakage qualified as Leakage
 import Kusanagi.Port qualified as Port
 import Kusanagi.Reach qualified as Reach
 import Kusanagi.Scanner qualified as Scanner
+import Kusanagi.Sweep qualified as Sweep
 import Kusanagi.Terminal qualified as Terminal
 import Kusanagi.Twins qualified as Twins
 
@@ -48,6 +49,8 @@ surface door =
         , cell "cannot reset a spent invitation once the inviter has seen who accepted" Forging.theFirstPeerIsPinned
         , cell "loses a released drop, and cannot bring it back" Forging.aReleasedDropIsGoneAndStaysGone
         , cell "restored from a backup, stops the author as well as the reader" Forging.aRolledBackHostStopsTheAuthorToo
+        , cell "sees a read fetch the whole bin, strangers included, and report only its own" Sweep.aReadFetchesTheWholeBinAndNothingElse
+        , cell "sees no request name an address outside a bin the same side listed" Sweep.noRequestNamesAnUnlistedAddress
         ]
     , testGroup
         "the network, misbehaving"

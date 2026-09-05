@@ -225,24 +225,27 @@ The host is not trusted and does not have to be. Here is exactly what it learns.
 | Message contents | **Hidden.** ChaCha20-Poly1305 under a key used for exactly one message. |
 | Who wrote a message | **Hidden.** The author is inside the encrypted part, not beside it. |
 | Which messages belong to one conversation, from what it **stores** | **Hidden.** Every address is `KDF(shared secret ‖ author ‖ height)`. No address is ever reused. |
-| Which messages belong to one conversation, from what it is **asked for** | **Hidden while polling.** A poll names one address. See below. |
+| Which messages belong to one conversation, from what it is **asked for** | **Hidden.** A reader lists one bin and takes all of it, so a request names a period and a ward, never an address. |
+| Which reader wanted which object | **Hidden among the readers of one ward.** Every reader of a ward makes the same requests; the host can say a ward was read, not by whom for what. A reader shortens the prefix it sweeps to hide among more wards at the cost of bandwidth. |
 | How many objects it holds | **Visible.** |
 | How large each one is | **Hidden.** Every drop is exactly 131 072 bytes, whatever it carries. |
 | When each request arrived | **Visible.** |
 
-A reader that started at height zero on every read would ask the host for every
-address of the conversation, in order, on one connection — addresses derived to
-look unrelated, with the reading order handing over the grouping anyway. No
-cryptanalysis needed, only an access log. So an endpoint records how far it has
-verified each stream, and a poll asks for one address and stops.
+A reader that asked for an address would hand the host, on its own access log,
+the one pair this network exists to hide: who wrote that address and who came for
+it. No cryptanalysis needed. So a reader never asks for an address. Every drop is
+filed under a public ten-minute period and the reader's **ward** — a number the
+reader picked at random once and hands to whoever writes to it — and a read lists
+one period of its own ward, fetches whatever the listing added since it last
+looked, and matches addresses on its own machine. What the host sees is a ward
+being read, the same way by everyone who reads it; what it never sees is which
+object in it was wanted. Nothing fetched and not matched is kept.
 
-Two things are still open, and neither is closed by that:
-
-- Catching up on a conversation you have never read still names each height you
-  fetch.
-- A host watching one endpoint over time can follow the live edge, because the
-  address polled after a hit is the next one in the same stream. Closing this
-  needs long-polling, which is listed under [what is not built](#what-is-not-built).
+What that costs, said plainly: a busy ward costs its readers bandwidth, since
+each takes what everyone in it received; a bin of more than 256 objects is
+refused rather than read (`kusanagi.ward_overfull`); and a writer whose clock is
+more than ten minutes behind its reader's files a drop where the reader has
+already looked, to be found on the next change to that bin.
 
 **Two things a host cannot do to you.**
 
@@ -296,9 +299,8 @@ Listed so that each absence is a decision rather than an oversight.
 | More than two parties in one channel | One channel is one pair. A small group is fan-out: `kusanagi group --name team` names the channels, `kusanagi send --to-group team` writes one drop on each, and the report says per member what arrived. The roster is this endpoint's own list, held by nobody else, so there is no group key, no agreement about membership, and removing somebody is writing the list without them. What a *shared* roster buys is a thousand members, and that is a different problem. |
 | Hiding when you are online | A channel opened with `--every` writes one drop per period, talk or silence, so the host cannot tell the two apart; the gaps when this machine is off are still gaps. A random delay in the scheduler blurs the moment, not the absence. |
 | Hiding the number of objects from a dumb object store | Needs long-polling support that a plain bucket does not have. |
-| Long-polling | Would also close the live-edge leak described above. |
+| Long-polling | Would turn a poll into a wait; a read that lists a bin has no live edge to follow. |
 | Chunked shared workspaces | A separate problem. One message is capped at 126 339 bytes today. |
-| A host that cannot pair a writer with a reader | Today a poll names one address, and the host sees who wrote it and who asked for it. The next version lists a whole bin and reads all of it, so a read is a function of public data only (Roadmap D-20). |
 | Hiding an endpoint IP address | Not this project's to solve. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy and the network built for it does the work; `kusanagi proxy --require` makes a missing proxy a refusal rather than a direct connection. |
 | Hiding which channels share one bucket credential | An S3 access key travels with every request it signs, so a bucket's log links everything one key wrote. `kusanagi host` asks for no credential and has no such edge. |
 | A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |

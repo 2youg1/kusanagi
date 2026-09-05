@@ -47,6 +47,7 @@ library
     Kusanagi.Scanner
     Kusanagi.Service
     Kusanagi.Stage
+    Kusanagi.Sweep
     Kusanagi.Tempo
     Kusanagi.Terminal
     Kusanagi.Twins
