@@ -332,24 +332,7 @@ pub const Model = struct {
     /// The thread as it is shown: both lanes in the order `order.zig`
     /// derives, each bubble knowing whether it opens a new turn.
     pub fn thread(m: *const Model, arena: std.mem.Allocator) []const Bubble {
-        var sides: [max_messages * 2]order.Side = undefined;
-        const n = order.merge(Message, m.mine.all(), m.theirs.all(), &sides);
-        const bubbles = arena.alloc(Bubble, n) catch return &.{};
-        var taken: [2]usize = .{ 0, 0 };
-        for (sides[0..n], 0..) |side, k| {
-            const lane = if (side == .mine) &m.mine else &m.theirs;
-            const source = &lane.items[taken[@intFromEnum(side)]];
-            taken[@intFromEnum(side)] += 1;
-            bubbles[k] = .{
-                .key = source.index * 2 + @intFromEnum(side),
-                .mine = side == .mine,
-                .turn = k == 0 or sides[k - 1] != side,
-                .text = source.text.slice(),
-                .is_hex = source.is_hex,
-                .cut = source.text.cut,
-            };
-        }
-        return bubbles;
+        return order.bubbles(&m.mine, &m.theirs, arena);
     }
 
     // ------------------------------------------------------------ status and sheets

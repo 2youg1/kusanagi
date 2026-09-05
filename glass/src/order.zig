@@ -18,6 +18,7 @@
 //! if a second front end wants it.
 
 const std = @import("std");
+const rows = @import("rows.zig");
 
 /// Which stream the next shown segment comes from.
 pub const Side = enum { mine, theirs };
@@ -45,6 +46,29 @@ pub fn merge(comptime T: type, mine: []const T, theirs: []const T, out: []Side) 
         }
     }
     return n;
+}
+
+/// Both lanes of one channel laid out as bubbles, each knowing whether it
+/// opens a new turn. The one place a two-lane thread becomes rows.
+pub fn bubbles(mine: *const rows.Lane, theirs: *const rows.Lane, arena: std.mem.Allocator) []const rows.Bubble {
+    var sides: [rows.max_messages * 2]Side = undefined;
+    const n = merge(rows.Message, mine.all(), theirs.all(), &sides);
+    const out = arena.alloc(rows.Bubble, n) catch return &.{};
+    var taken: [2]usize = .{ 0, 0 };
+    for (sides[0..n], 0..) |side, k| {
+        const lane = if (side == .mine) mine else theirs;
+        const source = &lane.items[taken[@intFromEnum(side)]];
+        taken[@intFromEnum(side)] += 1;
+        out[k] = .{
+            .key = source.index * 2 + @intFromEnum(side),
+            .mine = side == .mine,
+            .turn = k == 0 or sides[k - 1] != side,
+            .text = source.text.slice(),
+            .is_hex = source.is_hex,
+            .cut = source.text.cut,
+        };
+    }
+    return out;
 }
 
 const Seg = struct { index: u64, acknowledged: u64 };
