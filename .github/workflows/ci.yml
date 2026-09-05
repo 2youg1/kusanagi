@@ -24,12 +24,13 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
       - name: format
         run: cargo fmt --all -- --check
       - name: lint
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: test
-        run: cargo test --all-features
+        run: cargo nextest run --workspace --all-features
       # Where a test may stand, and what may follow it into a release. Bash and
       # `cargo tree` are all it needs, so it runs on every platform.
       - name: boxes

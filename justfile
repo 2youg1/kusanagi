@@ -48,8 +48,12 @@ fmt-check:
 lint:
     cargo clippy --all-targets --all-features -- -D warnings
 
+# `nextest` rather than `cargo test`: the same assertions in a third of the
+# wall time, one runner instead of one process per binary, and a failure list
+# rather than pages of interleaved output. There are no doctests anywhere in
+# this workspace, which is the one thing nextest does not run.
 test:
-    cargo test --all-features
+    cargo nextest run --workspace --all-features
 
 # The supply chain is the one part of this design no amount of cryptography
 # defends, so the set of crates that can reach a user is gated like any other rule.
