@@ -149,6 +149,16 @@ const CATALOGUE: &[Tool] = &[
         },
     },
     Tool {
+        name: "kusanagi_proxy",
+        about: "Read, or set, whether this endpoint may reach a host without a proxy.                 With `require` true, every host-reaching tool refuses when no proxy is set.",
+        schema: || {
+            object(
+                &json!({ "require": { "type": "boolean", "description": "record the requirement (true) or lift it (false); omit to read" } }),
+                &[],
+            )
+        },
+    },
+    Tool {
         name: "kusanagi_revoke",
         about: "Cut the peer of a channel off, immediately and permanently.",
         schema: || object(&json!({ "name": text("which channel") }), &["name"]),
@@ -278,6 +288,9 @@ pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint
                         .collect()
                 })
                 .unwrap_or_default(),
+        },
+        "kusanagi_proxy" => Request::Proxy {
+            require: arguments.get("require").and_then(Value::as_bool),
         },
         "kusanagi_revoke" => Request::Revoke {
             name: need(arguments, "name")?.to_owned(),

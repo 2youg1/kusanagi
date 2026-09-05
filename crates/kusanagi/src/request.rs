@@ -128,6 +128,11 @@ pub enum Request {
         /// Whose stream to report.
         whose: Whose,
     },
+    /// Read, or change, whether this endpoint may reach a host without a proxy.
+    Proxy {
+        /// `None` reads; `Some` records.
+        require: Option<bool>,
+    },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
         /// Which channel.

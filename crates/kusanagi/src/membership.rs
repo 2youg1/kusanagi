@@ -108,7 +108,7 @@ pub(crate) fn invite(
     // the two failures are the two harmless ones. A host that will not take it
     // leaves nothing here to clean up; a disk that will not take the record
     // leaves an offer nobody holds the key to, which the lifetime sweeps away.
-    let place = open(waypoint, now)?;
+    let place = open(site, waypoint, now)?;
     let (address, key) = offer(&secret);
     let announcement = Offer {
         inviter: me.verifying_key(),
@@ -165,7 +165,7 @@ pub(crate) fn join(
     }
     let invitation = Invite::parse(text)?;
     let me = signer(site)?;
-    let place = open(&invitation.locator, now)?;
+    let place = open(site, &invitation.locator, now)?;
 
     // The line says where to look and holds the key to look with; who is
     // inviting, and by what authority, is in the drop it points at.

@@ -21,6 +21,7 @@ module Kusanagi.Reach
   , aRedirectIsNeverFollowed
   , theHostIsNeverReachedDirectlyWithAProxy
   , aDeadProxyFailsClosed
+  , aRequiredProxyThatIsMissingFailsClosed
   , theRequestHeadNamesNothing
   , aLocatorNeverNamesANetworkPath
   , nothingThatNamesThisMachineLeavesIt
@@ -116,6 +117,26 @@ theHostIsNeverReachedDirectlyWithAProxy door ground =
         if viaProxy >= 1 then Right () else Left "the proxy was named and never connected to"
         if direct == 0 then Right () else Left ("the host was reached directly " <> show direct <> " time(s) with a proxy named")
         refusedWithACode "a proxy that refuses to connect" answer
+
+-- | A site that recorded "never without a proxy" refuses when the variable is
+-- gone — a new shell, a scheduler task — rather than going direct.
+aRequiredProxyThatIsMissingFailsClosed :: Door -> Ground -> IO (Either String ())
+aRequiredProxyThatIsMissingFailsClosed door ground =
+  withListener (Answer notFound) $ \host -> do
+    inherited <- getEnvironment
+    let without = [(k, v) | (k, v) <- inherited, k /= "KUSANAGI_PROXY"]
+    recorded <- Door.typedWith door (Just without) ["--root", siteOf ground Alice, "--json", "proxy", "--require"] Nothing
+    answer <- inviting door (siteOf ground Alice) (Just without) (locatorOf host)
+    direct <- connections host
+    pure $ do
+      case Door.typedStatus recorded of
+        ExitSuccess -> Right ()
+        other -> Left ("recording the requirement failed: " <> show other)
+      if direct == 0 then Right () else Left ("the host was reached directly " <> show direct <> " time(s) with a proxy required and none set")
+      case decodeComplaint (Door.typedErr answer) of
+        Right (Complaint (Code "kusanagi.proxy_required") _ _) -> Right ()
+        Right (Complaint (Code code) _ _) -> Left ("refused with `" <> Text.unpack code <> "` rather than `kusanagi.proxy_required`")
+        Left reason -> Left ("refused in a shape this adversary cannot read: " <> reason)
 
 -- | A proxy that is down is a refusal, not a direct connection.
 aDeadProxyFailsClosed :: Door -> Ground -> IO (Either String ())

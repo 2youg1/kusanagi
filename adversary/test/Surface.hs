@@ -56,6 +56,7 @@ surface door =
         , cell "a redirect is never followed" Reach.aRedirectIsNeverFollowed
         , cell "with a proxy named, the host is never reached directly" Reach.theHostIsNeverReachedDirectlyWithAProxy
         , cell "a dead proxy fails closed" Reach.aDeadProxyFailsClosed
+        , cell "a required proxy that is missing fails closed" Reach.aRequiredProxyThatIsMissingFailsClosed
         , cell "the request head names nothing" Reach.theRequestHeadNamesNothing
         , cell "a locator never names a network path" Reach.aLocatorNeverNamesANetworkPath
         , cell "nothing that names this machine leaves it" Reach.nothingThatNamesThisMachineLeavesIt

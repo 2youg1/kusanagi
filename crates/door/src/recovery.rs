@@ -109,6 +109,8 @@ impl Complaint {
             Self::OwnInvitation => "hand this line to the endpoint you mean to admit; \
                  the channel it opens is already here under the name you gave it"
                 .to_owned(),
+            Self::ProxyRequired => "set KUSANAGI_PROXY=socks5://127.0.0.1:9050 (or another proxy) and run                  the command again; `kusanagi proxy --optional` lifts the requirement"
+                .to_owned(),
             Self::CannotRevokeRoot { name } => {
                 format!(
                     "leave instead: `kusanagi forget --channel {name}` drops the channel here, \

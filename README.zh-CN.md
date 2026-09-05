@@ -174,6 +174,14 @@ s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 export KUSANAGI_PROXY=socks5://127.0.0.1:9050
 ```
 
+环境变量是一台机器上最容易丢的东西——换个 shell、匆忙写的调度任务——而一个丢了就静默失效的隐私设置，比没有这个设置更糟。所以站点可以把要求记下来：
+
+```bash
+kusanagi proxy --require     # 从此没有 KUSANAGI_PROXY 就一个请求也不发
+```
+
+之后每个会碰宿主的动词都以 `kusanagi.proxy_required` 拒绝，而不是直连；`kusanagi proxy --optional` 解除。
+
 经 SOCKS5 代理时，一条命令碰到的每条通道各走一条电路：程序对代理每通道报一组新的用户名与密码，Tor 正是靠这个把流分开，于是宿主看到你的各条通道来自不同的出口，而不是同一个。值里不要写凭据——你写的会原样保留，那会把所有通道钉在同一条电路上。
 
 **信任一台主机之前，先用 `kusanagi doctor` 测它。** 各家 S3 兼容存储对条件写的支持并不一致，而且不一致的方向很危险：条件被忽略、写入照样成功，于是「一个地址写过就不能被覆盖」这个前提悄悄失效。`doctor` 会写两次再读回来，告诉你这台主机够得上哪一档。

@@ -162,6 +162,11 @@ pub enum Outcome {
         /// The delegation step that no longer counts.
         step: String,
     },
+    /// How this endpoint may reach a host, after `proxy` read or changed it.
+    Egress {
+        /// Whether every host-reaching verb refuses without `KUSANAGI_PROXY`.
+        proxy_required: bool,
+    },
     /// A channel was deleted from this endpoint.
     Forgotten {
         /// What it was called here.

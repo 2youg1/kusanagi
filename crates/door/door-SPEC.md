@@ -78,7 +78,7 @@ recovery.rs   下一步做什么 —— 下层填不了的那个字段
 
 ```rust
 pub enum Outcome { Identity{..}, Channels{..}, Invited{..}, Joined{..}, Sent{..},
-                   Read{..}, Revoked{..}, Forgotten{..}, Examined{..}, Hosted{..} }
+                   Read{..}, Egress{ proxy_required }, Revoked{..}, Forgotten{..}, Examined{..}, Hosted{..} }
 
 impl Outcome {
     pub fn summarise(name: &str, channel: &Channel, who: &Handle,

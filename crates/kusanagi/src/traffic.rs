@@ -152,7 +152,7 @@ pub(crate) fn appended(
             .permits(&channel.root, &peer.handle(), Ability::Read, now, &revoked)?;
     }
 
-    let place = open(&channel.locator, now)?;
+    let place = open(site, &channel.locator, now)?;
     let mine = Lane::open(site, name, &channel, &me.verifying_key())?;
     // Only the head is needed, so this walk owes the caller no segment and may
     // resume from the cairn: sending the thousandth segment asks the host for one
@@ -230,7 +230,7 @@ pub(crate) fn read(
         .standing
         .permits(&channel.root, &me.handle(), Ability::Read, now, &revoked)?;
 
-    let place = open(&channel.locator, now)?;
+    let place = open(site, &channel.locator, now)?;
     let channel = match channel.peer {
         Some(_) => channel,
         None => greet(site, name, channel, &place, now)?,
@@ -355,7 +355,7 @@ fn mine(
     after: Option<u64>,
     now: Instant,
 ) -> Result<Outcome, Complaint> {
-    let place = open(&channel.locator, now)?;
+    let place = open(site, &channel.locator, now)?;
     let ours = Lane::open(site, name, channel, &me.verifying_key())?;
     let walked = track(site, name, &place, &ours, reach(after))?;
     Ok(reported(name, &me.handle().to_string(), &walked, after))

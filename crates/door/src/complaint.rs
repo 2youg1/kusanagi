@@ -206,6 +206,10 @@ pub enum Complaint {
     /// it had just written as though somebody else had said it.
     #[error("this invitation is your own")]
     OwnInvitation,
+    /// This site recorded that it never reaches a host without a proxy, and no
+    /// proxy is configured.
+    #[error("this site does not reach a host without a proxy, and KUSANAGI_PROXY is not set")]
+    ProxyRequired,
     /// The peer of this channel is its root authority, which cannot be revoked.
     #[error(
         "the peer of `{name}` is the authority that invited you; there is nothing above it to revoke"
@@ -339,6 +343,7 @@ impl Complaint {
             Self::ForeignRecord { .. } => "site.foreign_record",
             Self::OwnInvitation => "kusanagi.own_invitation",
             Self::CannotRevokeRoot { .. } => "kusanagi.cannot_revoke_root",
+            Self::ProxyRequired => "kusanagi.proxy_required",
             Self::Argument { .. } => "kusanagi.argument",
         }
     }

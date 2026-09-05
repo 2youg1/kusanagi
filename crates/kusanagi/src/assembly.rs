@@ -28,7 +28,7 @@ use kusanagi_kernel::{Clock as _, Instant, Signer};
 use kusanagi_seal::Secret;
 use kusanagi_waypoint::{Access, Carrier, Locator, LocatorError, Place, Proxy, probe};
 
-use kusanagi_site::Site;
+use kusanagi_site::{Egress, Site};
 
 use crate::membership::{forget, group, invite, join, revoke};
 use crate::port::serve;
@@ -71,9 +71,10 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
         Request::Read { name, after, whose } => {
             read(site, &signer(site)?, name, *after, *whose, now)
         }
+        Request::Proxy { require } => egress(site, *require),
         Request::Revoke { name } => revoke(site, name),
         Request::Forget { name } => forget(site, name),
-        Request::Doctor { waypoint } => doctor(waypoint, now),
+        Request::Doctor { waypoint } => doctor(site, waypoint, now),
         Request::Here => here(site),
         Request::Host {
             bind,
@@ -188,7 +189,21 @@ fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
 /// (`ARCHITECTURE.md` §3); this is the plug for a network that does, and a
 /// mistyped one is refused here rather than silently ignored — a privacy setting
 /// that fails open is worse than one that was never offered.
-pub(crate) fn open(locator: &str, now: Instant) -> Result<Place, Complaint> {
+/// Reads or records whether this site may reach a host without a proxy.
+fn egress(site: &Site, require: Option<bool>) -> Result<Outcome, Complaint> {
+    if let Some(required) = require {
+        site.set_egress(if required {
+            Egress::ProxyRequired
+        } else {
+            Egress::Free
+        })?;
+    }
+    Ok(Outcome::Egress {
+        proxy_required: site.egress()? == Egress::ProxyRequired,
+    })
+}
+
+pub(crate) fn open(site: &Site, locator: &str, now: Instant) -> Result<Place, Complaint> {
     let locator: Locator = locator.parse()?;
     let credentials = match (
         std::env::var("KUSANAGI_S3_ACCESS_KEY"),
@@ -201,6 +216,11 @@ pub(crate) fn open(locator: &str, now: Instant) -> Result<Place, Complaint> {
         Ok(text) if !text.trim().is_empty() => Some(Proxy::parse(text.trim(), fresh_circuit()?)?),
         _ => None,
     };
+    // The site's word, not the environment's: a variable that went missing must
+    // refuse here rather than hand the host this machine's address.
+    if proxy.is_none() && site.egress()? == Egress::ProxyRequired {
+        return Err(Complaint::ProxyRequired);
+    }
     // `KUSANAGI_CARRIER` names a program this machine runs, so it is read here
     // and never taken from a locator: a locator arrives inside somebody else's
     // invitation, and one that could name a program would be remote code
@@ -222,8 +242,8 @@ pub(crate) fn open(locator: &str, now: Instant) -> Result<Place, Complaint> {
     Ok(Place::open(&locator, &access, now.as_unix_seconds())?)
 }
 
-fn doctor(waypoint: &str, now: Instant) -> Result<Outcome, Complaint> {
-    let place = open(waypoint, now)?;
+fn doctor(site: &Site, waypoint: &str, now: Instant) -> Result<Outcome, Complaint> {
+    let place = open(site, waypoint, now)?;
     // A fresh secret every run: the probe writes to real addresses on a real
     // host, and addresses nobody can predict are addresses nothing collides with.
     let mut channel = fresh_seed()?;

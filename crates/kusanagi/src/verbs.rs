@@ -161,6 +161,19 @@ pub(crate) enum Verb {
         #[arg(long)]
         mine: bool,
     },
+    /// Say whether this endpoint may reach a host without a proxy, or ask.
+    ///
+    /// `--require` makes every verb that would reach a host refuse when
+    /// `KUSANAGI_PROXY` is not set — a setting that fails closed survives a new
+    /// shell or a scheduler task that forgot the variable. `--optional` lifts it.
+    Proxy {
+        /// Refuse to reach any host without `KUSANAGI_PROXY`.
+        #[arg(long, conflicts_with = "optional")]
+        require: bool,
+        /// Reach a host directly when no proxy is set (the default).
+        #[arg(long)]
+        optional: bool,
+    },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
         /// Which channel, or `-` to read the name from stdin.
@@ -267,6 +280,15 @@ fn abilities(text: &str) -> Result<Abilities, Complaint> {
     Ok(abilities)
 }
 
+/// Two flags into one answer: `--require` records, `--optional` lifts, neither reads.
+const fn stance(require: bool, optional: bool) -> Option<bool> {
+    match (require, optional) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
+    }
+}
+
 pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
     Ok(match verb {
         Verb::Id => Request::Identity,
@@ -343,6 +365,9 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
             // The flag is a flag because that is what a command line has; the
             // enum starts here so that nothing below carries an unnamed bool.
             whose: if mine { Whose::Mine } else { Whose::Peer },
+        },
+        Verb::Proxy { require, optional } => Request::Proxy {
+            require: stance(require, optional),
         },
         Verb::Revoke { name } => Request::Revoke {
             name: intake::channel(name)?,

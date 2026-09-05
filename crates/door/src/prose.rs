@@ -89,6 +89,13 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             "the peer of `{name}` is cut off\n  step  {step}\n\
              nothing they write from now on will be accepted here."
         ),
+        Outcome::Egress { proxy_required } => {
+            if *proxy_required {
+                "a proxy is required: without KUSANAGI_PROXY, every verb that would reach a host refuses instead of going direct".to_owned()
+            } else {
+                "a proxy is optional: with KUSANAGI_PROXY unset, requests go straight to the host, and the host learns this machine's address".to_owned()
+            }
+        }
         Outcome::Forgotten { name, waypoint } => format!(
             "`{name}` is gone from this endpoint\n  waypoint  {waypoint}\n\
              the drops stay where they are, and the secret that opened them does not. \

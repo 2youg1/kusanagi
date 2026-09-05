@@ -52,6 +52,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `kusanagi.bad_recovery_key` | an archive did not open under the recovery key that was offered | check the key: it is the 64 hexadecimal digits `kusanagi export` printed once, and it goes in on the first line of stdin |
 | `kusanagi.bad_greeting` | the introduction on a channel is not one this build can read | keep the bytes and report it |
 | `kusanagi.cannot_revoke_root` | the peer of this channel is the authority that invited you | `kusanagi forget --channel NAME` instead |
+| `kusanagi.proxy_required` | this site never reaches a host without a proxy, and `KUSANAGI_PROXY` is not set | set `KUSANAGI_PROXY`, or `kusanagi proxy --optional` |
 | `kusanagi.channel_exists` | a channel of that name is already here | pick another name, or read the one you have |
 | `kusanagi.drop_taken` | somebody claimed the next address first | read the channel to pick up the new head, then send again |
 | `kusanagi.history_changed` | the host serves a history that contradicts one already verified here | run `kusanagi doctor` against the host; it just broke write-once |

@@ -29,6 +29,7 @@
 
 1. 两个端点经一个都不运行的宿主交换消息（`endpoint.rs`）。
 2. 宿主翻转一位即被检出，错误码 `seal.rejected`。
+2b. `kusanagi proxy --require` 之后，`KUSANAGI_PROXY` 缺席时**每个会打开宿主的动词**（`send`/`read`/`tick`/`invite`/`join`/`doctor`）在 `assembly::open` 处以 `kusanagi.proxy_required` 拒绝，宿主零连接（adversary `Reach.aRequiredProxyThatIsMissingFailsClosed`）；`--optional` 解除；不带旗标只读。站点的记录说了算，环境变量丢了就是拒绝，不是直连（K12，事实 35）。
 3. 撤销 peer 后，其此前与此后写的一切都不再被接受，错误码 `grant.revoked`；**向已撤销的 peer `send` 同码拒绝**（`appended` 先问 peer 许不许 Read；adversary `surface-SPEC` G3/X2 查出撤销后仍在送）。
 4. 一份邀请只接纳一个端点，第二次得 `kusanagi.invite_spent`。
 5. 只有 `read` 的端点不能 `send`，得 `grant.forbidden`。
@@ -125,7 +126,7 @@ intake.rs     动词从 stdin 收下的一切（属二进制，不属 lib）
 pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint>;
 
 pub enum Request { Identity, Channels, Invite{..}, Join{..}, Send{..},
-                   Read{ name, after, whose: Whose }, Revoke{..}, Forget{..},
+                   Read{ name, after, whose: Whose }, Proxy{ require: Option<bool> }, Revoke{..}, Forget{..},
                    Doctor{..}, Host{..} }
 
 /// 读哪一条流。布尔旗标会在调用点丢掉这个名字，枚举不会。

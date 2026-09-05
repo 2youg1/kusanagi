@@ -261,6 +261,17 @@ value that is not a proxy is refused rather than ignored.
 export KUSANAGI_PROXY=socks5://127.0.0.1:9050
 ```
 
+An environment variable is the easiest thing on a machine to lose — a new shell, a
+scheduler task written in a hurry — and a privacy setting that fails open when it is
+missing is worse than one nobody offered. So the site can record the requirement:
+
+```bash
+kusanagi proxy --require     # from now on, no KUSANAGI_PROXY means no request at all
+```
+
+Every verb that would reach a host then refuses with `kusanagi.proxy_required`
+instead of going direct; `kusanagi proxy --optional` lifts it.
+
 Through a SOCKS5 proxy, every channel a command touches leaves on a circuit of
 its own: the proxy is shown a fresh username and password per channel, which
 is how Tor is told to keep streams apart, so the host sees your channels arrive

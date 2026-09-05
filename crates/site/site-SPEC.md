@@ -82,6 +82,7 @@ permissions/unix.rs     创建时定模式位：目录 0700、文件 0600
 permissions/windows.rs  创建时挂受保护 DACL —— 全仓唯一含 `unsafe` 的模块
 naming.rs   名字能长什么样，以及它的文件叫什么（两条规则，一处）
 revoked.rs  <root>/revoked —— 撤销表，活得比通道记录长
+egress.rs   <root>/egress —— 一行 `proxy-required`：本站点是否允许无代理出网（K12）；缺席即允许，写成别的字即 `site.bad_record`
 channel.rs  Channel / Standing / Peer 与其磁盘格式（版本 4）
 blocks.rs   长度前缀块：本盘上每一种记录共用的那一层框
 cadence.rs  Cadence —— 这一端多久写一次（I3）

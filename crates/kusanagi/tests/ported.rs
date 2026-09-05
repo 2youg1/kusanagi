@@ -108,6 +108,7 @@ fn every_verb_is_either_a_tool_or_deliberately_not_one() {
         "kusanagi_read",
         "kusanagi_tick",
         "kusanagi_group",
+        "kusanagi_proxy",
         "kusanagi_revoke",
         "kusanagi_forget",
         "kusanagi_doctor",
