@@ -22,6 +22,7 @@ const MAX_NAME: usize = 32;
 /// forever, so two derivations from one seed can never collide.
 const FILING: &str = "kusanagi 2026 channel file name v1";
 const AUTHOR_FILING: &str = "kusanagi 2026 author file name v1";
+const SWEEP_FILING: &str = "kusanagi 2026 sweep file name v1";
 
 /// Refuses anything that is not plainly a name.
 ///
@@ -78,7 +79,22 @@ pub(crate) fn filed(seed: &[u8; 32], name: &str) -> String {
 /// channel's filed name, the same author leaves a different name on every
 /// channel and every site, and a listing gives up a count and nothing else.
 pub(crate) fn filed_author(seed: &[u8; 32], filed: &str, author: &Handle) -> String {
-    let key = blake3::derive_key(AUTHOR_FILING, seed);
+    lane_name(AUTHOR_FILING, seed, filed, author)
+}
+
+/// What this site calls the file that holds one author's sweep record on the
+/// channel filed as `filed`.
+///
+/// A different key from [`filed_author`] on purpose: a cairn and a sweep record
+/// for one lane must not share a name, or whoever holds the disk can pair the
+/// two and learn that two files describe one stream. No two files in a site
+/// share a name; `adversary/` holds that as a property.
+pub(crate) fn filed_sweep(seed: &[u8; 32], filed: &str, author: &Handle) -> String {
+    lane_name(SWEEP_FILING, seed, filed, author)
+}
+
+fn lane_name(context: &str, seed: &[u8; 32], filed: &str, author: &Handle) -> String {
+    let key = blake3::derive_key(context, seed);
     let mut hasher = blake3::Hasher::new_keyed(&key);
     hasher.update(filed.as_bytes());
     hasher.update(author.as_bytes());

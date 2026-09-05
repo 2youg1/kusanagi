@@ -143,15 +143,6 @@ pub(crate) fn appended(
     channel
         .standing
         .permits(&channel.root, &me.handle(), Ability::Send, now, &revoked)?;
-    // A segment the peer is no longer allowed to read is a segment that should
-    // not be written: revocation cuts both directions, or a fan-out keeps
-    // delivering to the one member it was meant to exclude. The question is
-    // the mirror of the one `read` asks about the peer, and fails the same way.
-    if let Some(peer) = &channel.peer {
-        peer.standing
-            .permits(&channel.root, &peer.handle(), Ability::Read, now, &revoked)?;
-    }
-
     let place = open(site, &channel.locator, now)?;
     // Where this segment goes is the peer's ward, so an endpoint that has not
     // met its peer yet meets them now. This is the same lazy introduction `read`
@@ -162,6 +153,15 @@ pub(crate) fn appended(
         Some(_) => channel,
         None => greet(site, name, channel, &place, now)?,
     };
+    // A segment the peer is no longer allowed to read is a segment that should
+    // not be written: revocation cuts both directions, or a fan-out keeps
+    // delivering to the one member it was meant to exclude. The question is
+    // the mirror of the one `read` asks about the peer, and fails the same way.
+    // **After the greeting**: the peer met a moment ago is the one this checks.
+    if let Some(peer) = &channel.peer {
+        peer.standing
+            .permits(&channel.root, &peer.handle(), Ability::Read, now, &revoked)?;
+    }
     let mine = Lane::open(
         site,
         name,

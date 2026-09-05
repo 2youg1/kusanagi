@@ -175,8 +175,8 @@ impl Site {
     ///
     /// [`SiteError::BadName`] when `name` is not usable as one.
     pub fn swept(&self, name: &str, author: &Handle) -> Result<Option<Swept>, SiteError> {
-        let (filed, filed_author) = self.filed_lane(name, author)?;
-        Ok(sweeps::read(&self.root, &filed, &filed_author))
+        let (filed, filed_sweep) = self.filed_sweep(name, author)?;
+        Ok(sweeps::read(&self.root, &filed, &filed_sweep))
     }
 
     /// Writes down the last sweep of `author`'s lane on `name`.
@@ -186,8 +186,8 @@ impl Site {
     /// [`SiteError::BadName`] when `name` is not usable as one, and
     /// [`SiteError::Local`] when the record cannot be written.
     pub fn sweep_to(&self, name: &str, author: &Handle, swept: &Swept) -> Result<(), SiteError> {
-        let (filed, filed_author) = self.filed_lane(name, author)?;
-        sweeps::write(&self.root, &filed, &filed_author, swept)
+        let (filed, filed_sweep) = self.filed_sweep(name, author)?;
+        sweeps::write(&self.root, &filed, &filed_sweep, swept)
     }
 
     /// One group's roster.
@@ -352,12 +352,28 @@ impl Site {
         name: &str,
         author: &Handle,
     ) -> Result<(String, String), SiteError> {
+        self.filed_as(name, author, naming::filed_author)
+    }
+
+    /// The two file names one author's sweep record on one channel is kept
+    /// under; the second differs from the cairn's so that no two files share
+    /// a name.
+    fn filed_sweep(&self, name: &str, author: &Handle) -> Result<(String, String), SiteError> {
+        self.filed_as(name, author, naming::filed_sweep)
+    }
+
+    fn filed_as(
+        &self,
+        name: &str,
+        author: &Handle,
+        within: fn(&[u8; 32], &str, &Handle) -> String,
+    ) -> Result<(String, String), SiteError> {
         naming::check(name)?;
         let seed = self.seed()?.ok_or_else(|| SiteError::UnknownChannel {
             name: name.to_owned(),
         })?;
         let filed = naming::filed(&seed, name);
-        let filed_author = naming::filed_author(&seed, &filed, author);
-        Ok((filed, filed_author))
+        let inner = within(&seed, &filed, author);
+        Ok((filed, inner))
     }
 }

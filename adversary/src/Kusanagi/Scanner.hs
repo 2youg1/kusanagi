@@ -133,8 +133,9 @@ traversalTouchesNothing door ground =
       , "/d/" <> address <> "%00"
       ]
 
+-- | A key as a host files one: a period, a ward and an address.
 address :: ByteString
-address = "0123456789abcdef0123456789abcdef01234567"
+address = "0000000000000001/00ab/0123456789abcdef0123456789abcdef01234567"
 
 get :: ByteString -> ByteString
 get path = "GET " <> path <> " HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"

@@ -158,10 +158,10 @@ instance StateModel World where
                 (opened (Granted (mintedGrants mint)) (Just (mintedBy mint)) True)
                 (Map.adjust (\far -> far {chanFar = Just (site, name)}) (mintedBy mint) (worldChannels world))
           }
+    -- A send meets the peer the way a read does: a drop is filed where its
+    -- reader looks, so a writer that has not met its reader looks them up first.
     Send site name text ->
-      alter world (site, name) (\chan -> chan {chanSaid = chanSaid chan <> [text]})
-    -- A read is the only thing that teaches an inviter who accepted, so it is
-    -- the only action that changes anything on the reader's side.
+      alter world (site, name) (\chan -> chan {chanSaid = chanSaid chan <> [text], chanMet = True})
     Read site name -> alter world (site, name) (\chan -> chan {chanMet = True})
     Revoke site name -> alter world (site, name) (\chan -> chan {chanCut = True})
 
@@ -212,13 +212,14 @@ refusal world = \case
     Nothing -> Just (Code "kusanagi.unknown_channel")
     Just chan
       | not (permits Sending (chanStanding chan)) -> Just (Code "grant.forbidden")
+      | chanCut chan -> Just (Code "grant.revoked")
       -- Found by this adversary, then fixed in Rust: a segment the peer may no
       -- longer read is not written. Revocation cuts both directions, and the
-      -- refusal is the one `read` gives about the same peer.
-      | not (chanMet chan) -> Nothing
-      | chanCut chan -> Just (Code "grant.revoked")
+      -- refusal is the one `read` gives about the same peer. And a segment is
+      -- filed in its reader's ward, so with nobody to read it there is nowhere
+      -- to write it (D-20).
       | otherwise -> case chanFar chan >>= here of
-          Nothing -> Nothing
+          Nothing -> Just (Code "kusanagi.no_peer_yet")
           Just far
             | permits Reading (chanStanding far) -> Nothing
             | otherwise -> Just (Code "grant.forbidden")
@@ -227,7 +228,6 @@ refusal world = \case
     Just chan
       | not (permits Reading (chanStanding chan)) -> Just (Code "grant.forbidden")
       | chanCut chan -> Just (Code "grant.revoked")
-      | chanMet chan -> Nothing
       | otherwise -> case chanFar chan >>= here of
           -- Nobody has accepted, so there is nobody to have written anything.
           Nothing -> Just (Code "kusanagi.no_peer_yet")

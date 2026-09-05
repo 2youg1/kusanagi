@@ -352,8 +352,11 @@ unlinkable held = addressesApart && bodiesDistinct
     addressesApart = all apart (zip sorted (drop 1 sorted))
     -- Sorted, so the pair with the longest shared prefix is always adjacent.
     sorted = sort (map fst held)
+    -- The address alone: the period and the ward before it are public and
+    -- shared by every object in a bin, by design.
     apart (Address earlier, Address later) =
-      earlier /= later && maybe True (\(shared, _, _) -> Text.length shared < 8) (Text.commonPrefixes earlier later)
+      earlier /= later && maybe True (\(shared, _, _) -> Text.length shared < 8) (Text.commonPrefixes (addressOf earlier) (addressOf later))
+    addressOf = Text.takeWhileEnd (/= '/')
     bodies = map snd held
     bodiesDistinct = length (Set.fromList bodies) == length bodies
 

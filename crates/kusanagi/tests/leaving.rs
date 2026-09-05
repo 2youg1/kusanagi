@@ -268,3 +268,50 @@ fn the_way_out_of_an_unrevokable_channel_is_a_command_that_exists() {
 
     std::fs::remove_dir_all(&ground).ok();
 }
+
+/// Found by `adversary/` (Model, "what one endpoint says is what the other
+/// hears"): the check that the peer may still read ran before the greeting
+/// that discovers the peer, so the first send after a join skipped it.
+#[test]
+fn the_first_send_to_a_peer_who_may_not_read_is_refused() {
+    let ground = scratch("first-send-checks-the-peer");
+    let host = ground.join("host");
+    let alice = Endpoint::new(ground.join("alice"));
+    let bob = Endpoint::new(ground.join("bob"));
+
+    let line = json(
+        &alice
+            .run(&Request::Invite {
+                name: "bob".to_owned(),
+                waypoint: host.display().to_string(),
+                lifetime: 3_600,
+                abilities: kusanagi_grant::Abilities::NONE,
+                habit: kusanagi::Habit::default(),
+            })
+            .unwrap(),
+    )["invite"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    bob.run(&Request::Join {
+        invite: line,
+        name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
+    })
+    .unwrap();
+
+    let refused = alice
+        .run(&Request::Send {
+            name: "bob".to_owned(),
+            payload: b"for nobody".to_vec(),
+        })
+        .unwrap_err();
+    assert_eq!(refused.code(), "grant.forbidden");
+    assert_eq!(
+        common::drops(&host),
+        2,
+        "a drop was written for a peer who may not read it"
+    );
+
+    std::fs::remove_dir_all(&ground).ok();
+}

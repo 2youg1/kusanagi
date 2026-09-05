@@ -130,7 +130,8 @@ everyRequestIsSeen door = do
                 <> show (take 4 strange)
             )
   where
-    drop' path = "/d/" `Text.isPrefixOf` path
+    -- A drop, or the listing of a bin of them: the two requests a read makes.
+    drop' path = "/d/" `Text.isPrefixOf` path || "/bin/" `Text.isPrefixOf` path
 
 -- | Same number of messages, three orders of magnitude apart in what they say.
 --
