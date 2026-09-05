@@ -56,7 +56,6 @@ use kusanagi_kernel::{Handle, Signer};
 
 use crate::cairns;
 use crate::channel::Channel;
-use crate::egress::{self, Egress};
 use crate::error::SiteError;
 use crate::naming;
 use crate::permissions;
@@ -67,7 +66,7 @@ use crate::roster::{self, Roster};
 /// One endpoint's local state.
 #[derive(Debug, Clone)]
 pub struct Site {
-    root: PathBuf,
+    pub(crate) root: PathBuf,
 }
 
 impl Site {
@@ -334,25 +333,6 @@ impl Site {
     /// [`SiteError::BadRecord`] when a line is not a step identifier.
     pub fn revocations(&self) -> Result<Revocations, SiteError> {
         revoked::all(&self.root)
-    }
-
-    /// How this site may reach a host; see [`Egress`].
-    ///
-    /// # Errors
-    ///
-    /// [`SiteError::Local`] when the record cannot be read, and
-    /// [`SiteError::BadRecord`] when it holds a word this build does not know.
-    pub fn egress(&self) -> Result<Egress, SiteError> {
-        egress::read(&self.root)
-    }
-
-    /// Records how this site may reach a host.
-    ///
-    /// # Errors
-    ///
-    /// [`SiteError::Local`] when the record cannot be written.
-    pub fn set_egress(&self, egress: Egress) -> Result<(), SiteError> {
-        egress::write(&self.root, egress)
     }
 
     /// Adds a step to the revocation list.

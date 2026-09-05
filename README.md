@@ -54,79 +54,11 @@ is no runtime and nothing to install beside the binary.
 
 ## Try it in five minutes
 
-Run `just demo` to see all of this happen in a temporary directory. Or do it by
-hand.
-
-**1. Alice opens a channel.** She picks a place to leave messages and gets one
-line of text to hand over.
-
-```bash
-kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8963
-```
-
-**2. Bob joins.** He needs the line and nothing else.
-
-```bash
-pbpaste | kusanagi --root ~/.bob join --name alice
-# or:  kusanagi --root ~/.bob join --name alice < invitation.txt
-# PowerShell:  Get-Clipboard | kusanagi --root ~/.bob join --name alice
-```
-
-**On Windows, prefer the file.** The clipboard there is a log rather than a
-buffer: `Win+V` history is kept by default, "sync across devices" uploads it to a
-Microsoft account, and any foreground application can read what is on it right
-now. PowerShell keeps its own copy of every command line, text included, in
-`%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt` —
-which is the same reason no channel name and no message body is ever an argument
-here. Every flag that takes a name accepts `-` and reads it from stdin instead.
-
-**The invitation is about 180 characters, and four of them are a check code.**
-`invite` and `join` both print the same four hexadecimal digits, derived from the
-channel secret. Read them out to each other: if they differ, the line was altered
-between you. Everything bulky about an invitation — the inviter's key, the grant
-chain — is public, so it goes in a drop on the host that only the holder of this
-line can find, and expires with it.
-
-**The invitation is read from stdin and cannot be given as an argument.** It
-carries the channel secret, and on Linux any account on the machine can read
-another process's command line out of `/proc`, after which the shell keeps a copy
-in its history. Treating it like a password means never letting it become an
-argument.
-
-The invitation works exactly once. If someone else used it first, Bob gets
-`kusanagi.invite_spent` and should ask for a fresh one.
-
-**3. They talk.**
-
-```bash
-kusanagi --root ~/.alice send --to bob "the first thing alice says"
-kusanagi --root ~/.bob   read --from alice
-kusanagi --root ~/.bob   send --to alice "bob heard you"
-kusanagi --root ~/.alice read --from bob
-```
-
-Every read verifies from where this endpoint last got to; the first read of a
-stream verifies from genesis. Each message is checked against its author's
-signature and against the message before it. If any check fails you get an error
-instead of a list. There is no partial read.
-
-**4. Alice changes her mind.**
-
-```bash
-kusanagi --root ~/.alice revoke --from bob
-```
-
-Nothing Bob writes is accepted after this, including messages he wrote before.
-Bob is not notified, because there is no channel left to notify him on. His
-endpoint keeps reporting a live grant while Alice's `channels` shows him cut off.
-
-To drop the channel entirely on Alice's side, use
-`kusanagi forget --channel bob`. The host keeps its bytes and the channel cannot
-be re-entered.
-
-[QUICKSTART.md](QUICKSTART.md) walks through the same thing one command at a
-time, written for someone who has never seen this repository;
-[docs/joining.md](docs/joining.md) is the host's side — running one, checking one.
+`just demo` runs the whole exchange in a temporary directory: two identities, one
+host, one message verified back to its first byte. To do it by hand,
+[QUICKSTART.md](QUICKSTART.md) is ten commands, each ending in the line you
+should see; [docs/joining.md](docs/joining.md) is the host's side — running one,
+checking one before you rely on it.
 
 ## Commands
 

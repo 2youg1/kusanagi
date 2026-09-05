@@ -16,6 +16,7 @@ use std::path::Path;
 
 use crate::error::SiteError;
 use crate::permissions;
+use crate::site::Site;
 
 /// How this site is allowed to reach a host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +36,7 @@ const REQUIRED: &[u8] = b"proxy-required";
 ///
 /// [`SiteError::Local`] when the record cannot be read, and
 /// [`SiteError::BadRecord`] when it holds a word this build does not know.
-pub(crate) fn read(root: &Path) -> Result<Egress, SiteError> {
+fn read(root: &Path) -> Result<Egress, SiteError> {
     let Some(bytes) = permissions::read(&root.join(FILE), "read the egress record")? else {
         return Ok(Egress::Free);
     };
@@ -54,7 +55,7 @@ pub(crate) fn read(root: &Path) -> Result<Egress, SiteError> {
 /// # Errors
 ///
 /// [`SiteError::Local`] when the record cannot be written.
-pub(crate) fn write(root: &Path, egress: Egress) -> Result<(), SiteError> {
+fn write(root: &Path, egress: Egress) -> Result<(), SiteError> {
     permissions::create_dir(root, "create the site directory")?;
     match egress {
         Egress::ProxyRequired => {
@@ -68,5 +69,26 @@ pub(crate) fn write(root: &Path, egress: Egress) -> Result<(), SiteError> {
                 source,
             }),
         },
+    }
+}
+
+impl Site {
+    /// How this site may reach a host; see [`Egress`].
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::Local`] when the record cannot be read, and
+    /// [`SiteError::BadRecord`] when it holds a word this build does not know.
+    pub fn egress(&self) -> Result<Egress, SiteError> {
+        read(&self.root)
+    }
+
+    /// Records how this site may reach a host.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::Local`] when the record cannot be written.
+    pub fn set_egress(&self, egress: Egress) -> Result<(), SiteError> {
+        write(&self.root, egress)
     }
 }

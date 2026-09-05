@@ -28,6 +28,7 @@ library
     Kusanagi.Discriminator
     Kusanagi.Door
     Kusanagi.Doorway
+    Kusanagi.Automation
     Kusanagi.Forging
     Kusanagi.Glass
     Kusanagi.Ground

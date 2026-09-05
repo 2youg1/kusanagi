@@ -46,52 +46,7 @@ cargo build --release      # 产物是 target/release/kusanagi
 
 ## 五分钟上手
 
-跑 `just demo` 可以在一个临时目录里看到下面整个过程。也可以手动来一遍。
-
-**1. Alice 开一条 channel。** 她指定一个存放消息的地方，拿到一行文本交给对方。
-
-```bash
-kusanagi --root ~/.alice invite --name bob --waypoint http://box.example:8963
-```
-
-**2. Bob 加入。** 他只需要这一行，别的都不需要。
-
-```bash
-pbpaste | kusanagi --root ~/.bob join --name alice
-# 或：      kusanagi --root ~/.bob join --name alice < invitation.txt
-# PowerShell：Get-Clipboard | kusanagi --root ~/.bob join --name alice
-```
-
-**在 Windows 上优先用文件。** 那里的剪贴板是一本日志而不是一个缓冲区：`Win+V` 历史默认保留，「跨设备同步」开着就把它上传到微软账户，任何前台应用都能读到当前的内容。PowerShell 还会把每一条命令行连同正文写进 `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`——这也正是这里的 channel 名和消息正文永远不作为参数的原因。每一个收名字的旗标都接受 `-`，改从标准输入读。
-
-**一条邀请大约 180 个字符，其中四个是校验码。** `invite` 与 `join` 都会印出同一组四位十六进制数字，它由通道秘密派生。两个人彼此念一遍：对不上，就说明这行字在路上被改过。邀请里真正庞大的那些东西——邀请者的公钥、grant 链——都是公开数据，所以它们被放到宙主上的一个 drop 里，只有拿着这行字的人算得出那个地址，并且随邀请一同过期。
-
-**邀请从标准输入读取，不能作为参数传入。** 它携带着通道秘密，而在 Linux 上本机任何一个账号都能从 `/proc` 读到别的进程的命令行，shell 还会把它写进历史记录。把这行字当密码对待，就意味着永远不让它变成一个参数。
-
-这行邀请只能用一次。如果别人先用掉了，Bob 会收到 `kusanagi.invite_spent`，这时应该去要一条新的，而不是重试。
-
-**3. 两边开始说话。**
-
-```bash
-kusanagi --root ~/.alice send --to bob "alice 说的第一句话"
-kusanagi --root ~/.bob   read --from alice
-kusanagi --root ~/.bob   send --to alice "bob 听到了"
-kusanagi --root ~/.alice read --from bob
-```
-
-每次读取都从本端点上次验到的位置续验，首次读一条流则从创世开始验：每条消息都要对上作者的签名，也要对上它前面那一条。任何一项对不上，你拿到的是错误而不是列表。这里没有「读一半」这种结果。
-
-**4. Alice 反悔了。**
-
-```bash
-kusanagi --root ~/.alice revoke --from bob
-```
-
-此后 Bob 写的东西一律不被接受，包括他在此之前写的。Bob 不会收到通知，因为已经没有信道可以通知他了：他那边继续显示授权有效，而 Alice 的 `channels` 显示他已被切断。
-
-如果 Alice 想彻底丢掉这条 channel，用 `kusanagi forget --channel bob`。主机上的字节原样保留，但这条 channel 再也进不去了。
-
-[QUICKSTART.md](QUICKSTART.md) 一次一条命令讲同一件事，写给完全没见过这个仓库的人；[docs/joining.md](docs/joining.md) 是宿主那一侧——怎么跑一台、怎么测一台。
+`just demo` 在一个临时目录里把整个过程跑一遍：两个身份、一台主机、一条一直验证到第一个字节的消息。想自己动手，[QUICKSTART.md](QUICKSTART.md)（英文）是十条命令，每条都以你该看到的那一行结尾；[docs/joining.md](docs/joining.md) 是主机那一侧——怎么跑一台、依赖它之前怎么测它。
 
 ## 命令
 
