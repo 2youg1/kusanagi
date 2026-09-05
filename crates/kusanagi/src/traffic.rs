@@ -13,7 +13,9 @@
 
 use kusanagi_door::Outcome;
 use kusanagi_grant::Ability;
-use kusanagi_kernel::{Freight, Instant, Purpose, PutOutcome, Segment, Signer, Waypoint};
+use kusanagi_kernel::{
+    Freight, Instant, MAX_PAYLOAD, PutOutcome, Segment, Signer, Waypoint, divide,
+};
 use kusanagi_seal::{Fit, seal};
 use kusanagi_site::{Channel, Site};
 
@@ -22,10 +24,23 @@ use crate::settle::settle;
 use crate::assembly::{open, peer_ward, signer, ward};
 use crate::greeting::greet;
 use crate::request::Whose;
+use crate::traffic_read::reported;
 use kusanagi_door::Complaint;
-use kusanagi_kernel::Alias;
 use kusanagi_walk::{Lane, verified};
 use kusanagi_walk::{Reach, Walked, track};
+
+/// How many segments one message on a channel may take.
+///
+/// **The limit is about whose ward pays, not about what a person wants to
+/// send.** A channel's drops are filed in the *peer's* ward, which they share
+/// with strangers who chose the same four digits; every one of those strangers
+/// downloads whatever lands there, and none of them agreed to it. Thirty-two
+/// drops is an eighth of a bin ([`kusanagi_walk::CAP`]), so eight of these can
+/// happen in one period before the ward is refused to everybody in it.
+///
+/// A room's is twice this and lives beside `room_send`: a room's ward is the
+/// room's own, so the members who pay for it are the members who joined it.
+pub(crate) const CHANNEL_PARTS: u16 = 32;
 
 /// What a `read` owes its caller: everything, or only what sits above the height
 /// the caller says it already holds.
@@ -62,6 +77,17 @@ pub(crate) fn send(
 ) -> Result<Outcome, Complaint> {
     let channel = site.channel(name)?;
     if channel.cadence.period().is_some() {
+        // A slot is one drop per period, whatever there is to say. A message in
+        // several drops would either burst — which is the shape a slot exists to
+        // hide — or straddle periods, and a run straddling periods is one a
+        // reader must re-walk from genesis on every poll until it completes.
+        let whole = usize::try_from(MAX_PAYLOAD).unwrap_or(usize::MAX);
+        if payload.len() > whole {
+            return Err(Complaint::SlottedOneDrop {
+                name: name.to_owned(),
+                limit: whole,
+            });
+        }
         site.queue(name, payload)?;
         return Ok(Outcome::Queued {
             name: name.to_owned(),
@@ -69,13 +95,10 @@ pub(crate) fn send(
             period: channel.cadence.period(),
         });
     }
-    let written = appended(
-        site,
-        &signer(site)?,
-        name,
-        Freight::message(payload.to_vec())?,
-        now,
-    )?;
+    // Divided before anything is opened, so a message past the limit is refused
+    // here, on this machine, without a host being told that anybody tried.
+    let freights = divide(payload, CHANNEL_PARTS)?;
+    let written = appended(site, &signer(site)?, name, freights, now)?;
     Ok(Outcome::Sent {
         name: name.to_owned(),
         index: written.index,
@@ -95,7 +118,7 @@ pub(crate) fn appended(
     site: &Site,
     me: &Signer,
     name: &str,
-    freight: Freight,
+    freights: Vec<Freight>,
     now: Instant,
 ) -> Result<Appended, Complaint> {
     let channel = site.channel(name)?;
@@ -149,16 +172,26 @@ pub(crate) fn appended(
         &place,
         &mine,
         me,
-        freight.acknowledging(acknowledged),
+        freights
+            .into_iter()
+            .map(|freight| freight.acknowledging(acknowledged))
+            .collect(),
         walked,
     )
 }
 
-/// Seals `freight` as the next segment of `mine` and leaves it on the host.
+/// Seals `freights` as the next segments of `mine` and leaves them on the host.
 ///
 /// The one place a segment is written, whichever stream it is on: a channel's,
 /// a room member's, or a founder's roster. `walked` is the walk to the head
 /// the caller just made, and this extends it.
+///
+/// **The whole run is built before any of it is written.** Every address in it
+/// follows from the head this endpoint already holds, so nothing in the
+/// building waits on a host and the writes go out together — the same shape a
+/// sweep uses to fetch a bin. A run that fails halfway leaves segments no
+/// reader will ever report, because a run only becomes a message once all of it
+/// is there; the caller sends again.
 ///
 /// The trail is derived here and dropped at the end of this command. It is
 /// never written down: an author recomputes it from a deterministic signature
@@ -167,59 +200,109 @@ pub(crate) fn appended(
 ///
 /// # Errors
 ///
-/// [`Complaint::DropTaken`] when the address the head derives is already held,
+/// [`Complaint::DropTaken`] when an address the run derives is already held,
 /// which is another writer on this lane; and whatever sealing, the host, or the
 /// two records report.
 pub(crate) fn append(
     site: &Site,
     name: &str,
-    place: &impl Waypoint,
+    place: &(impl Waypoint + Sync),
     mine: &Lane,
     me: &Signer,
-    freight: Freight,
+    freights: Vec<Freight>,
     walked: Walked,
 ) -> Result<Appended, Complaint> {
     let trail = mine.keys.trail(me);
-    let segment = match walked.head() {
-        None => Segment::genesis(me, &trail, freight),
-        Some(head) => Segment::extend(&trail, me.handle(), freight, head),
-    }?;
-    let address = mine.keys.address(segment.index());
-    let sealed = seal(
-        &mine.keys.key(segment.index())?,
-        Fit::Veil,
-        &segment.to_canonical_bytes(),
-    )?;
-    let object = mine.at(address);
-    match Waypoint::put_if_absent(place, &object, &sealed)? {
-        // The host took it at an address that was empty, so this endpoint knows
-        // the segment is there without reading it back. Recording that now is
-        // what keeps the next send at one request: a position left one behind
-        // the stream would make every send rediscover what it had just written,
-        // and a bin recorded without the object just added would make the next
-        // sweep take the whole bin to find one drop this endpoint wrote itself.
-        PutOutcome::Stored => {
-            if let Some(cairn) = walked.extended(&segment)? {
-                site.mark(name, &cairn)?;
-            }
-            if let Some(listed) = walked.listed {
-                site.sweep_to(name, mine.bin.ward(), &listed.including(object))?;
-            }
-        }
-        PutOutcome::AlreadyPresent => {
+    let mut standing = walked.standing();
+    let mut run = Vec::with_capacity(freights.len());
+    for freight in freights {
+        let segment = match standing.head() {
+            None => Segment::genesis(me, &trail, freight),
+            Some(head) => Segment::extend(&trail, me.handle(), freight, head),
+        }?;
+        standing.accept(&segment)?;
+        let sealed = seal(
+            &mine.keys.key(segment.index())?,
+            Fit::Veil,
+            &segment.to_canonical_bytes(),
+        )?;
+        run.push(Written {
+            index: segment.index(),
+            id: segment.id().to_string(),
+            object: mine.at(mine.keys.address(segment.index())),
+            sealed,
+        });
+    }
+    // In flight together: the host sees a bin being added to, not a sequence.
+    let outcomes: Vec<Result<PutOutcome, Complaint>> = std::thread::scope(|scope| {
+        let running: Vec<_> = run
+            .iter()
+            .map(|written| {
+                scope.spawn(move || {
+                    Ok(Waypoint::put_if_absent(
+                        place,
+                        &written.object,
+                        &written.sealed,
+                    )?)
+                })
+            })
+            .collect();
+        running
+            .into_iter()
+            .map(|handle| {
+                handle.join().unwrap_or_else(|_| {
+                    Err(Complaint::Local {
+                        action: "write a segment",
+                        source: std::io::Error::other("a writer did not finish"),
+                    })
+                })
+            })
+            .collect()
+    });
+    for (outcome, written) in outcomes.into_iter().zip(&run) {
+        if outcome? == PutOutcome::AlreadyPresent {
             return Err(Complaint::DropTaken {
-                address: object.to_string(),
+                address: written.object.to_string(),
                 name: name.to_owned(),
             });
         }
     }
+    // The host took them at addresses that were empty, so this endpoint knows
+    // they are there without reading them back. Recording that now is what
+    // keeps the next send at one request: a position left behind the stream
+    // would make every send rediscover what it had just written, and a bin
+    // recorded without the objects just added would make the next sweep take
+    // the whole bin to find drops this endpoint wrote itself.
+    if let Some(cairn) = standing.cairn() {
+        site.mark(name, &cairn)?;
+    }
+    if let Some(listed) = walked.listed {
+        let listed = run
+            .iter()
+            .fold(listed, |listed, written| listed.including(written.object));
+        site.sweep_to(name, mine.bin.ward(), &listed)?;
+    }
+    // The last of the run is where the message now stands, which is the height
+    // a reader will report it at and the one this endpoint carries on from.
+    let last = run.pop().ok_or_else(|| Complaint::Local {
+        action: "append to a stream",
+        source: std::io::Error::other("a send with no segments in it"),
+    })?;
     // The key rather than the address alone: since a drop is filed in a bin,
     // the address by itself no longer says where on the host anything is.
     Ok(Appended {
-        index: segment.index(),
-        id: segment.id().to_string(),
-        address: object.to_string(),
+        index: last.index,
+        id: last.id,
+        address: last.object.to_string(),
     })
+}
+
+/// One segment of a run, built and sealed, waiting for the host.
+struct Written {
+    index: u64,
+    id: String,
+    object: kusanagi_kernel::Object,
+    sealed: Vec<u8>,
 }
 
 pub(crate) fn read(
@@ -269,47 +352,6 @@ pub(crate) fn read(
         settle(site, name, &channel, &walked, &theirs, me, now)?;
     }
     Ok(answer)
-}
-
-/// Turns a walk into the answer for it, dropping what the caller already holds
-/// and what nobody meant to say.
-///
-/// Two filters, and they are different kinds of thing. `--after` is a property
-/// of the request, so it lives with the verb rather than in `door`, which
-/// renders what it is handed and cannot perform a walk. **A filler is filtered
-/// because it is not a message at all**: it exists so that an observer cannot
-/// tell a silent endpoint from a busy one, and reporting it to the caller would
-/// hand them padding to read as though somebody had written it.
-///
-/// The height is unaffected by either filter. It is the verified head of the
-/// stream, fillers included — a height that skipped them would tell a reader
-/// exactly how many slots went by empty, which is the fact the fillers were
-/// spent to hide.
-fn reported(
-    name: &str,
-    author: &str,
-    alias: Option<&Alias>,
-    walked: &Walked,
-    after: Option<u64>,
-) -> Outcome {
-    Outcome::read(
-        name,
-        author,
-        alias.map(Alias::as_str),
-        walked.head().map(|head| head.index()),
-        walked
-            .held()
-            .iter()
-            .filter(|held| held.segment.purpose() == Purpose::Message)
-            .filter(|held| after.is_none_or(|floor| held.segment.index() > floor))
-            .map(|held| {
-                (
-                    held.segment.index(),
-                    held.segment.acknowledged(),
-                    held.segment.payload(),
-                )
-            }),
-    )
 }
 
 /// Reports this endpoint's own stream, verified the same way a peer's is.

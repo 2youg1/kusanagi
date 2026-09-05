@@ -1,10 +1,15 @@
-# The closing condition for every change, run by a machine that does not remember
-# yesterday either. This is `just check` plus the supply-chain gate.
+# The fast lane: what a pull request must pass before anybody reads it.
+#
+# This is `just check` on two platforms, and only it. Everything slower or
+# flakier — the third platform, the supply chain, the adversary, the GUI —
+# runs on `main` and on the daily clock instead (see `full.yml`), because a
+# red that has nothing to do with the change is a verdict on the contributor,
+# and a ten-minute wait is a verdict on contributing at all. `cargo deny` left
+# this lane after one reset connection turned a network wobble into a failed
+# check on somebody's change.
 name: check
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
 env:
@@ -16,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +35,7 @@ jobs:
       - name: lint
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: test
-        run: cargo nextest run --workspace --all-features
+        run: cargo nextest run --workspace --all-features -E 'not package(kusanagi-grant)'
       # Where a test may stand, and what may follow it into a release. Bash and
       # `cargo tree` are all it needs, so it runs on every platform.
       - name: boxes
@@ -47,71 +52,3 @@ jobs:
       - name: budget
         shell: bash
         run: bash scripts/budget.sh
-
-  supply-chain:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-
-  # A build that is reproducible on one machine is deterministic; a build that is
-  # reproducible on two is the claim `docs/VERIFY.md` makes. This is the second
-  # machine, and it is not one anybody here controls.
-  reproducible:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: build twice and compare
-        shell: bash
-        run: |
-          export RUSTFLAGS="$(bash scripts/hermetic.sh)"
-          built() {
-            cargo build --release --locked --message-format json 2>/dev/null \
-              | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4
-          }
-          cargo build --release --locked --quiet
-          first=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\')
-          touch crates/kusanagi/src/main.rs
-          cargo build --release --locked --quiet
-          second=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\')
-          echo "first  $first"
-          echo "second $second"
-          [ "$first" = "$second" ] || { echo "::error::two builds of one source differ"; exit 1; }
-          # And nothing about this runner reached the bytes: no home directory,
-          # no checkout path. A binary that names where it was built names who
-          # built it, on a developer's machine.
-          if grep -aq "$(cygpath -w "$HOME" 2>/dev/null || echo "$HOME")" "$(built)"; then
-            echo "::error::the binary carries the building account's home directory"; exit 1
-          fi
-
-  # The hermetic build for the platforms Nix runs on. `flake.lock` pins the
-  # compiler, the linker, the C toolchain and every system library, so this
-  # runner and any machine holding the same lock produce the same bytes;
-  # `--rebuild` then builds a second time and refuses if the output differs.
-  # Until a `flake.lock` is committed, this job generates one and uploads it
-  # to be committed by hand (`.process/Roadmap.md` §J4).
-  nix:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
-      - name: build
-        run: |
-          if [ -f flake.lock ]; then
-            nix build --no-update-lock-file --print-build-logs .#kusanagi
-          else
-            nix flake lock
-            nix build --print-build-logs .#kusanagi
-          fi
-          nix build --rebuild .#kusanagi
-          sha256sum result/bin/kusanagi
-          ./result/bin/kusanagi doctor --here --json --root "$RUNNER_TEMP/site" | grep '"binary"'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flake-lock
-          path: flake.lock

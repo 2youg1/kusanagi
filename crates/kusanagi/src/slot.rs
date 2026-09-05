@@ -76,7 +76,7 @@ pub(crate) fn tick(site: &Site, name: &str, now: Instant) -> Result<Outcome, Com
             Some(waiting) => Freight::message(waiting.payload.clone())?,
             None => Freight::filler()?,
         };
-        let written = appended(site, &me, name, freight, now)?;
+        let written = appended(site, &me, name, vec![freight], now)?;
         // Only once the host has it. A payload cleared before the write would be
         // a message the caller was told had been sent and that nobody will send.
         if let Some(waiting) = &queued {

@@ -14,13 +14,25 @@
 
 use std::collections::BTreeMap;
 
-use kusanagi_kernel::{Bin, Freight, Handle, Instant, Purpose, Roster, VerifyingKey};
+use kusanagi_kernel::{Bin, Freight, Handle, Instant, Purpose, Roster, VerifyingKey, divide};
 use kusanagi_seal::{Keyring, period, rendezvous};
 use kusanagi_site::{Room, Site};
-use kusanagi_walk::{Lane, Reach, Walked, peek, track, track_all};
+use kusanagi_walk::{Lane, Message, Reach, Walked, messages, peek, track, track_all};
 
 use crate::assembly::{open, signer};
 use crate::traffic::append;
+
+/// How many segments one message in a room may take.
+///
+/// Twice what a channel allows, and the difference is who pays. A room's drops
+/// are filed in the room's own ward, which only its members sweep, so the
+/// people who download a large message are the people who joined the room. A
+/// channel's land in the peer's ward, which they share with strangers.
+///
+/// It is still a quarter of a bin ([`kusanagi_walk::CAP`]), because four
+/// members sending at once in one period must not make the room unreadable for
+/// all of them.
+const ROOM_PARTS: u16 = 64;
 use kusanagi_door::{Complaint, Outcome};
 
 /// One member's lane in a room: their stream under the room secret, filed in
@@ -52,6 +64,9 @@ pub(crate) fn room_send(
     now: Instant,
 ) -> Result<Outcome, Complaint> {
     let chamber = site.room(name)?;
+    // Divided before the host is opened, so a message past the limit is refused
+    // on this machine without anybody being told that it was attempted.
+    let freights = divide(payload, ROOM_PARTS)?;
     let me = signer(site)?;
     let place = open(site, &chamber.locator, now)?;
     let mine = lane_of(&chamber, &me.verifying_key(), now);
@@ -59,8 +74,7 @@ pub(crate) fn room_send(
     // No acknowledgement count: one number cannot say how much of N streams
     // was read, and a room never releases, so nothing settles on it. Order
     // across authors is the period each segment was filed in.
-    let freight = Freight::message(payload.to_vec())?;
-    let written = append(site, name, &place, &mine, &me, freight, walked)?;
+    let written = append(site, name, &place, &mine, &me, freights, walked)?;
     Ok(Outcome::RoomSent {
         name: name.to_owned(),
         index: written.index,
@@ -137,9 +151,13 @@ pub(crate) fn room_read(
         }
     }
     site.keep_room(&chamber)?;
-    Ok(kusanagi_door::chamber::reported(
-        name,
-        chamber.roster.members().iter().map(|member| {
+    // Every author's messages are joined before any row is built, because the
+    // bytes of a divided message are made here and the report borrows them.
+    let rows: Vec<(String, Option<u64>, Vec<Message<'_>>)> = chamber
+        .roster
+        .members()
+        .iter()
+        .map(|member| {
             let author = member.handle();
             let floor = after.get(&author.to_string()).copied();
             let done = walked.get(&author);
@@ -147,19 +165,29 @@ pub(crate) fn room_read(
                 author.to_string(),
                 done.and_then(Walked::head).map(|head| head.index()),
                 done.map_or_else(Vec::new, |done| {
-                    done.held()
-                        .iter()
-                        .filter(|held| held.segment.purpose() == Purpose::Message)
-                        .filter(|held| floor.is_none_or(|floor| held.segment.index() > floor))
-                        .map(|held| {
-                            (
-                                held.segment.index(),
-                                held.filed.count(),
-                                held.segment.payload(),
-                            )
-                        })
+                    messages(done.held())
+                        .into_iter()
+                        .filter(|message| floor.is_none_or(|floor| message.index > floor))
                         .collect()
                 }),
+            )
+        })
+        .collect();
+    Ok(kusanagi_door::chamber::reported(
+        name,
+        rows.iter().map(|(author, height, said)| {
+            (
+                author.clone(),
+                *height,
+                said.iter()
+                    .map(|message| {
+                        (
+                            message.index,
+                            message.filed.count(),
+                            message.payload.as_ref(),
+                        )
+                    })
+                    .collect(),
             )
         }),
     ))
@@ -242,7 +270,7 @@ fn admit(
     let mine = lane_of(&chamber, &me.verifying_key(), now);
     let walked = track(site, name, place, &mine, Reach::Head, now)?;
     let freight = Freight::roster(chamber.roster.to_bytes()?)?;
-    let written = append(site, name, place, &mine, me, freight, walked)?;
+    let written = append(site, name, place, &mine, me, vec![freight], walked)?;
     chamber.roster_at = Some(written.index);
     site.keep_room(&chamber)?;
     Ok(chamber)

@@ -58,6 +58,22 @@ pub enum SegmentError {
         /// The limit in force.
         limit: u32,
     },
+    /// One message needs more segments than the caller allows it.
+    ///
+    /// Apart from [`Self::PayloadTooLarge`] because the two are different
+    /// questions: that one is what a single segment can hold, which the format
+    /// fixes, and this one is how much of a shared ward one message may take,
+    /// which `kusanagi` decides.
+    #[error(
+        "{limit} bytes is all one message carries here, and this one is larger; \
+         a file and a message are the same thing on this network"
+    )]
+    MessageTooLarge {
+        /// How many bytes were offered.
+        len: usize,
+        /// The limit in force, in bytes.
+        limit: usize,
+    },
     /// The declared payload length cannot be held by this platform.
     #[error("declared payload length {len} is not representable here")]
     PayloadUnrepresentable {
@@ -92,6 +108,7 @@ impl SegmentError {
             Self::GenesisIndexNotZero { .. } => "segment.genesis_index",
             Self::FollowsIndexZero => "segment.follows_index",
             Self::PayloadTooLarge { .. } => "segment.payload_too_large",
+            Self::MessageTooLarge { .. } => "segment.message_too_large",
             Self::PayloadUnrepresentable { .. } => "segment.payload_unrepresentable",
             Self::NotTheAuthor { .. } => "segment.not_the_author",
             Self::NotAuthentic(_) => "segment.not_authentic",

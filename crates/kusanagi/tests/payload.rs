@@ -190,8 +190,7 @@ fn the_largest_payload_that_fits_a_drop_goes_through_and_one_more_does_not() {
     // The limit is not a number somebody picked. Every sealed drop is one fixed
     // size, and `MAX_PAYLOAD` is what is left of that size after the segment's
     // own fields and the authentication tag — so this is the boundary between a
-    // message that fits in one envelope and one that would need chunking, which
-    // does not exist yet.
+    // message that fits in one envelope and one that is said in two.
     let ground = scratch("payload-limit");
     let host = ground.join("host");
     let alice = Endpoint::new(ground.join("alice"));
@@ -206,20 +205,38 @@ fn the_largest_payload_that_fits_a_drop_goes_through_and_one_more_does_not() {
     .unwrap();
 
     let brim = usize::try_from(kusanagi_kernel::MAX_PAYLOAD).unwrap();
-    alice
-        .run(&Request::Send {
-            name: "bob".to_owned(),
-            payload: vec![b'z'; brim],
-        })
-        .expect("the largest payload that fits was refused");
+    // The second send is said in two segments and reads back as one message.
+    // Both sends are alice's own stream, read back from her own side.
+    for payload in [vec![b'z'; brim], vec![b'z'; brim + 1]] {
+        alice
+            .run(&Request::Send {
+                name: "bob".to_owned(),
+                payload,
+            })
+            .expect("a payload within the channel limit was refused");
+    }
+    let heard = json(
+        &alice
+            .run(&Request::Read {
+                name: "bob".to_owned(),
+                after: None,
+                whose: Whose::Mine,
+            })
+            .expect("the divided message could not be read"),
+    );
+    let rows = heard["segments"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "alice's two sends were not two messages");
+    // Plain `z` is text, so the answer renders it as a string rather than hex.
+    assert_eq!(rows[0]["text"], "z".repeat(brim));
+    assert_eq!(rows[1]["text"], "z".repeat(brim + 1));
 
     let refused = alice
         .run(&Request::Send {
             name: "bob".to_owned(),
-            payload: vec![b'z'; brim + 1],
+            payload: vec![b'z'; usize::try_from(kusanagi_kernel::PART_ROOM).unwrap() * 32 + 1],
         })
-        .expect_err("one byte over the limit was accepted");
-    assert_eq!(refused.code(), "segment.payload_too_large");
+        .expect_err("a message past the channel limit was accepted");
+    assert_eq!(refused.code(), "segment.message_too_large");
 
     // And the drop that did go through is the same size as every other one, so
     // the largest message this network carries is not visible as the largest.

@@ -47,7 +47,8 @@ use kusanagi_door::Complaint;
 /// decides; nobody else is told.
 pub const DIGITS: u8 = Ward::DIGITS;
 
-/// The most objects one bin is allowed to hold before a reader gives up on it.
+/// The most objects one bin is allowed to hold before a reader gives up on it,
+/// when the reader has not said otherwise.
 ///
 /// A hostile host, or a crowded ward, can fill a bin with objects a reader must
 /// download to find its own. Two hundred and fifty-six drops is thirty-two
@@ -55,6 +56,13 @@ pub const DIGITS: u8 = Ward::DIGITS;
 /// poll fetches only what the bin lists beyond the last sweep. **Filling a bin
 /// can cause a denial and never a leak**: the reader still asked for the whole
 /// bin and named nothing in it.
+///
+/// **The denial is the reason this is a setting and not a constant.** A period
+/// whose bin went over the cap can never be read at all, so a fixed number
+/// would make a busy ten minutes permanently unreadable for everybody in the
+/// ward. `kusanagi sweep --cap` lets the reader who is stuck decide to pay for
+/// that bin instead, which is a choice a person can make and a silent permanent
+/// refusal is not.
 pub const CAP: usize = 256;
 
 /// One bin as a sweep took it: what the host listed, and the sealed bytes of
@@ -71,6 +79,7 @@ pub struct Sweeping<'a, P: Waypoint + Listing + Sync> {
     place: &'a P,
     ward: Ward,
     digits: u8,
+    cap: usize,
     through: Period,
     /// What the last sweep saw, so that a bin listed the same is not taken twice.
     known: Option<Swept>,
@@ -86,6 +95,7 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
         place: &'a P,
         ward: Ward,
         digits: u8,
+        cap: usize,
         since: Period,
         through: Period,
         known: Option<Swept>,
@@ -94,6 +104,7 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
             place,
             ward,
             digits,
+            cap,
             through,
             known,
             next: (since <= through).then_some(since),
@@ -105,8 +116,8 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
     ///
     /// # Errors
     ///
-    /// [`Complaint::WardOverfull`] when the bin holds more than [`CAP`] objects,
-    /// and whatever the host reports.
+    /// [`Complaint::WardOverfull`] when the bin holds more objects than this
+    /// sweep's cap, and whatever the host reports.
     pub fn take(&mut self) -> Result<Option<Taken>, Complaint> {
         let Some(period) = self.next else {
             return Ok(None);
@@ -133,7 +144,7 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
             .into_iter()
             .filter(|object| sweep.holds(object))
             .collect();
-        if listed.len() > CAP {
+        if listed.len() > self.cap {
             return Err(Complaint::WardOverfull {
                 ward: self.ward.to_string(),
                 period: period.to_string(),

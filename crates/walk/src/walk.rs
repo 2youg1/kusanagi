@@ -35,7 +35,7 @@ use kusanagi_site::{Site, Swept};
 
 use crate::lane::Lane;
 use crate::stepping::{Held, Stepping, decode};
-use crate::sweep::{DIGITS, Sweeping};
+use crate::sweep::{CAP, DIGITS, Sweeping};
 use kusanagi_door::Complaint;
 
 /// A stream as it was found on a waypoint.
@@ -75,23 +75,54 @@ impl Walked {
         self.verifier.cairn()
     }
 
-    /// Where this walk stands once `segment` is appended to it.
-    ///
-    /// A sender needs this. It walked to the head, built the next segment from
-    /// that head, and watched the host accept it at an address that was empty —
-    /// so the segment is verified by construction more strongly than reading it
-    /// back would verify it. Without this the record would lag one behind the
-    /// stream forever, and every send would pay an extra request to rediscover
-    /// what it had just written.
+    /// Where this walk stands, so a run can be built on top of it.
+    #[must_use]
+    pub const fn standing(&self) -> Standing {
+        Standing {
+            verifier: self.verifier,
+        }
+    }
+}
+
+/// Where a stream stands while the segments to append to it are being built.
+///
+/// A sender needs this. It walked to the head, built its segments from that
+/// head, and watched the host accept each at an address that was empty — so
+/// they are verified by construction more strongly than reading them back
+/// would verify them, and the position they leave behind can be written down
+/// without another request.
+///
+/// **A whole run is built before any of it is written.** Every address in the
+/// run follows from the head, so nothing in the building waits on a host, and
+/// the writes can then go out together.
+#[derive(Clone, Copy)]
+pub struct Standing {
+    verifier: Verifier,
+}
+
+impl Standing {
+    /// The head to build the next segment on, absent before the first one.
+    #[must_use]
+    pub fn head(&self) -> Option<ChainHead> {
+        self.verifier.head()
+    }
+
+    /// Takes a segment just built, so that the next one follows it.
     ///
     /// # Errors
     ///
-    /// [`Complaint::Chain`] when `segment` does not follow this walk, which means
-    /// the caller is appending to a chain other than the one it read.
-    pub fn extended(&self, segment: &Segment) -> Result<Option<Cairn>, Complaint> {
-        let mut verifier = self.verifier;
-        verifier.accept(segment)?;
-        Ok(verifier.cairn())
+    /// [`Complaint::Chain`] when `segment` does not follow what stands here,
+    /// which means the caller is appending to a chain other than the one it
+    /// read.
+    pub fn accept(&mut self, segment: &Segment) -> Result<(), Complaint> {
+        self.verifier.accept(segment)?;
+        Ok(())
+    }
+
+    /// The position to write down once the run is on the host.
+    #[must_use]
+    pub fn cairn(&self) -> Option<Cairn> {
+        self.verifier.cairn()
     }
 }
 
@@ -211,7 +242,8 @@ pub fn track_all(
     };
     let through = period(now.as_unix_seconds());
     let digits = site.sweep_digits()?.unwrap_or(DIGITS);
-    let mut sweeping = Sweeping::over(place, ward, digits, since, through, known);
+    let cap = site.sweep_cap()?.unwrap_or(CAP);
+    let mut sweeping = Sweeping::over(place, ward, digits, cap, since, through, known);
     let mut listed = None;
     while let Some(mut taken) = sweeping.take()? {
         for (step, _, _) in &mut steps {

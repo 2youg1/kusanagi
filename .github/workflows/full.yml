@@ -1,0 +1,169 @@
+# The full lane: everything the fast lane skips, on its own clock.
+#
+# Three platforms, the supply chain, the second machine for reproducibility, the
+# hermetic build, the adversary, and the GUI. None of it gates a pull request —
+# the fast lane (`ci.yml`) is the required check — because none of it answers
+# "did this change break something" within the minutes a reviewer waits. What it
+# answers is "is `main` still what it claims to be", once a day and on every
+# push to `main`.
+name: full
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: format
+        run: cargo fmt --all -- --check
+      - name: lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: test
+        run: cargo nextest run --workspace --all-features -E 'not package(kusanagi-grant)'
+      - name: boxes
+        shell: bash
+        run: |
+          outside=$(grep -rl 'CARGO_BIN_EXE' crates/ 2>/dev/null || true)
+          [ -z "$outside" ] || { echo "::error::a Rust test drives the shipped binary: $outside"; exit 1; }
+          for file in $(grep -rl --include='*.rs' '^mod tests' crates/*/src); do
+            grep -q '#\[cfg(test)\]' "$file" || { echo "::error::$file compiles a test module into every build"; exit 1; }
+          done
+      - name: budget
+        shell: bash
+        run: bash scripts/budget.sh
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  # A build that is reproducible on one machine is deterministic; a build that is
+  # reproducible on two is the claim `docs/VERIFY.md` makes. This is the second
+  # machine, and it is not one anybody here controls.
+  reproducible:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build twice and compare
+        shell: bash
+        run: |
+          export RUSTFLAGS="$(bash scripts/hermetic.sh)"
+          built() {
+            cargo build --release --locked --message-format json 2>/dev/null \
+              | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4
+          }
+          cargo build --release --locked --quiet
+          first=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\')
+          touch crates/kusanagi/src/main.rs
+          cargo build --release --locked --quiet
+          second=$(sha256sum "$(built)" | cut -d' ' -f1 | tr -d '\')
+          echo "first  $first"
+          echo "second $second"
+          [ "$first" = "$second" ] || { echo "::error::two builds of one source differ"; exit 1; }
+          # And nothing about this runner reached the bytes: no home directory,
+          # no checkout path. A binary that names where it was built names who
+          # built it, on a developer's machine.
+          if grep -aq "$(cygpath -w "$HOME" 2>/dev/null || echo "$HOME")" "$(built)"; then
+            echo "::error::the binary carries the building account's home directory"; exit 1;
+          fi
+
+  # The hermetic build for the platforms Nix runs on. `flake.lock` pins the
+  # compiler, the linker, the C toolchain and every system library, so this
+  # runner and any machine holding the same lock produce the same bytes;
+  # `--rebuild` then builds a second time and refuses if the output differs.
+  # Until a `flake.lock` is committed, this job generates one and uploads it
+  # to be committed by hand (`.process/Roadmap.md` §J4).
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - name: build
+        run: |
+          if [ -f flake.lock ]; then
+            nix build --no-update-lock-file --print-build-logs .#kusanagi
+          else
+            nix flake lock
+            nix build --print-build-logs .#kusanagi
+          fi
+          nix build --rebuild .#kusanagi
+          sha256sum result/bin/kusanagi
+          ./result/bin/kusanagi doctor --here --json --root "$RUNNER_TEMP/site" | grep '"binary"'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flake-lock
+          path: flake.lock
+
+  # The GUI's own contract: the model a `.native` view binds must exist in Zig.
+  # `native` is an npm-global tool and zig 0.16 its compiler; the windowed half
+  # runs only where a window can open (Windows) and skips elsewhere by itself.
+  glass:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: glass
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: install the native CLI
+        run: npm install --global @native-sdk/cli
+      - name: check
+        run: native check
+      - name: test
+        run: native test
+
+  # The Haskell counterexample hunter keeps its own clock and never gates a
+  # change: if it were required, every Rust contributor would need GHC to merge
+  # anything. It runs here so a red `main` still pages somebody, on this lane
+  # rather than in a contributor's way.
+  adversary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.10"
+          cabal-version: "latest"
+      - name: build what the adversary drives
+        run: cargo build --release
+      - name: run the adversary
+        working-directory: adversary
+        env:
+          KUSANAGI_BIN: ${{ github.workspace }}/target/release/kusanagi
+        run: |
+          cabal update
+          cabal test --test-show-details=direct

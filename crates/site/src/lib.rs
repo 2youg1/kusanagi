@@ -52,7 +52,7 @@ mod sweeps;
 pub use archive::{export, import};
 pub use cadence::Cadence;
 pub use channel::Channel;
-pub use crowd::MOST_DIGITS;
+pub use crowd::{LEAST_CAP, MOST_CAP, MOST_DIGITS};
 pub use egress::Egress;
 pub use error::SiteError;
 pub use invite::Invite;

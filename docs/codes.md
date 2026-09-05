@@ -50,6 +50,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `kusanagi.ward_overfull` | this period of the ward holds more objects than one sweep reads | wait for the period to end and read again; if it persists the ward is crowded: make a fresh identity in a new root and invite your peers there |
 | `kusanagi.needs_cairn` | a channel opened with `--release` was read, and the record of what had already been read is gone; the host no longer holds those drops | run `kusanagi import` with the archive `kusanagi export` made |
 | `kusanagi.not_slotted` | `tick` was run on a channel that writes when it is asked to | send on it with `kusanagi send --to NAME`, or open the channel with `--every SECONDS` |
+| `kusanagi.slotted_one_drop` | a multi-drop message was queued for a channel that writes one drop per period | send each volume as its own queued message, or use a channel without a period |
 | `kusanagi.bad_recovery_key` | an archive did not open under the recovery key that was offered | check the key: it is the 64 hexadecimal digits `kusanagi export` printed once, and it goes in on the first line of stdin |
 | `kusanagi.bad_name` | a name a peer declared was not signed by their key for their own handle, or is not one printable line | keep the bytes and report it: the greeting or offer authenticated and then carried somebody else's name |
 | `kusanagi.bad_greeting` | the introduction on a channel is not one this build can read | keep the bytes and report it |
@@ -90,7 +91,8 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `segment.not_the_author` | a segment names an author who is not the one expected here | keep the bytes and report it: the host served a stream nobody asked for |
 | `segment.payload_too_large` | a segment declares a payload larger than one may carry | keep the bytes and report it |
 | `segment.payload_unrepresentable` | a segment declares a payload larger than this machine can address | keep the bytes and report it |
-| `segment.purpose` | a segment says it is neither a message nor a filler | keep the bytes and report it |
+| `segment.message_too_large` | one message needs more segments than this venue allows | send it in volumes of at most the named number of bytes, each as its own message; say the password in person, not on this channel |
+| `segment.purpose` | a segment says it is none of a message, a filler, a roster or a part | keep the bytes and report it |
 | `segment.tag` | a segment's first byte is neither genesis nor follows | keep the bytes and report it |
 | `segment.trailing` | bytes follow a complete segment | keep the bytes and report it |
 | `segment.truncated` | a segment ends in the middle of a field | keep the bytes and report it |

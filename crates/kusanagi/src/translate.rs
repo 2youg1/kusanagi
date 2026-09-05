@@ -81,6 +81,20 @@ fn width(digits: Option<u8>) -> Result<Option<u8>, Complaint> {
     }
 }
 
+/// The floor and ceiling a sweep cap a person asks for never leaves.
+///
+/// Narrower than `kusanagi_site`'s own record, and the record is where the
+/// refusal to go wider happens. `clap` cannot compare a candidate to the width
+/// the caller did *not* give in one option, so out-of-band values clamp rather
+/// than refuse: the answer still reports what the disk actually says.
+const fn cap_floor() -> u16 {
+    32
+}
+
+const fn cap_ceiling() -> u16 {
+    4096
+}
+
 /// `--as` sets, `--clear` clears, neither asks; `-` after `--as` reads stdin.
 fn naming(alias: Option<String>, clear: bool) -> Result<Naming, Complaint> {
     Ok(match alias {
@@ -248,8 +262,9 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
         Verb::Proxy { require, optional } => Request::Proxy {
             require: stance(require, optional),
         },
-        Verb::Sweep { digits } => Request::Sweep {
+        Verb::Sweep { digits, cap } => Request::Sweep {
             digits: width(digits)?,
+            cap: cap.map(|cap| usize::from(cap.clamp(cap_floor(), cap_ceiling()))),
         },
         Verb::Name { alias, clear } => Request::Name {
             naming: naming(alias, clear)?,

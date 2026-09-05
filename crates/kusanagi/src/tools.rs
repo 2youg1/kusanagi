@@ -166,12 +166,16 @@ const CATALOGUE: &[Tool] = &[
     },
     Tool {
         name: "kusanagi_sweep",
-        about: "Read, or set, how many hex digits of this endpoint's ward a read names: 4 is \
-                its own ward, each digit fewer hides among sixteen times as many wards at the \
-                cost of downloading what all of them received.",
+        about: "Read, or set, how a read reaches a ward: how many of its four hex digits are \
+                named (4 is this endpoint's ward alone, each digit fewer hides among sixteen \
+                times as many wards at the cost of downloading what all of them received), \
+                and how many drops one ten-minute period may hold before a read refuses it.",
         schema: || {
             object(
-                &json!({ "digits": { "type": "integer", "minimum": 0, "maximum": 4, "description": "record this many digits; omit to read" } }),
+                &json!({
+                    "digits": { "type": "integer", "minimum": 0, "maximum": 4, "description": "record this many digits; omit to read" },
+                    "cap": { "type": "integer", "minimum": 32, "maximum": 4096, "description": "record this many drops per period; raise it to get past a period a crowded ward filled" },
+                }),
                 &[],
             )
         },
@@ -322,6 +326,10 @@ pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint
                 .get("digits")
                 .and_then(Value::as_u64)
                 .and_then(|digits| u8::try_from(digits).ok()),
+            cap: arguments
+                .get("cap")
+                .and_then(Value::as_u64)
+                .and_then(|cap| usize::try_from(cap).ok()),
         },
         "kusanagi_revoke" => Request::Revoke {
             name: need(arguments, "name")?.to_owned(),

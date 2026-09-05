@@ -83,7 +83,7 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
             read(site, &signer(site)?, name, *after, *whose, now)
         }
         Request::Proxy { require } => egress(site, *require),
-        Request::Sweep { digits } => crowd(site, *digits),
+        Request::Sweep { digits, cap } => crowd(site, *digits, *cap),
         Request::Name { naming } => named(site, naming),
         Request::Revoke { name } => revoke(site, name),
         Request::Forget { name } => forget(site, name),

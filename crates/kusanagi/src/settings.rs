@@ -18,15 +18,21 @@ use kusanagi_site::{Egress, Site};
 use crate::assembly::identity;
 use crate::request::Naming;
 
-/// Reads or records how many hex digits of its ward this site names in a read.
-pub(crate) fn crowd(site: &Site, digits: Option<u8>) -> Result<Outcome, Complaint> {
-    if let Some(digits) = digits {
-        site.set_sweep_digits(digits)?;
+/// Reads or records how a read reaches a ward: how much of it is named, and how
+/// full a bin this reader will still take.
+pub(crate) fn crowd(
+    site: &Site,
+    digits: Option<u8>,
+    cap: Option<usize>,
+) -> Result<Outcome, Complaint> {
+    if digits.is_some() || cap.is_some() {
+        site.set_sweeping(digits, cap)?;
     }
     let digits = site.sweep_digits()?.unwrap_or(kusanagi_walk::DIGITS);
     Ok(Outcome::Sweeping {
         digits,
         wards: 16_u32.saturating_pow(u32::from(kusanagi_site::MOST_DIGITS.saturating_sub(digits))),
+        cap: site.sweep_cap()?.unwrap_or(kusanagi_walk::CAP),
     })
 }
 

@@ -22,7 +22,7 @@
 use std::io::{IsTerminal, Read};
 
 use kusanagi::Complaint;
-use kusanagi_kernel::MAX_PAYLOAD;
+use kusanagi_kernel::PART_ROOM;
 
 /// What a name argument says when the name itself arrives on stdin.
 pub const ON_STDIN: &str = "-";
@@ -123,7 +123,11 @@ pub fn channel(given: String) -> Result<String, Complaint> {
 /// the message itself stays on the command line is half a fix, and half a fix
 /// that reads as a whole one is worse than none.
 pub fn addressed(given: String, text: Option<String>) -> Result<(String, Vec<u8>), Complaint> {
-    let most = u64::from(MAX_PAYLOAD).saturating_add(1);
+    // The ceiling of a room message in 64 parts: the largest send this door
+    // takes, so the check past it happens in `divide` with the exact limit of
+    // the venue rather than here. One byte past it is still read, so the door
+    // knows it is past rather than guessing from a truncated pipe.
+    let most = u64::from(PART_ROOM).saturating_mul(64).saturating_add(1);
     if given != ON_STDIN {
         let payload = match text {
             Some(text) => text.into_bytes(),

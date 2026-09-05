@@ -29,6 +29,7 @@ mod tools_args;
 mod tools_room;
 mod traffic;
 mod traffic_fanout;
+mod traffic_read;
 mod world;
 
 pub use assembly::{HOST_ADDRESS, run};

@@ -244,6 +244,15 @@ follows:  tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32
 `tests/segment.rs` 与 `tests/robust.rs` 把这条边界写成可运行断言——签名区内每一位翻转都被拒，
 ack 区翻转则照常解码。
 
+### 分段消息（Q4）
+
+`parts.rs`：`Purpose::Part` 是第四种段目的。一个段装不下的话就说成一串，每块前 4 字节是
+`index u16 ‖ total u16`，块 126 335 字节。单独一种目的而不是载荷内的标记，因为一句话恰好以那
+四个字节开头时会被读成半截消息。`divide(payload, most)`：装得下即一整段（零头部零开销，
+今天的消息一字节不变），否则按 `most` 切；超限即 `SegmentError::MessageTooLarge { len, limit }`。
+`most` 不是这里定的：额度是 ward 的事，见 `kusanagi-SPEC.md`。半截的串永不上报——写到一半、
+正在写、被宿主过期，三者不可分辨；串后的段照常读。它不阻塞流，不落盘。判据：`tests/parts.rs`。
+
 ### 自报的称呼（L1 · D-10）
 
 `alias.rs`：`Alias` 是 1–32 字节、单行、无控制字符与双向覆盖（U+202A–202E、U+2066–2069）的 UTF-8；

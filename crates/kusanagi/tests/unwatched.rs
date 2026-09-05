@@ -333,7 +333,11 @@ fn alice_key(site: &Site) -> VerifyingKey {
 fn a_shorter_width_lists_fewer_digits_and_still_finds_every_segment() {
     let (ground, _alice, bob) = staged("unwatched-width", None);
     let host = ground.join("host");
-    bob.run(&Request::Sweep { digits: Some(2) }).unwrap();
+    bob.run(&Request::Sweep {
+        digits: Some(2),
+        cap: None,
+    })
+    .unwrap();
     let site = Site::at(bob.site_root());
     let lane = peer_lane(&site);
     let watching = Watching::new(&host);

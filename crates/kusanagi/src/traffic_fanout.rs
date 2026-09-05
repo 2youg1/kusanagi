@@ -11,11 +11,11 @@
 //! it once per member.
 
 use kusanagi_door::{Complaint, Delivery, Landed, Outcome};
-use kusanagi_kernel::{Freight, Instant};
+use kusanagi_kernel::{Instant, divide};
 use kusanagi_site::Site;
 
 use crate::assembly::signer;
-use crate::traffic::appended;
+use crate::traffic::{CHANNEL_PARTS, appended};
 
 /// Appends one segment to every member of a group, and reports each separately.
 ///
@@ -27,8 +27,12 @@ use crate::traffic::appended;
 ///
 /// # Errors
 ///
-/// [`Complaint::UnknownGroup`] when there is no such group. That is the one
-/// failure of the fan-out itself rather than of a member.
+/// [`Complaint::UnknownGroup`] when there is no such group, and
+/// [`kusanagi_kernel::SegmentError::MessageTooLarge`] when the payload is past
+/// what one message carries. Those are the two failures of the fan-out itself
+/// rather than of a member: neither depends on which member is being written
+/// to, so reporting them as N identical refusals would say the same thing five
+/// times and touch five hosts to say it.
 pub(crate) fn fanout(
     site: &Site,
     group: &str,
@@ -37,6 +41,9 @@ pub(crate) fn fanout(
 ) -> Result<Outcome, Complaint> {
     // One signer for every member: N members used to cost N identity reads.
     let me = signer(site)?;
+    // Refused here, before a host is opened, and refused for the group rather
+    // than per member: the size of a payload is not a fact about a member.
+    let freights = divide(payload, CHANNEL_PARTS)?;
     let roster = site.roster(group).map_err(|error| match error {
         kusanagi_site::SiteError::UnknownChannel { name } => Complaint::UnknownGroup { name },
         other => other.into(),
@@ -46,10 +53,7 @@ pub(crate) fn fanout(
         .iter()
         .map(|member| Delivery {
             member: member.clone(),
-            landed: match Freight::message(payload.to_vec())
-                .map_err(Complaint::from)
-                .and_then(|freight| appended(site, &me, member, freight, now))
-            {
+            landed: match appended(site, &me, member, freights.clone(), now) {
                 Ok(written) => Landed::Sent {
                     index: written.index,
                     address: written.address,

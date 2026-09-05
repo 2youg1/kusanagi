@@ -8,9 +8,11 @@
 ## 1 需求拆解
 
 1. `Lane`：一条道——作者、bin、钥匙（`Keyring`，含棘轮）、通道开于哪个 period；`verified` 报本端验到对端多少条。
-2. `Sweeping`：逐 period 把 ward 的 bin 交出来（`take() -> Option<Taken>`：列举 + 只 GET 上次列举之外的键）；`CAP`、`DIGITS`。
+2. `Sweeping`：逐 period 把 ward 的 bin 交出来（`take() -> Option<Taken>`：列举 + 只 GET 上次列举之外的键）；`CAP` 只是默认，`over()` 收的 `cap` 是读者定的，见 `site-SPEC.md` 的 sweep 记录。
 3. `Stepping`：一条 lane 在手头 bin 里能走多远走多远——开封、解码、验作者、验链——下一个高度不在就停，等下一个 bin。
-4. `track_all`/`track`/`peek`：`track_all` 是唯一的取回路径——N 条同 ward 的 lane 共用一个 `Sweeping`，每个 bin 逐 lane `advance`，翻页前丢弃 bin；决定每条 lane 从哪个 cairn 续、sweep 从哪个 period 起（有一条 lane 整链行走即从 `opened` 起、不带 known）、最后写 N 条 cairn 与一条 `(name, ward)` sweep 记录。`track` = 一条 lane 的 `track_all`。`peek` 是唯一按地址点名的读（rendezvous bin 里的介绍流）。
+4. `messages`：一串 `Part` 变回一条消息的唯一权威——凑满即产出、终段高度即消息高度；半截的串不上报、不阻塞、不落盘；`--after` 滤的是消息高度。
+5. `Standing`：一次走到头之后、一串写出之前的位置；`append` 整串建完再一起 PUT。
+6. `track_all`/`track`/`peek`：`track_all` 是唯一的取回路径——N 条同 ward 的 lane 共用一个 `Sweeping`，每个 bin 逐 lane `advance`，翻页前丢弃 bin；决定每条 lane 从哪个 cairn 续、sweep 从哪个 period 起（有一条 lane 整链行走即从 `opened` 起、不带 known）、最后写 N 条 cairn 与一条 `(name, ward)` sweep 记录。`track` = 一条 lane 的 `track_all`。`peek` 是唯一按地址点名的读（rendezvous bin 里的介绍流）。
    **删除**：`Source` seam 与 `walk()`——按地址取的实现在生产里没有调用者，1→2→4→8 窗口在 W1 后只是本机 HashMap 查找。
 
 ## 2 验收标准
@@ -34,7 +36,8 @@ lib.rs       索引与再导出
 lane.rs      Lane、verified
 sweep.rs     Sweeping、Taken、CAP、DIGITS
 stepping.rs  Stepping、Held、decode
-walk.rs      track_all / track / peek、Reach、Walked、starting、confirm
+walk.rs      track_all / track / peek、Reach、Walked、Standing、starting、confirm
+message.rs   messages、Message
 ```
 
 依赖：kernel、chain、seal、site、door。**不依赖** waypoint（只经 `kernel::Waypoint` trait）、不采样时钟、不取随机——每个函数收 `now`。
@@ -42,7 +45,7 @@ walk.rs      track_all / track / peek、Reach、Walked、starting、confirm
 
 ## 11 边界枚举 · 12 错误处理
 
-同 `kusanagi-SPEC.md` 附录「诚实边界」三条；`ward_overfull` 是 `CAP` 的拒绝而非泄漏。
+同 `kusanagi-SPEC.md` 附录「诚实边界」三条；`ward_overfull` 是 cap 的拒绝而非泄漏——cap 是读者定的数（默认 `CAP`），所以撑爆的 period 是「多付一次带宽就能过去」，不是永久失效。
 
 ## 15 影响面
 

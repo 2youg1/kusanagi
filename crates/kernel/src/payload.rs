@@ -46,9 +46,8 @@ pub const MAX_SEGMENT: usize = 131_052;
 /// expensive of the two shapes, so that both fit — leaves exactly this much room
 /// for what an author actually wants to say.
 ///
-/// A payload larger than this is the job of content-addressed chunking, which
-/// does not exist yet; until it does, a larger payload is refused rather than
-/// silently split.
+/// A payload larger than this is said in a run of segments instead — see
+/// `crate::parts`, which also fixes how much of the header each part spends.
 pub const MAX_PAYLOAD: u32 = 126_339;
 
 const _: () = assert!(

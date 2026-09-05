@@ -231,16 +231,22 @@ pub(crate) enum Verb {
         #[arg(long)]
         clear: bool,
     },
-    /// Say how many hex digits of your ward a read names, or ask.
+    /// Say how a read reaches a ward: how much of it to name, or how full a bin
+    /// to still take — or ask.
     ///
     /// Four is your ward alone. Each digit fewer hides your reads among sixteen
     /// times as many wards and downloads what all of them received; `0` is the
-    /// whole host. Nobody else is told, and a scheduler task sweeps the same
-    /// width as you do.
+    /// whole host. A period holding more drops than your cap is refused rather
+    /// than downloaded; raise the cap to get past a ten minutes a crowded ward
+    /// filled. Nobody else is told either, and a scheduler task sweeps the same
+    /// way you do.
     Sweep {
         /// How many of the four digits to name, 0 through 4.
         #[arg(long, value_name = "N")]
         digits: Option<u8>,
+        /// How many drops one ten-minute period may hold, 32 through 4096.
+        #[arg(long, value_name = "N")]
+        cap: Option<u16>,
     },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {

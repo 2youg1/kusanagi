@@ -231,6 +231,9 @@ pub enum Outcome {
         digits: u8,
         /// How many wards a read is therefore indistinguishable among.
         wards: u32,
+        /// How many objects one bin may list before a read gives up on that
+        /// period rather than download it.
+        cap: usize,
     },
     /// A channel was deleted from this endpoint.
     Forgotten {

@@ -157,10 +157,13 @@ pub enum Request {
         /// What to do about it.
         naming: Naming,
     },
-    /// Read, or change, how many hex digits of its ward a read names.
+    /// Read, or change, how a read reaches a ward.
     Sweep {
         /// `None` reads; `Some` records. Fewer digits hide among more wards.
         digits: Option<u8>,
+        /// `None` reads; `Some` records how many drops one period may hold
+        /// before a read refuses it rather than download it.
+        cap: Option<usize>,
     },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {

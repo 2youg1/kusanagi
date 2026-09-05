@@ -16,10 +16,45 @@
 //! sentence here. Every sentence in this file is read by somebody who has just
 //! been stopped, so it names a command wherever a command exists.
 
-use kusanagi_kernel::WaypointError;
+use kusanagi_kernel::{SegmentError, WaypointError};
 use kusanagi_waypoint::LocatorError;
 
 use crate::complaint::Complaint;
+
+/// What to do about bytes that arrived and are not what this channel expects.
+///
+/// Two of these are not damage at all: they are somebody sending a file. That
+/// case gets the way out rather than the invitation to report a bug, because a
+/// person who is told to open an issue about their own holiday photo has been
+/// told nothing.
+fn segment_trouble(error: &SegmentError) -> String {
+    match error {
+        SegmentError::MessageTooLarge { limit, .. } => oversize(*limit),
+        SegmentError::PayloadTooLarge { limit, .. } => {
+            oversize(usize::try_from(*limit).unwrap_or(usize::MAX))
+        }
+        _ => "the bytes at that address are not what this channel expects; \
+              keep them and open an issue — this is either damage or an attack"
+            .to_owned(),
+    }
+}
+
+/// What to do with something too large to be one message.
+///
+/// **The exact number, not a round one.** Whoever reads this is about to type
+/// it into a program that splits a file, and a round number slightly above the
+/// limit fails on the last volume, after the first ones have already been sent.
+/// The password is advised the way the check digits are: it protects the
+/// volumes wherever they are parked, and it is worth nothing if it travels
+/// beside them.
+fn oversize(limit: usize) -> String {
+    format!(
+        "send it in volumes of at most {limit} bytes, each as its own message: \
+         `7z a -v{limit}b -p FILE.7z FILE` makes them and asks for a password, and \
+         `split -b {limit} FILE part.` makes them without one. Say the password the \
+         way you said the four check digits — in person, not on this channel"
+    )
+}
 
 /// What to do about a locator that names no place this program will open.
 fn locator_trouble(error: &LocatorError) -> String {
@@ -80,8 +115,8 @@ impl Complaint {
     pub(crate) fn recover(&self) -> String {
         match self {
             Self::Waypoint(failure) => host_trouble(failure),
-            Self::Segment(_)
-            | Self::Chain(_)
+            Self::Segment(error) => segment_trouble(error),
+            Self::Chain(_)
             | Self::Sealed(_)
             | Self::Alias(_)
             | Self::Roster(_)
@@ -139,6 +174,7 @@ impl Complaint {
                      `kusanagi send --to {name}`"
                 )
             }
+            Self::SlottedOneDrop { limit, .. } => oversize(*limit),
             Self::BadRecovery => "check the recovery key: it is the 64 hexadecimal digits \
                  `kusanagi export` printed once, and it goes in on the first line of stdin"
                 .to_owned(),

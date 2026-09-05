@@ -18,9 +18,10 @@ use kusanagi_chain::ChainError;
 use kusanagi_grant::GrantError;
 use kusanagi_kernel::{AliasError, RosterError, SegmentError, WaypointError};
 use kusanagi_seal::OpenFailed;
-use kusanagi_site::SiteError;
 use kusanagi_waypoint::LocatorError;
 use serde::Serialize;
+
+mod site;
 
 /// A failure, in the shape a caller can act on.
 #[derive(Debug, thiserror::Error)]
@@ -200,6 +201,18 @@ pub enum Complaint {
         /// Which channel.
         name: String,
     },
+    /// A message needing several drops was sent on a channel that writes one
+    /// drop per period.
+    #[error(
+        "`{name}` says exactly one drop per period, so it carries at most {limit} \
+         bytes at a time"
+    )]
+    SlottedOneDrop {
+        /// Which channel.
+        name: String,
+        /// What one drop carries, in bytes.
+        limit: usize,
+    },
     /// An archive did not open under the recovery key that was offered.
     #[error("this archive did not open under that recovery key")]
     BadRecovery,
@@ -295,30 +308,6 @@ pub enum Complaint {
     },
 }
 
-/// Gives a local failure the code and the way out that only the door can name.
-///
-/// The shapes are the same on both sides, and that is the point rather than an
-/// accident: `kusanagi-site` says what was being done and what was wrong with the
-/// bytes, and this is where that becomes a stable code plus a command a caller
-/// can run. Merging the two types would put the words `kusanagi channels` inside
-/// a crate that has no verbs.
-impl From<SiteError> for Complaint {
-    fn from(error: SiteError) -> Self {
-        match error {
-            SiteError::Local { action, source } => Self::Local { action, source },
-            SiteError::Permissions { what, source } => Self::Permissions { what, source },
-            SiteError::BadName { name, reason } => Self::BadName { name, reason },
-            SiteError::BadInvitation { reason } => Self::BadInvitation { reason },
-            SiteError::BadRecord { what, reason } => Self::BadRecord { what, reason },
-            SiteError::UnknownChannel { name } => Self::UnknownChannel { name },
-            SiteError::NoIdentity => Self::NoIdentity,
-            SiteError::BadRecovery => Self::BadRecovery,
-            SiteError::ForeignRecord { tag } => Self::ForeignRecord { tag },
-            SiteError::Grant(error) => Self::Grant(error),
-        }
-    }
-}
-
 /// A complaint rendered for both readers.
 #[derive(Serialize)]
 struct Rendered<'a> {
@@ -369,6 +358,7 @@ impl Complaint {
             Self::NeedsCairn { .. } => "kusanagi.needs_cairn",
             Self::WardOverfull { .. } => "kusanagi.ward_overfull",
             Self::NotSlotted { .. } => "kusanagi.not_slotted",
+            Self::SlottedOneDrop { .. } => "kusanagi.slotted_one_drop",
             Self::BadRecovery => "kusanagi.bad_recovery_key",
             Self::ForeignRecord { .. } => "site.foreign_record",
             Self::OwnInvitation => "kusanagi.own_invitation",

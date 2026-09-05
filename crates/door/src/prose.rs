@@ -263,9 +263,10 @@ fn listing(channels: &[Summary]) -> String {
 /// What one of the two site settings says about itself, with its consequence.
 fn setting(outcome: &Outcome) -> String {
     match outcome {
-        Outcome::Sweeping { digits, wards } => format!(
+        Outcome::Sweeping { digits, wards, cap } => format!(
             "a read names {digits} of the ward's four digits, so it is one of the readers of \
-             {wards} ward(s) and downloads what all of them received"
+             {wards} ward(s) and downloads what all of them received, up to {cap} drops per \
+             ten minutes — a busier ten minutes than that is refused rather than downloaded"
         ),
         Outcome::Egress {
             proxy_required: true,

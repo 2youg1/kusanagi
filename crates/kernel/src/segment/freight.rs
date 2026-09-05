@@ -40,11 +40,19 @@ pub enum Purpose {
     /// change is indistinguishable on the wire from a sentence. It is never
     /// reported as a message: a reader replaces its roster and shows nothing.
     Roster,
+    /// One segment of a message too large to be said in one.
+    ///
+    /// A separate purpose rather than a marker inside the payload, because a
+    /// sentence that happened to begin with the same four bytes would otherwise
+    /// be read as a fragment of something else. What the four bytes mean, and
+    /// when a run of them is a message again, is `crate::parts`.
+    Part,
 }
 
 const PURPOSE_MESSAGE: u8 = 0;
 const PURPOSE_FILLER: u8 = 1;
 const PURPOSE_ROSTER: u8 = 2;
+const PURPOSE_PART: u8 = 3;
 
 impl Purpose {
     /// The byte this purpose is written as.
@@ -53,6 +61,7 @@ impl Purpose {
             Self::Message => PURPOSE_MESSAGE,
             Self::Filler => PURPOSE_FILLER,
             Self::Roster => PURPOSE_ROSTER,
+            Self::Part => PURPOSE_PART,
         }
     }
 
@@ -62,6 +71,7 @@ impl Purpose {
             PURPOSE_MESSAGE => Ok(Self::Message),
             PURPOSE_FILLER => Ok(Self::Filler),
             PURPOSE_ROSTER => Ok(Self::Roster),
+            PURPOSE_PART => Ok(Self::Part),
             other => Err(SegmentError::UnknownPurpose { purpose: other }),
         }
     }
@@ -118,6 +128,23 @@ impl Freight {
         Ok(Self {
             payload: Payload::new(payload)?,
             purpose: Purpose::Roster,
+            acknowledged: 0,
+        })
+    }
+
+    /// One segment of a divided message, header and all.
+    ///
+    /// Only `crate::parts` builds the header, so this takes the payload already
+    /// framed rather than offering a second way to write those four bytes.
+    ///
+    /// # Errors
+    ///
+    /// [`SegmentError::PayloadTooLarge`] when the bytes exceed
+    /// [`MAX_PAYLOAD`](crate::MAX_PAYLOAD).
+    pub(crate) fn parted(payload: Vec<u8>) -> Result<Self, SegmentError> {
+        Ok(Self {
+            payload: Payload::new(payload)?,
+            purpose: Purpose::Part,
             acknowledged: 0,
         })
     }

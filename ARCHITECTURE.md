@@ -394,7 +394,7 @@ Named so that their absence is a decision rather than an oversight.
 | **Forward secrecy on a channel that keeps its history** | `Retention::ReleaseOnAck` ratchets and burns, so a released drop is unopenable by anybody. A channel that keeps its history keeps one static secret that decrypts everything for whoever takes the site, and it keeps it deliberately: law 1 in the shape §7 states it |
 | **On-disk deniability off Windows** | every record is a DPAPI blob keyed by this account's logon credentials, so a disk without the password is noise; on a platform with no store of its own the tag says `0x00` and the records are what they always were. `VirtualLock` keeps them out of the page file on this one |
 | `Bell` | a latency mechanism now that a read names a bin and has no live edge to follow: a host that can be asked to wait turns a poll into a wait. Built when a host that long-polls is worth the code, and not before |
-| `Depot` — chunked content | optional again. `DROP` is sized to hold the largest artefact this protocol produces; what still needs chunking is user content larger than one drop, and compression is a parameter of that layer rather than a layer of its own |
+| `Depot` — chunked content | closed by Q4 (D-21). One message is at most 32 segments on a channel and 64 in a room, joined in-band with no second key space; a key space read only because a secret says so makes the read itself the pairing signal, so blobs, magnet-style addressing and multi-round transfers stay out, whatever carries them. Past the limit a send is refused locally with the exact byte count and the way out in volumes, each its own message |
 ---
 
 *This document is licensed MPL-2.0.*
