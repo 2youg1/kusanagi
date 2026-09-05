@@ -29,7 +29,7 @@
 
 1. 两个端点经一个都不运行的宿主交换消息（`endpoint.rs`）。
 2. 宿主翻转一位即被检出，错误码 `seal.rejected`。
-3. 撤销 peer 后，其此前与此后写的一切都不再被接受，错误码 `grant.revoked`。
+3. 撤销 peer 后，其此前与此后写的一切都不再被接受，错误码 `grant.revoked`；**向已撤销的 peer `send` 同码拒绝**（`appended` 先问 peer 许不许 Read；adversary `surface-SPEC` G3/X2 查出撤销后仍在送）。
 4. 一份邀请只接纳一个端点，第二次得 `kusanagi.invite_spent`。
 5. 只有 `read` 的端点不能 `send`，得 `grant.forbidden`。
 6. 过期的邀请被拒，得 `grant.expired`。
@@ -305,6 +305,8 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 在这里尤其要紧：传输错误意味着调用没发生，而宿主不可达或 grant 被撤销是**调用发生了并且答复了**。
 把后者当前者的 agent 会去重试一件永远同样失败的事。
 
+**工具结果的 `content` 是带围栏的散文，`structuredContent` 是 `--json` 的同一份 JSON**（曾是裸 JSON，adversary `surface-SPEC` P1 查出）。模型是唯一看不见引号的读者，围栏（D-08）是唯一分得清谁在说话的东西；JSON 由 `render(true)` 的输出解析而来，不另拼。
+
 ### `tick` 与 outbox（I3）
 
 `send` 在时隙通道上不写宿主，写 outbox，并且**如实报告它排了队**（`Outcome::Queued`）——
@@ -382,9 +384,15 @@ impl Walked { pub fn cairn(&self) -> Option<Cairn>; pub fn extended(&self, &Segm
 
 **`send` 在写入成功后推进位置。** 主机在一个空地址上接受了写入，所以本端点无需读回即知段已在那里；`Walked::extended` 把验证器再前进一格。否则记录会永远落后一格，每次发送都要多问一个地址去重新发现自己刚写的东西。
 
-**位置没动就不写。** `track` 只在走完的 cairn 与读进来的那份不同时才 `mark`。实测（G1）：一次 `permissions::write` 是 4 ms，其中几乎全是 `sync_all` 的磁盘刷写，而 fsync 不能省——释放通道上的 cairn 是唯一副本，rename 覆盖一份未刷写的数据正是造出 `needs_cairn` 的那种崩溃。省的是**空轮询**那一次：它是排班器最常发出的调用，以前每次都把同样 73 字节重写一遍。由 `a_poll_that_finds_nothing_writes_nothing` 守住。
+**位置没动就不写。** `track` 只在走完的 cairn 与读进来的那份不同时才 `mark`。实测（G1）：一次 `permissions::write` 是 4 ms，几乎全是 `sync_all`，而 fsync 不能省——释放通道上的 cairn 是唯一副本。省的是**空轮询**那一次重写，由 `a_poll_that_finds_nothing_writes_nothing` 守住。
+
+**一个动词只读一次身份。** `Signer::from_seed` 实测约 0.9 ms/次，`tick` 一次要经过三次；`appended` 与 `read` 收 `me: &Signer`，由调用方取一次往下传。filing key 缓存不做：整条路径约 0.2 ms，不值得让秘密在内存多停留。
 
 **`confirm`——只对整链行走做。** 续读不可能与它续的记录矛盾，因为它就从那里开始；整链行走可以，而那是主机唯一能靠「少给」说谎的形状：交回一条更短但验证完美的链，没有记忆的读者会相信。两种矛盾各自具名：流比记录短，或已读高度上的段换了一个。
+
+**`Reach::Head` 不确认前驱。** 曾想在 `send` 前多 `peek` 一次记录的头，但那让每次 send 点名**两个相邻地址**，
+`unwatched.rs` 的 2b 断言咬红——隐私法则高于这道检查。真实形状是法则 1：有记忆的读者用 `--after` 续读照样验证，
+无记忆的整链行走得 `history_changed`（adversary `surface-SPEC` H19）。
 
 **`Complaint::HistoryChanged`，码 `kusanagi.history_changed`。** 恢复命令指向 `kusanagi doctor <waypoint>`：只有 write-once 的主机能承诺这件事不发生，而这一台刚刚做了。
 

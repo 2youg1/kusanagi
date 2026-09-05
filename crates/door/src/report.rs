@@ -93,6 +93,8 @@ pub enum Outcome {
         check: String,
         /// Where the drops live.
         waypoint: String,
+        /// `keep` or `release`: the inviter's choice, now this end's too.
+        retention: &'static str,
     },
     /// A segment was appended.
     Sent {

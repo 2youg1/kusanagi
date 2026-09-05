@@ -9,7 +9,7 @@
 //! and [`filed`] says what appears on the disk when they take one — and the
 //! answer to the second is never the first.
 
-use kusanagi_kernel::Hex;
+use kusanagi_kernel::{Handle, Hex};
 
 use crate::error::SiteError;
 
@@ -21,6 +21,7 @@ const MAX_NAME: usize = 32;
 /// BLAKE3's own convention: a context string names one purpose, globally and
 /// forever, so two derivations from one seed can never collide.
 const FILING: &str = "kusanagi 2026 channel file name v1";
+const AUTHOR_FILING: &str = "kusanagi 2026 author file name v1";
 
 /// Refuses anything that is not plainly a name.
 ///
@@ -66,4 +67,20 @@ pub(crate) fn check(name: &str) -> Result<(), SiteError> {
 pub(crate) fn filed(seed: &[u8; 32], name: &str) -> String {
     let key = blake3::derive_key(FILING, seed);
     Hex(blake3::keyed_hash(&key, name.as_bytes()).as_bytes()).to_string()
+}
+
+/// What this site calls the file that holds one author's cairn or ratchet on
+/// the channel filed as `filed`.
+///
+/// A handle is a public key's hash, so a file named after one is a file named
+/// after a person: two channels with one peer would share a file name, and so
+/// would two seized disks. Keyed under this endpoint's seed and mixed with the
+/// channel's filed name, the same author leaves a different name on every
+/// channel and every site, and a listing gives up a count and nothing else.
+pub(crate) fn filed_author(seed: &[u8; 32], filed: &str, author: &Handle) -> String {
+    let key = blake3::derive_key(AUTHOR_FILING, seed);
+    let mut hasher = blake3::Hasher::new_keyed(&key);
+    hasher.update(filed.as_bytes());
+    hasher.update(author.as_bytes());
+    Hex(hasher.finalize().as_bytes()).to_string()
 }

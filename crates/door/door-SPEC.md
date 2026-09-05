@@ -133,6 +133,11 @@ pub const CONTRACT: u8 = 1;
    两者从同一个值出发，所以人读到的与机器读到的**不可能对同一件事说两句话**。
 2. **`Carried` 是枚举而不是两个字段。** 合法 UTF-8 装进 JSON 字符串本就无损；并存的十六进制
    只是把每条普通消息的体积翻倍。枚举让「两者同时出现」与「两者同时缺席」都不可表示。
+   **「文本」比「合法 UTF-8」更窄**（adversary `surface-SPEC` M2 查出）：终端是解释器，围栏只管行，
+   管不了 `ESC]52;c;…BEL`（写剪贴板）、`ESC[2J`（清屏）、裸 `\r`（盖掉本程序刚印的一行）、
+   C1、DEL 与双向覆盖（U+202A–U+202E、U+2066–U+2069，Trojan Source）。这些字节在 `Carried::of`
+   里一律判为 `Payload`：围栏里印十六进制，围栏外说「not text」。`\t`、`\n` 与 `\r\n` 仍是文本。
+   规则只有这一处，散文与 `--json` 与 MCP 三条路径共用，所以三扇门对同一段字节说同一句话。
 3. **`Authority` 私有枚举。** 「持有能力 + 何时到期」与「什么都不持有 + 为什么」是互斥的两件事,
    在类型里分开，扁平化只在边界的 `Summary` 发生一次。
 4. **围栏是散文路径独有的**（D-08）。读散文的 agent 没有解析器，它把整段答案当文本读，
@@ -153,7 +158,7 @@ pub const CONTRACT: u8 = 1;
 
 | 边界 | 行为 |
 |---|---|
-| 载荷不是 UTF-8 | `Carried::Payload(hex)`，散文里印「\<N bytes that are not text\>」 |
+| 载荷不是 UTF-8，或含终端代码 / 双向覆盖 | `Carried::Payload(hex)`，围栏外印「not text, N bytes as hex」 |
 | 流为空 | `height: None`，散文「has written nothing yet」 |
 | `serde_json` 序列化失败 | 退回 `{"error":"…"}` / `{"code":"…"}`，**不 panic**（工作区禁 `unwrap`） |
 | 通道无 peer | `peer: None`，散文「(nobody met yet)」 |

@@ -43,8 +43,8 @@
 
 use core::fmt;
 
-use kusanagi_grant::Grant;
-use kusanagi_kernel::{Hex, Reader, Signer, VerifyingKey, unhex};
+use kusanagi_kernel::Signer;
+use kusanagi_kernel::{Hex, Reader, unhex};
 use kusanagi_seal::Secret;
 
 use crate::error::SiteError;
@@ -64,7 +64,7 @@ const PREVIOUS_PREFIX: &str = "kusanagi1:";
 /// Its own function rather than the one `channel.rs` uses, because the same
 /// truncation means two different things: half a record on disk is damage, and
 /// half an invitation is a paste that was cut short.
-fn mangled(error: kusanagi_kernel::Incomplete) -> SiteError {
+pub(crate) fn mangled(error: kusanagi_kernel::Incomplete) -> SiteError {
     SiteError::BadInvitation {
         reason: error.to_string(),
     }
@@ -97,70 +97,6 @@ pub struct Invite {
     pub bearer_seed: [u8; 32],
     /// Where the drops live.
     pub locator: String,
-}
-
-/// What an invitation points at: who is inviting, and by what authority.
-///
-/// Sealed into one drop at the address [`kusanagi_seal::offer`] derives from the
-/// channel secret. Public data, kept off the line because it is large, and kept
-/// out of the clear because an address nobody can compute costs less than an
-/// argument about whether it mattered.
-///
-/// ```text
-/// version    1 byte     = 1
-/// inviter 2592 bytes    the inviter's verifying key
-/// grant      the rest   inviter -> bearer
-/// ```
-#[derive(Clone, Debug)]
-pub struct Offer {
-    /// Who issued the invitation, and the root of every grant on the channel.
-    pub inviter: VerifyingKey,
-    /// The grant from the inviter to the one-time key.
-    pub grant: Grant,
-}
-
-/// The layout of an offer, which versions apart from the invitation's own.
-const OFFER_VERSION: u8 = 1;
-
-impl Offer {
-    /// The bytes that go in the drop.
-    #[must_use]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = vec![OFFER_VERSION];
-        out.extend_from_slice(self.inviter.as_bytes());
-        out.extend_from_slice(&self.grant.to_canonical_bytes());
-        out
-    }
-
-    /// Reads what [`Self::to_bytes`] wrote.
-    ///
-    /// # Errors
-    ///
-    /// [`SiteError::BadInvitation`] when the bytes are not an offer this build
-    /// reads. They opened under a key derived from the channel secret, so
-    /// whoever wrote them held it: this is a build disagreement or damage,
-    /// never a forgery.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SiteError> {
-        let mut reader = Reader::new(bytes);
-        let version = reader.take_byte().map_err(mangled)?;
-        if version != OFFER_VERSION {
-            return Err(SiteError::BadInvitation {
-                reason: format!(
-                    "this invitation points at a version {version} offer; this build reads {OFFER_VERSION}"
-                ),
-            });
-        }
-        let inviter = VerifyingKey::from_bytes(
-            reader
-                .take_array::<{ VerifyingKey::WIDTH }>()
-                .map_err(mangled)?,
-        );
-        let rest = reader.take(reader.remaining()).map_err(mangled)?;
-        Ok(Self {
-            inviter,
-            grant: Grant::from_canonical_bytes(rest)?,
-        })
-    }
 }
 
 impl Invite {
@@ -262,9 +198,7 @@ impl fmt::Display for Invite {
     reason = "test code"
 )]
 mod tests {
-    use super::{Invite, Offer, PREFIX, PREVIOUS_PREFIX, SiteError};
-    use kusanagi_grant::{Abilities, Grant, Scope};
-    use kusanagi_kernel::{Instant, Signer};
+    use super::{Invite, PREFIX, PREVIOUS_PREFIX, SiteError};
     use kusanagi_seal::Secret;
 
     fn invite() -> Invite {
@@ -272,19 +206,6 @@ mod tests {
             secret: Secret::from_bytes([3; 32]),
             bearer_seed: [2_u8; 32],
             locator: "http://box.example:8963".to_owned(),
-        }
-    }
-
-    fn offer() -> Offer {
-        let inviter = Signer::from_seed(&[1; 32]);
-        let bearer = Signer::from_seed(&[2; 32]);
-        Offer {
-            inviter: inviter.verifying_key(),
-            grant: Grant::issue(
-                &inviter,
-                &bearer.handle(),
-                Scope::new(Abilities::ALL, Instant::from_unix_seconds(9_999)),
-            ),
         }
     }
 
@@ -310,21 +231,6 @@ mod tests {
             "an invitation is {} characters, which is not a line",
             text.len()
         );
-    }
-
-    #[test]
-    fn an_offer_round_trips_through_one_drop() {
-        let original = offer();
-        let parsed = Offer::from_bytes(&original.to_bytes()).unwrap();
-        assert_eq!(parsed.inviter.as_bytes(), original.inviter.as_bytes());
-        assert_eq!(parsed.grant, original.grant);
-    }
-
-    #[test]
-    fn an_offer_from_another_version_is_refused_rather_than_guessed() {
-        let mut bytes = offer().to_bytes();
-        bytes[0] = 9;
-        assert!(Offer::from_bytes(&bytes).is_err());
     }
 
     #[test]

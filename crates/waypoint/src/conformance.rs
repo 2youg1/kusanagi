@@ -17,7 +17,7 @@
 use core::fmt;
 
 use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
-use kusanagi_seal::{Stream, derive};
+use kusanagi_seal::{Fit, Stream, derive, seal};
 
 /// A clause the waypoint under test did not satisfy.
 #[derive(Debug, thiserror::Error)]
@@ -109,6 +109,10 @@ impl Clause<'_> {
 pub fn run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure> {
     let addr = |step: u64| derive(namespace, step).0;
     let clause = |name| Clause { name, waypoint };
+    let first = body(namespace, 1, b"first")?;
+    let second = body(namespace, 1, b"second")?;
+    let other = body(namespace, 2, b"other")?;
+    let released = body(namespace, 4, b"released")?;
 
     let empty = clause("empty-address-reads-nothing");
     empty.require(
@@ -118,11 +122,11 @@ pub fn run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure> 
 
     let stored = clause("write-then-read");
     stored.require(
-        stored.put(&addr(1), b"first")? == PutOutcome::Stored,
+        stored.put(&addr(1), &first)? == PutOutcome::Stored,
         "writing to an empty address did not report Stored",
     )?;
     stored.require(
-        stored.get(&addr(1))? == Some(b"first".to_vec()),
+        stored.get(&addr(1))?.as_deref() == Some(first.as_slice()),
         "the bytes read back differ from the bytes written",
     )?;
 
@@ -131,52 +135,54 @@ pub fn run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure> 
     // rather than loudly.
     let once = clause("write-once");
     once.require(
-        once.put(&addr(1), b"second")? == PutOutcome::AlreadyPresent,
+        once.put(&addr(1), &second)? == PutOutcome::AlreadyPresent,
         "a second write to an occupied address was not refused",
     )?;
     once.require(
-        once.get(&addr(1))? == Some(b"first".to_vec()),
+        once.get(&addr(1))?.as_deref() == Some(first.as_slice()),
         "a second write replaced the bytes already at the address",
     )?;
 
     let independent = clause("addresses-are-independent");
     independent.require(
-        independent.put(&addr(2), b"other")? == PutOutcome::Stored,
+        independent.put(&addr(2), &other)? == PutOutcome::Stored,
         "a write to a fresh address was refused",
     )?;
     independent.require(
-        independent.get(&addr(1))? == Some(b"first".to_vec()),
+        independent.get(&addr(1))?.as_deref() == Some(first.as_slice()),
         "writing one address disturbed another",
-    )?;
-
-    let empty_payload = clause("empty-payload-round-trips");
-    empty_payload.require(
-        empty_payload.put(&addr(3), b"")? == PutOutcome::Stored,
-        "an empty payload was refused",
-    )?;
-    empty_payload.require(
-        empty_payload.get(&addr(3))? == Some(Vec::new()),
-        "an empty payload read back as absent; empty and missing are different",
     )?;
 
     // A channel that releases stakes its history on this clause: once the peer
     // has acknowledged a drop, the drop is removed and the reader's own site is
     // the only copy left. A host that quietly kept the bytes would leave that
     // channel believing in a deletion that never happened.
-    let released = clause("release-removes-and-stays-removed");
-    released.put(&addr(4), b"released")?;
-    released.delete(&addr(4))?;
-    released.require(
-        released.get(&addr(4))?.is_none(),
+    let removal = clause("release-removes-and-stays-removed");
+    removal.put(&addr(4), &released)?;
+    removal.delete(&addr(4))?;
+    removal.require(
+        removal.get(&addr(4))?.is_none(),
         "a released drop was still readable afterwards",
     )?;
-    released.delete(&addr(4))?;
-    released.require(
-        released.get(&addr(4))?.is_none(),
+    removal.delete(&addr(4))?;
+    removal.require(
+        removal.get(&addr(4))?.is_none(),
         "releasing an address twice did not leave it empty",
     )?;
 
     Ok(())
+}
+
+/// A body shaped like every real drop: sealed under the step's own key and
+/// padded to the veil, so a host running this contract sees traffic and never
+/// a test. A probe of twenty-two plain bytes would tell a host, and anybody on
+/// the path who measures sizes, exactly which program was talking to it.
+fn body(namespace: &Stream, step: u64, text: &[u8]) -> Result<Vec<u8>, Failure> {
+    let (_, key) = derive(namespace, step);
+    seal(&key, Fit::Veil, text).map_err(|error| Failure::Clause {
+        clause: "sealed-body",
+        detail: error.to_string(),
+    })
 }
 
 #[cfg(test)]

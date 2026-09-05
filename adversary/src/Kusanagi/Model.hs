@@ -212,7 +212,16 @@ refusal world = \case
     Nothing -> Just (Code "kusanagi.unknown_channel")
     Just chan
       | not (permits Sending (chanStanding chan)) -> Just (Code "grant.forbidden")
-      | otherwise -> Nothing
+      -- Found by this adversary, then fixed in Rust: a segment the peer may no
+      -- longer read is not written. Revocation cuts both directions, and the
+      -- refusal is the one `read` gives about the same peer.
+      | not (chanMet chan) -> Nothing
+      | chanCut chan -> Just (Code "grant.revoked")
+      | otherwise -> case chanFar chan >>= here of
+          Nothing -> Nothing
+          Just far
+            | permits Reading (chanStanding far) -> Nothing
+            | otherwise -> Just (Code "grant.forbidden")
   Read site name -> case here (site, name) of
     Nothing -> Just (Code "kusanagi.unknown_channel")
     Just chan

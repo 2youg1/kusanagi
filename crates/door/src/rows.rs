@@ -108,10 +108,18 @@ pub enum Carried {
 
 impl Carried {
     /// Renders `bytes` in whichever form keeps all of them.
+    ///
+    /// Text is narrower than valid UTF-8. A terminal is an interpreter and a
+    /// language model reads a tool result as one stream, so bytes a terminal
+    /// would *execute* — an escape sequence that writes the clipboard, a bare
+    /// carriage return that overwrites the line this program just printed, a C1
+    /// control — and the bidirectional overrides that reorder what a reader
+    /// sees are not text, whatever encoding they arrive in. They are shown as
+    /// hexadecimal, where nothing can act on them.
     pub(super) fn of(bytes: &[u8]) -> Self {
         match core::str::from_utf8(bytes) {
-            Ok(text) => Self::Text(text.to_owned()),
-            Err(_) => Self::Payload(Hex(bytes).to_string()),
+            Ok(text) if is_inert(text) => Self::Text(text.to_owned()),
+            _ => Self::Payload(Hex(bytes).to_string()),
         }
     }
 
@@ -135,6 +143,25 @@ impl Carried {
             Self::Payload(hex) => format!("not text, {} bytes as hex", hex.len() / 2),
         }
     }
+}
+
+/// Whether every character can be printed without a terminal or a reader
+/// doing anything but showing it: no control character but tab, newline and
+/// the carriage return of a `\r\n` pair, and no bidirectional override.
+fn is_inert(text: &str) -> bool {
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        let allowed = match character {
+            '\t' | '\n' => true,
+            '\r' => characters.peek() == Some(&'\n'),
+            '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' => false,
+            other => !other.is_control(),
+        };
+        if !allowed {
+            return false;
+        }
+    }
+    true
 }
 
 /// What this endpoint may do on a channel at one moment.

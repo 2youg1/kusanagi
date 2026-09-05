@@ -112,6 +112,7 @@ pub(crate) fn invite(
     let (address, key) = offer(&secret);
     let announcement = Offer {
         inviter: me.verifying_key(),
+        retention: habit.retention,
         grant,
     };
     let sealed = seal(&key, Fit::Veil, &announcement.to_bytes())?;
@@ -216,7 +217,9 @@ pub(crate) fn join(
         locator: invitation.locator.clone(),
         standing: Standing::Granted(mine),
         cadence: habit.cadence,
-        retention: habit.retention,
+        // The inviter's choice, not this end's: retention decides the key
+        // schedule, and a channel is one schedule.
+        retention: announcement.retention,
         peer: Some(Peer {
             key: announcement.inviter,
             standing: Standing::Root,
@@ -229,6 +232,7 @@ pub(crate) fn join(
         peer: root.to_string(),
         check: invitation.check(),
         waypoint: invitation.locator,
+        retention: announcement.retention.word(),
     })
 }
 

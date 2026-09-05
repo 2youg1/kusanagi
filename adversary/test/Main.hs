@@ -60,6 +60,7 @@ import Kusanagi.Naming qualified as Naming
 import Kusanagi.Overheard qualified as Overheard
 import Kusanagi.Regression (coherent, render, sequenced)
 import Kusanagi.Tempo qualified as Tempo
+import Surface (surface)
 
 main :: IO ()
 main = do
@@ -157,6 +158,7 @@ properties door =
             "a slot makes them the same to a host, which counts objects"
             (measured (Tempo.volumeSaysNothingOnASlottedChannel door))
         ]
+    , surface door
     ]
 
 -- | Runs one command-line question against a throwaway world.

@@ -17,8 +17,19 @@
 //! been stopped, so it names a command wherever a command exists.
 
 use kusanagi_kernel::WaypointError;
+use kusanagi_waypoint::LocatorError;
 
 use crate::complaint::Complaint;
+
+/// What to do about a locator that names no place this program will open.
+fn locator_trouble(error: &LocatorError) -> String {
+    match error {
+        LocatorError::NetworkPath => "mount the share yourself and name the drive or mount \
+             point it appears as; this program never opens a network path on its own"
+            .to_owned(),
+        _ => "a waypoint is a path, an http:// url, or s3://ENDPOINT/BUCKET[?region=R]".to_owned(),
+    }
+}
 
 impl Complaint {
     /// The command that would move the caller forward from here.
@@ -38,10 +49,7 @@ impl Complaint {
                 "ask whoever invited you for a new invitation: this one no longer authorises it"
                     .to_owned()
             }
-            Self::Locator(_) => {
-                "a waypoint is a path, an http:// url, or s3://ENDPOINT/BUCKET[?region=R]"
-                    .to_owned()
-            }
+            Self::Locator(error) => locator_trouble(error),
             // `--bind 0` first, because it always works and needs no guess. The
             // named form comes second for the host whose address is already in
             // somebody's invitation, and which therefore has to come back on the

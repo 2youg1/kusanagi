@@ -21,7 +21,6 @@
 
 use std::path::{Path, PathBuf};
 
-use kusanagi_kernel::Handle;
 use kusanagi_seal::Ratchet;
 
 use crate::error::SiteError;
@@ -43,9 +42,9 @@ pub(crate) fn dir(root: &Path, filed: &str) -> PathBuf {
 pub(crate) fn read(
     root: &Path,
     filed: &str,
-    author: &Handle,
+    filed_author: &str,
 ) -> Result<Option<Ratchet>, SiteError> {
-    let path = dir(root, filed).join(author.to_string());
+    let path = dir(root, filed).join(filed_author);
     let Some(bytes) = permissions::read(&path, "read a ratchet")? else {
         return Ok(None);
     };
@@ -65,13 +64,13 @@ pub(crate) fn read(
 pub(crate) fn write(
     root: &Path,
     filed: &str,
-    author: &Handle,
+    filed_author: &str,
     ratchet: &Ratchet,
 ) -> Result<(), SiteError> {
     let directory = dir(root, filed);
     permissions::create_dir(&directory, "create the ratchet directory")?;
     permissions::write(
-        &directory.join(author.to_string()),
+        &directory.join(filed_author),
         &ratchet.to_bytes(),
         "write a ratchet",
     )

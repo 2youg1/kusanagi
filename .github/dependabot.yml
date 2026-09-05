@@ -1,0 +1,21 @@
+# One grouped pull request a day, not a stream of them. Daily rather than
+# weekly: a security patch upstream is a patch this project wants the same
+# day. D-12: versions move with the official dependabot, nothing homemade.
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      actions:
+        patterns:
+          - "*"

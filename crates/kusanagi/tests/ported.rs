@@ -134,8 +134,11 @@ fn a_tool_call_does_the_same_thing_the_verb_does() {
 
     assert_eq!(answers[0]["id"], 7);
     assert_eq!(answers[0]["result"]["isError"], false);
+    // The text a model reads is prose, and the JSON is beside it where a
+    // program reads: the same outcome, in the shape each reader has.
     let text = answers[0]["result"]["content"][0]["text"].as_str().unwrap();
-    let reported: Value = serde_json::from_str(text).expect("a tool result is JSON");
+    assert!(text.starts_with("this endpoint is "), "{text}");
+    let reported: &Value = &answers[0]["result"]["structuredContent"];
     assert_eq!(reported["contract"], 1);
 
     // The same question through the other door gives the same handle. One

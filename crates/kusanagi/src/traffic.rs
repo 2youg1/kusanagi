@@ -67,7 +67,7 @@ pub(crate) fn send(
             period: channel.cadence.period(),
         });
     }
-    let written = appended(site, name, Purpose::Message, payload, now)?;
+    let written = appended(site, &signer(site)?, name, Purpose::Message, payload, now)?;
     Ok(Outcome::Sent {
         name: name.to_owned(),
         index: written.index,
@@ -94,6 +94,8 @@ pub(crate) fn fanout(
     payload: &[u8],
     now: Instant,
 ) -> Result<Outcome, Complaint> {
+    // One signer for every member: N members used to cost N identity reads.
+    let me = signer(site)?;
     let roster = site.roster(group).map_err(|error| match error {
         kusanagi_site::SiteError::UnknownChannel { name } => Complaint::UnknownGroup { name },
         other => other.into(),
@@ -103,7 +105,7 @@ pub(crate) fn fanout(
         .iter()
         .map(|member| Delivery {
             member: member.clone(),
-            landed: match appended(site, member, Purpose::Message, payload, now) {
+            landed: match appended(site, &me, member, Purpose::Message, payload, now) {
                 Ok(written) => Landed::Sent {
                     index: written.index,
                     address: written.address,
@@ -130,20 +132,25 @@ pub(crate) fn fanout(
 /// conversation happened at all.
 pub(crate) fn appended(
     site: &Site,
+    me: &Signer,
     name: &str,
     purpose: Purpose,
     payload: &[u8],
     now: Instant,
 ) -> Result<Appended, Complaint> {
-    let me = signer(site)?;
     let channel = site.channel(name)?;
-    channel.standing.permits(
-        &channel.root,
-        &me.handle(),
-        Ability::Send,
-        now,
-        &site.revocations()?,
-    )?;
+    let revoked = site.revocations()?;
+    channel
+        .standing
+        .permits(&channel.root, &me.handle(), Ability::Send, now, &revoked)?;
+    // A segment the peer is no longer allowed to read is a segment that should
+    // not be written: revocation cuts both directions, or a fan-out keeps
+    // delivering to the one member it was meant to exclude. The question is
+    // the mirror of the one `read` asks about the peer, and fails the same way.
+    if let Some(peer) = &channel.peer {
+        peer.standing
+            .permits(&channel.root, &peer.handle(), Ability::Read, now, &revoked)?;
+    }
 
     let place = open(&channel.locator, now)?;
     let mine = Lane::open(site, name, &channel, &me.verifying_key())?;
@@ -169,9 +176,9 @@ pub(crate) fn appended(
     }?
     .acknowledging(acknowledged);
 
-    let trail = mine.keys.trail(&me);
+    let trail = mine.keys.trail(me);
     let segment = match walked.head() {
-        None => Segment::genesis(&me, &trail, freight),
+        None => Segment::genesis(me, &trail, freight),
         Some(head) => Segment::extend(&trail, me.handle(), freight, head),
     }?;
 
@@ -208,16 +215,16 @@ pub(crate) fn appended(
 
 pub(crate) fn read(
     site: &Site,
+    me: &Signer,
     name: &str,
     after: Option<u64>,
     whose: Whose,
     now: Instant,
 ) -> Result<Outcome, Complaint> {
-    let me = signer(site)?;
     let channel = site.channel(name)?;
     let revoked = site.revocations()?;
     if whose == Whose::Mine {
-        return mine(site, &channel, &me, name, after, now);
+        return mine(site, &channel, me, name, after, now);
     }
     channel
         .standing
@@ -244,7 +251,7 @@ pub(crate) fn read(
     // Only now, once the caller holds what was read: settling is the step that
     // destroys it.
     if channel.retention.releases() {
-        settle(site, name, &channel, &place, &walked, &theirs, &me)?;
+        settle(site, name, &channel, &place, &walked, &theirs, me)?;
     }
     Ok(answer)
 }

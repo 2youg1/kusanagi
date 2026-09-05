@@ -212,7 +212,9 @@ const ARCHIVE_ROOM: u64 = 8 * 1_048_576;
 /// # Errors
 ///
 /// [`Complaint::Argument`] when stdin is a terminal or holds no first line, and
-/// [`Complaint::BadName`] when the first line is not 64 hexadecimal digits.
+/// [`Complaint::BadRecovery`] when the first line is not 64 hexadecimal digits
+/// — the same refusal a key of the right shape that opens nothing gets, because
+/// the caller's next step is the same: check the key.
 pub fn restored() -> Result<([u8; 32], Vec<u8>), Complaint> {
     let fed = piped(
         "the recovery key and the archive",
@@ -220,14 +222,8 @@ pub fn restored() -> Result<([u8; 32], Vec<u8>), Complaint> {
         ARCHIVE_ROOM.saturating_add(NAME_ROOM),
     )?;
     let (line, archive) = split_name(&fed)?;
-    let bytes = kusanagi_kernel::unhex(line.trim()).map_err(|_| Complaint::BadName {
-        name: "the recovery key".to_owned(),
-        reason: "a recovery key is 64 hexadecimal digits on the first line".to_owned(),
-    })?;
-    let key = <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| Complaint::BadName {
-        name: "the recovery key".to_owned(),
-        reason: "a recovery key is 32 bytes, which is 64 hexadecimal digits".to_owned(),
-    })?;
+    let bytes = kusanagi_kernel::unhex(line.trim()).map_err(|_| Complaint::BadRecovery)?;
+    let key = <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| Complaint::BadRecovery)?;
     Ok((key, archive))
 }
 

@@ -36,7 +36,7 @@ use kusanagi_door::{Complaint, Outcome};
 use kusanagi_kernel::{Instant, Purpose};
 use kusanagi_site::Site;
 
-use crate::assembly::signer;
+use crate::assembly::signer as take_signer;
 use crate::request::Whose;
 use crate::traffic::{appended, read};
 
@@ -48,7 +48,7 @@ use crate::traffic::{appended, read};
 /// to fill, plus everything a send and a read report.
 pub(crate) fn tick(site: &Site, name: &str, now: Instant) -> Result<Outcome, Complaint> {
     let channel = site.channel(name)?;
-    let me = signer(site)?;
+    let me = take_signer(site)?;
     let Some(period) = channel.cadence.period() else {
         return Err(Complaint::NotSlotted {
             name: name.to_owned(),
@@ -73,8 +73,8 @@ pub(crate) fn tick(site: &Site, name: &str, now: Instant) -> Result<Outcome, Com
         // says why that is the safer of the two wrong answers.
         site.claim_slot(name, slot)?;
         let written = match &queued {
-            Some(waiting) => appended(site, name, Purpose::Message, &waiting.payload, now)?,
-            None => appended(site, name, Purpose::Filler, &[], now)?,
+            Some(waiting) => appended(site, &me, name, Purpose::Message, &waiting.payload, now)?,
+            None => appended(site, &me, name, Purpose::Filler, &[], now)?,
         };
         // Only once the host has it. A payload cleared before the write would be
         // a message the caller was told had been sent and that nobody will send.
@@ -87,7 +87,7 @@ pub(crate) fn tick(site: &Site, name: &str, now: Instant) -> Result<Outcome, Com
     // The read happens whichever way the write went, because a slot is one drop
     // out and one look in. An endpoint that only looked when it had spoken would
     // be answering the question the slot exists to refuse.
-    let heard = read(site, name, None, Whose::Peer, now).ok();
+    let heard = read(site, &me, name, None, Whose::Peer, now).ok();
 
     Ok(Outcome::Ticked {
         name: name.to_owned(),

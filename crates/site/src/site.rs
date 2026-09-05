@@ -213,11 +213,8 @@ impl Site {
     /// [`SiteError::BadName`] when `name` is not usable as one. That is a caller
     /// mistake rather than a state of the disk, so it is not a miss.
     pub fn cairn(&self, name: &str, author: &Handle) -> Result<Option<Cairn>, SiteError> {
-        Ok(cairns::read(
-            &self.root,
-            &self.filed_or_unknown(name)?,
-            author,
-        ))
+        let (filed, filed_author) = self.filed_lane(name, author)?;
+        Ok(cairns::read(&self.root, &filed, &filed_author))
     }
 
     /// Writes down how far `cairn`'s author has been verified on this channel.
@@ -227,7 +224,8 @@ impl Site {
     /// [`SiteError::BadName`] when `name` is not usable as one, and
     /// [`SiteError::Local`] when the record cannot be written.
     pub fn mark(&self, name: &str, cairn: &Cairn) -> Result<(), SiteError> {
-        cairns::write(&self.root, &self.filed_or_unknown(name)?, cairn)
+        let (filed, filed_author) = self.filed_lane(name, &cairn.author())?;
+        cairns::write(&self.root, &filed, &filed_author, cairn)
     }
 
     /// One group's roster.
@@ -366,5 +364,26 @@ impl Site {
         self.filed(name)?.ok_or_else(|| SiteError::UnknownChannel {
             name: name.to_owned(),
         })
+    }
+
+    /// The two file names one author's lane on one channel is kept under: the
+    /// channel's, and the author's within it. Both are [`naming`]'s rule.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::BadName`] when `name` is not usable as one, and
+    /// [`SiteError::UnknownChannel`] when there is no identity to file under.
+    pub(crate) fn filed_lane(
+        &self,
+        name: &str,
+        author: &Handle,
+    ) -> Result<(String, String), SiteError> {
+        naming::check(name)?;
+        let seed = self.seed()?.ok_or_else(|| SiteError::UnknownChannel {
+            name: name.to_owned(),
+        })?;
+        let filed = naming::filed(&seed, name);
+        let filed_author = naming::filed_author(&seed, &filed, author);
+        Ok((filed, filed_author))
     }
 }

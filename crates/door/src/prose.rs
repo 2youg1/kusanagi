@@ -15,6 +15,18 @@ use crate::fence::Fence;
 use crate::report::Outcome;
 use crate::rows::{Delivery, Entry, Grouping, Landed, Measured, Summary};
 
+/// The channels, then every group and what it stands for.
+fn grouped_listing(channels: &[Summary], groups: &[Grouping]) -> String {
+    let mut said = listing(channels);
+    for group in groups {
+        said.push_str("\n\ngroup `");
+        said.push_str(&group.name);
+        said.push('`');
+        said.push_str(&members(group));
+    }
+    said
+}
+
 /// Renders one outcome as prose.
 pub fn render(outcome: &Outcome, fence: Fence) -> String {
     match outcome {
@@ -24,17 +36,7 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
         Outcome::Channels { channels, groups } if channels.is_empty() && groups.is_empty() => {
             "no channels yet; `kusanagi invite` starts one".to_owned()
         }
-        Outcome::Channels { channels, groups } => {
-            let mut said = listing(channels);
-            for group in groups {
-                let name = &group.name;
-                said.push_str("\n\ngroup `");
-                said.push_str(name);
-                said.push('`');
-                said.push_str(&members(group));
-            }
-            said
-        }
+        Outcome::Channels { channels, groups } => grouped_listing(channels, groups),
         Outcome::Grouped { group } => format!(
             "group `{}` now stands for {} channel(s){}\n\
              sending to it writes one drop per member, and nothing is shared between them.",
@@ -63,8 +65,10 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             peer,
             check,
             waypoint,
+            retention,
         } => format!(
-            "joined `{name}`\n  you       {handle}\n  peer      {peer}\n  waypoint  {waypoint}\n\
+            "joined `{name}`\n  you       {handle}\n  peer      {peer}\n  waypoint  {waypoint}\n  \
+             retention {retention}\n\
              \n  check code {check} \u{2014} it should match what the person who invited you says"
         ),
         Outcome::Sent {

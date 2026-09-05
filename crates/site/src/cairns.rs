@@ -25,7 +25,6 @@
 use std::path::{Path, PathBuf};
 
 use kusanagi_chain::Cairn;
-use kusanagi_kernel::Handle;
 
 use crate::error::SiteError;
 use crate::permissions;
@@ -37,11 +36,11 @@ pub(crate) fn dir(root: &Path, filed: &str) -> PathBuf {
 
 /// What one author's stream on this channel has been verified to, if anything.
 ///
-/// A handle renders as 64 hexadecimal characters, which needs no checking
-/// against [`crate::naming::check`]: it cannot be empty, cannot escape a
-/// directory, and cannot collide with another author.
-pub(crate) fn read(root: &Path, filed: &str, author: &Handle) -> Option<Cairn> {
-    permissions::read(&dir(root, filed).join(author.to_string()), "read a cairn")
+/// `filed_author` is [`crate::naming::filed_author`]'s rule: 64 hexadecimal
+/// characters that need no checking against [`crate::naming::check`], cannot
+/// escape a directory, and name nobody.
+pub(crate) fn read(root: &Path, filed: &str, filed_author: &str) -> Option<Cairn> {
+    permissions::read(&dir(root, filed).join(filed_author), "read a cairn")
         .ok()
         .flatten()
         .and_then(|bytes| Cairn::from_bytes(&bytes).ok())
@@ -49,17 +48,23 @@ pub(crate) fn read(root: &Path, filed: &str, author: &Handle) -> Option<Cairn> {
 
 /// Writes down how far `cairn`'s author has been verified on this channel.
 ///
-/// The file is named after the author inside the cairn, so a record cannot end
-/// up describing a stream other than the one it is filed under.
+/// `filed_author` is derived by the caller from the author inside the cairn,
+/// so a record cannot end up describing a stream other than the one it is
+/// filed under.
 ///
 /// # Errors
 ///
 /// [`SiteError::Local`] when the record cannot be written.
-pub(crate) fn write(root: &Path, filed: &str, cairn: &Cairn) -> Result<(), SiteError> {
+pub(crate) fn write(
+    root: &Path,
+    filed: &str,
+    filed_author: &str,
+    cairn: &Cairn,
+) -> Result<(), SiteError> {
     let directory = dir(root, filed);
     permissions::create_dir(&directory, "create the cairn directory")?;
     permissions::write(
-        &directory.join(cairn.author().to_string()),
+        &directory.join(filed_author),
         &cairn.to_bytes(),
         "write a cairn",
     )

@@ -63,7 +63,7 @@ import Network.Socket.ByteString (recv, sendAll)
 import System.Timeout (timeout)
 
 import Kusanagi.Door (Door)
-import Kusanagi.Door qualified as Door
+import Kusanagi.Service qualified as Service
 
 -- | One request going past, as much of it as a carrier can see.
 --
@@ -97,7 +97,7 @@ observed = fmap reverse . readIORef . relaySeen
 -- an endpoint reached it, so one world answers both kinds of question.
 withRelay :: Door -> FilePath -> (Relay -> IO a) -> IO a
 withRelay door directory act =
-  withSocketsDo . Door.hosting door directory $ \upstream -> do
+  withSocketsDo . Service.hosting door directory $ \upstream -> do
     forwarding <- resolve upstream
     bracket listening close $ \gate -> do
       seen <- newIORef []

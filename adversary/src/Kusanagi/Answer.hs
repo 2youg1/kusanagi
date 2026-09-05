@@ -22,6 +22,7 @@ module Kusanagi.Answer
   , Entry (..)
   , Carried (..)
   , Summary (..)
+  , Landed (..)
   , Address (..)
   , ChannelName (..)
   , Code (..)
@@ -111,6 +112,19 @@ instance FromJSON Summary where
   parseJSON = withObject "Summary" $ \o ->
     Summary <$> o .: "name" <*> o .: "standing" <*> o .: "peer"
 
+-- | Where one member's copy of a fan-out went, or why it did not.
+data Landed = Landed
+  { landedMember :: ChannelName
+  , landedStatus :: Text
+  , landedCode :: Maybe Code
+  , landedAddress :: Maybe Address
+  }
+  deriving stock (Eq, Show)
+
+instance FromJSON Landed where
+  parseJSON = withObject "Landed" $ \o ->
+    Landed <$> o .: "member" <*> o .: "status" <*> o .:? "code" <*> o .:? "address"
+
 -- | What the program reports when it did what was asked.
 data Outcome
   = Identity Handle
@@ -130,6 +144,14 @@ data Outcome
     Forgotten ChannelName Text
   | Examined Text Text
   | Hosted
+  | -- | The group, and the channels it now stands for.
+    Grouped ChannelName [ChannelName]
+  | -- | The group, and where each member's copy landed.
+    FannedOut ChannelName [Landed]
+  | -- | The recovery key, said once. The archive itself is on stdout.
+    Exported Text
+  | -- | Where the site was restored, and how many channels came with it.
+    Imported Text Word64
   deriving stock (Eq, Show)
 
 instance FromJSON Outcome where
@@ -148,6 +170,12 @@ instance FromJSON Outcome where
       "forgotten" -> Forgotten <$> o .: "name" <*> o .: "waypoint"
       "examined" -> Examined <$> o .: "waypoint" <*> o .: "tier"
       "hosted" -> pure Hosted
+      "grouped" -> do
+        group <- o .: "group"
+        Grouped <$> group .: "name" <*> group .: "members"
+      "fanned_out" -> FannedOut <$> o .: "group" <*> o .: "delivered"
+      "exported" -> Exported <$> o .: "recovery"
+      "imported" -> Imported <$> o .: "site" <*> o .: "channels"
       other -> fail ("the door reported a command this adversary does not know: " <> Text.unpack other)
 
 -- | What the program reports when it could not.

@@ -22,6 +22,9 @@ module Kusanagi.Ground
   , waypoint
   , stored
   , corrupt
+  , damage
+  , holding
+  , plant
   , vanish
   , transplant
   ) where
@@ -36,7 +39,7 @@ import System.Directory
   , listDirectory
   , removeFile
   )
-import System.FilePath (takeFileName, (</>))
+import System.FilePath (takeDirectory, takeFileName, (</>))
 import System.IO.Temp (withSystemTempDirectory)
 
 import Kusanagi.Answer (Address (..))
@@ -118,6 +121,30 @@ corrupt ground address = do
   case ByteString.uncons bytes of
     Nothing -> fail ("the host is holding nothing at " <> show address)
     Just (first, rest) -> ByteString.writeFile path (ByteString.cons (first + 1) rest)
+
+-- | Changes the byte at one offset, which is how damage and a hostile host
+-- both look from the reader's side. Offsets past the end change nothing.
+damage :: Ground -> Int -> Address -> IO ()
+damage ground offset address = do
+  let path = placed ground address
+  bytes <- ByteString.readFile path
+  case ByteString.splitAt offset bytes of
+    (before, rest) | Just (byte, after) <- ByteString.uncons rest ->
+      ByteString.writeFile path (before <> ByteString.cons (byte + 1) after)
+    _ -> pure ()
+
+-- | The bytes the host holds at one address.
+holding :: Ground -> Address -> IO ByteString.ByteString
+holding ground = ByteString.readFile . placed ground
+
+-- | Puts whatever bytes the host likes at an address, whether or not anything
+-- was there. A host that can write its own disk can do this; the question is
+-- only ever what a reader makes of it.
+plant :: Ground -> Address -> ByteString.ByteString -> IO ()
+plant ground address bytes = do
+  let path = placed ground address
+  createDirectoryIfMissing True (takeDirectory path)
+  ByteString.writeFile path bytes
 
 -- | Drops an object the host was holding.
 --

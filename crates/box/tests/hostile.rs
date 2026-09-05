@@ -34,6 +34,14 @@ use common::{host, probe, status};
 /// A well-formed address, in the one spelling the parser accepts.
 const ADDRESS: &str = "0123456789abcdef0123456789abcdef01234567";
 
+/// A body the box accepts: the one size, in printable bytes. Hostile tests need
+/// past the size check to reach the rule each of them is actually about.
+fn full(fill: u8) -> String {
+    core::str::from_utf8(&vec![fill; kusanagi_seal::DROP])
+        .expect("a printable fill")
+        .to_owned()
+}
+
 /// A request that writes `body` at `target` with these extra header lines.
 fn put(target: &str, headers: &str, body: &str) -> String {
     format!(
@@ -54,7 +62,7 @@ fn a_lifetime_too_large_to_add_does_not_take_the_host_down() {
         &put(
             &format!("/d/{ADDRESS}"),
             "If-None-Match: *\r\nCache-Control: max-age=18446744073709551615\r\n",
-            "a segment",
+            &full(b'a'),
         ),
     );
 
@@ -93,7 +101,7 @@ fn only_the_exact_conditional_header_gets_a_write() {
     for headers in nearly {
         probe(
             &address,
-            &put(&format!("/d/{ADDRESS}"), headers, "sneaked in"),
+            &put(&format!("/d/{ADDRESS}"), headers, &full(b'a')),
         );
     }
     // The evidence: nothing above stored anything, so the address is still empty.
@@ -108,12 +116,12 @@ fn only_the_exact_conditional_header_gets_a_write() {
         &put(
             &format!("/d/{ADDRESS}"),
             "If-None-Match: *\r\n",
-            "the real one",
+            &full(b'a'),
         ),
     );
     let read = probe(&address, &get);
     assert!(
-        String::from_utf8_lossy(&read).ends_with("the real one"),
+        String::from_utf8_lossy(&read).ends_with(&"a".repeat(kusanagi_seal::DROP)),
         "the write that asked correctly was not kept"
     );
 
@@ -133,12 +141,12 @@ fn an_address_has_exactly_one_spelling() {
         &put(
             &format!("/d/{ADDRESS}"),
             "If-None-Match: *\r\n",
-            "the first",
+            &full(b'a'),
         ),
     );
     probe(
         &address,
-        &put(&format!("/d/{upper}"), "If-None-Match: *\r\n", "the second"),
+        &put(&format!("/d/{upper}"), "If-None-Match: *\r\n", &full(b'b')),
     );
 
     let read = probe(
@@ -146,7 +154,7 @@ fn an_address_has_exactly_one_spelling() {
         &format!("GET /d/{ADDRESS} HTTP/1.1\r\nHost: h\r\n\r\n"),
     );
     assert!(
-        String::from_utf8_lossy(&read).ends_with("the first"),
+        String::from_utf8_lossy(&read).ends_with(&"a".repeat(kusanagi_seal::DROP)),
         "the drop was overwritten through a second spelling"
     );
 

@@ -77,7 +77,7 @@ impl FromStr for Locator {
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         if let Some(path) = text.strip_prefix("file:") {
-            return Ok(Self::Directory(PathBuf::from(path)));
+            return directory(path);
         }
         if text.starts_with("http://") || text.starts_with("https://") {
             return Ok(Self::Box {
@@ -104,8 +104,24 @@ impl FromStr for Locator {
                 scheme: scheme.to_owned(),
             });
         }
-        Ok(Self::Directory(PathBuf::from(text)))
+        directory(text)
     }
+}
+
+/// A directory locator, provided it is a directory and not a network.
+///
+/// A locator arrives inside somebody else's invitation and is opened on this
+/// machine, so a path the operating system resolves over the network — a UNC
+/// name, or the `//host/share` spelling of one — is a connection the inviter
+/// chose, made outside any proxy this program was told to use, and on Windows
+/// carrying this account's credentials. A share is still usable as a dead
+/// drop: the person mounts it, and the program sees a drive letter.
+fn directory(text: &str) -> Result<Locator, LocatorError> {
+    let networked = text.starts_with("\\\\") || text.starts_with("//");
+    if networked {
+        return Err(LocatorError::NetworkPath);
+    }
+    Ok(Locator::Directory(PathBuf::from(text)))
 }
 
 fn parse_bucket(rest: &str) -> Result<Locator, LocatorError> {
@@ -160,6 +176,12 @@ pub enum LocatorError {
         /// The scheme as it was written.
         scheme: String,
     },
+    /// The locator is a path the operating system would reach over the network.
+    #[error(
+        "a waypoint directory cannot be a network path: opening one is a connection \
+         the inviter chose, outside any proxy, carrying this account's credentials"
+    )]
+    NetworkPath,
     /// A proxy was configured and is not one.
     #[error("that is not a proxy: {reason}")]
     BadProxy {
@@ -179,6 +201,7 @@ impl LocatorError {
             Self::CarrierMissing => "locator.carrier_missing",
             Self::BadCarrier { .. } => "locator.bad_carrier",
             Self::UnknownScheme { .. } => "locator.unknown_scheme",
+            Self::NetworkPath => "locator.network_path",
             Self::BadProxy { .. } => "locator.bad_proxy",
         }
     }

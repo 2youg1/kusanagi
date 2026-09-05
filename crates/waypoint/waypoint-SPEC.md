@@ -151,6 +151,7 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 | 八线程抢同一地址 | 恰有一个 `Stored` |
 | 根目录其实是一个文件 | `waypoint.io` |
 | locator 写成不认识的 scheme（`ftp://…`） | `LocatorError::UnknownScheme`，码 `locator.unknown_scheme`。**不得当成相对目录**：那会让 `doctor` 去实测一个文件名，给出四条与问题无关的 BROKEN |
+| locator 是网络路径（`\\host\share`、`//host/share`、`\\?\UNC\…`、`file:` 后同形） | `LocatorError::NetworkPath`，码 `locator.network_path`。目录 locator 由邀请者选、在受邀者机器上打开；一条 UNC 路径是操作系统代本程序发起的 SMB 连接，不经 `KUSANAGI_PROXY`，Windows 上还会带 NTLM 认证（adversary `surface-SPEC` L1）。文件共享仍可以是 dead drop：人把它挂成盘符，程序只看到盘符 |
 | 盒子返回 428 | `WaypointError::OverwriteNotRefused` |
 | 盒子返回未知状态码 | `UnusableAddress`，把状态码写进 reason |
 | 宙主回 3xx | `Redirected`，码 `waypoint.redirected`。**不跟随**：跟随就是把本端 IP 与想要的地址交给一个本端没选过的第三方 |

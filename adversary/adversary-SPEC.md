@@ -150,7 +150,9 @@ src/Kusanagi/Keyboard.hs   人怎么敲，代理怎么管道；以及引导能�
 src/Kusanagi/Overheard.hs  同机器另一个账户从命令行读得到什么。纯性质，不起进程
 src/Kusanagi/Model.hs      状态模型、后置条件、定向对抗场景
 src/Kusanagi/Regression.hs 反例 → Rust #[test]
-test/Main.hs               tasty 入口
+src/Kusanagi/Stage.hs      两端入席，各对手手里有什么；Leakage / Custody / Forging / Terminal / Port /
+                           Insider / Twins / Scanner / Reach / Listener 是 surface-SPEC.md 的矩阵，一格一条
+test/Main.hs               tasty 入口；test/Surface.hs 是矩阵那棵子树
 ```
 
 `Keyboard` 与 `Model` 互不相识：一个敲字符，一个走动词。两者只共用 `Door` 与 `Ground`。

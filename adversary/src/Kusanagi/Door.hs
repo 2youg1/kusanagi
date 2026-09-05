@@ -14,7 +14,7 @@
 -- There is no linking, no FFI, and no shared type: what cannot be reached
 -- through this module cannot be tested here, which is the point.
 module Kusanagi.Door
-  ( Door
+  ( Door (..)
   , Verb (..)
   , Abilities (..)
   , Lifetime (..)
@@ -26,7 +26,6 @@ module Kusanagi.Door
   , seconds
   , discover
   , ask
-  , hosting
   , typed
   , typedWith
   , spoken
@@ -44,7 +43,7 @@ import System.Directory (doesFileExist)
 import System.Environment (lookupEnv)
 import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
-import System.IO (hClose, hGetLine, hSetBinaryMode)
+import System.IO (hClose, hSetBinaryMode)
 import System.Process
   ( CreateProcess (..)
   , StdStream (..)
@@ -52,6 +51,7 @@ import System.Process
   , waitForProcess
   , withCreateProcess
   )
+
 
 -- Only the names this module needs: `Outcome` carries a `Read` constructor, and
 -- so does `Verb` below. Importing the whole of it would make both ambiguous.
@@ -107,7 +107,19 @@ data Verb
     -- so. A new constructor makes the slotted world the thing that is opted
     -- into, which is what it is.
     InviteEvery ChannelName FilePath Word
+  | -- | An invitation on a channel that deletes each drop once the peer has
+    -- read it, and burns the key with it.
+    InviteReleasing ChannelName FilePath
   | Join Invitation ChannelName
+  | -- | Say which channels one name stands for. Members arrive on stdin.
+    Group ChannelName [ChannelName]
+  | -- | One sentence to every member of a group.
+    SendGroup ChannelName Text
+  | -- | This endpoint's own stream on a channel, as the peer would read it.
+    ReadMine ChannelName
+  | Forget ChannelName
+  | -- | The recovery key on the first line, the archive after it.
+    Import Text ByteString.ByteString
   | -- | Fill this channel's current slot and look once.
     Tick ChannelName
   | Send ChannelName Text
@@ -156,35 +168,6 @@ ask (Door binary) site verb = do
           <> show verb
           <> "\n  said:  "
           <> show (ByteString.take 400 raw)
-
--- | Runs a host for the duration of an action, and hands over the address it took.
---
--- The one verb that never returns needs a shape of its own: the result of
--- @kusanagi host@ is not a value on stdout but a socket somebody else can
--- connect to, and that address is announced on stderr as the last word of the
--- first line. **The address is asked for rather than chosen** (@--bind 0@),
--- because a test that picks a port has already lost a race with every other
--- test on the machine.
---
--- Reading that line is also the readiness signal: it is written once the
--- listener is up, so an action that begins by connecting will find something
--- there.
-hosting :: Door -> FilePath -> (String -> IO a) -> IO a
-hosting (Door binary) directory act =
-  withCreateProcess
-    (proc binary ["host", "--dir", directory, "--bind", "0"])
-      { std_in = NoStream
-      , std_out = CreatePipe
-      , std_err = CreatePipe
-      }
-    $ \_ _ err _ ->
-      case err of
-        Nothing -> fail "the host was created without the pipe it was asked for"
-        Just errHandle -> do
-          announced <- hGetLine errHandle
-          case reverse (words announced) of
-            (address : _) -> act address
-            [] -> fail ("the host announced no address: " <> show announced)
 
 -- | What a command line did, before anything decides whether that was allowed.
 --
@@ -247,7 +230,13 @@ piped = \case
   Channels -> Nothing
   Invite name _ _ _ -> Just (line name)
   InviteEvery name _ _ -> Just (line name)
+  InviteReleasing name _ -> Just (line name)
   Join (Invitation invitation) name -> Just (line name <> Text.encodeUtf8 invitation)
+  Group name members -> Just (line name <> foldMap line members)
+  SendGroup name text -> Just (line name <> Text.encodeUtf8 text)
+  ReadMine name -> Just (line name)
+  Forget name -> Just (line name)
+  Import key archive -> Just (Text.encodeUtf8 key <> "\n" <> archive)
   Tick name -> Just (line name)
   Send name text -> Just (line name <> Text.encodeUtf8 text)
   Read name -> Just (line name)
@@ -283,7 +272,24 @@ spoken = \case
     , "--every"
     , show period
     ]
+  InviteReleasing _ waypoint ->
+    [ "invite"
+    , "--name"
+    , onStdin
+    , "--waypoint"
+    , waypoint
+    , "--for"
+    , show (seconds Forever)
+    , "--can"
+    , listed both
+    , "--release"
+    ]
   Join _ _ -> ["join", "--name", onStdin]
+  Group _ _ -> ["group", "--name", onStdin]
+  SendGroup _ _ -> ["send", "--to-group", onStdin]
+  ReadMine _ -> ["read", "--from", onStdin, "--mine"]
+  Forget _ -> ["forget", "--channel", onStdin]
+  Import _ _ -> ["import"]
   Tick _ -> ["tick", "--from", onStdin]
   Send _ _ -> ["send", "--to", onStdin]
   Read _ -> ["read", "--from", onStdin]

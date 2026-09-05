@@ -73,7 +73,7 @@
 ```
 lib.rs      模块索引
 site.rs     Site —— 站点的入口：identity、channels，以及向下面四个模块的分发
-cairns.rs   <root>/cairns/<filed>/<author> —— 写会报错、读永不报错的那一对
+cairns.rs   <root>/cairns/<filed>/<filed_author> —— 写会报错、读永不报错的那一对
 roster.rs   <root>/groups/<filed> —— 一个群组发给哪几条通道
 archive.rs  export / import —— 整个站点封进一串字节，再放回来
 at_rest.rs  站点静态加密：标签字节 + 每平台一个存储
@@ -89,7 +89,11 @@ retention.rs Retention —— 对端读过之后那个 drop 还在不在（C4）
 rhythm.rs   Site 上属于 outbox / slots / ratchets 的那几个方法
 outbox.rs   <root>/outbox/<filed>/<票号> —— 说了但还没轮到时隙的正文
 slots.rs    <root>/slots/<filed> —— 上一个已填的时隙号
-ratchets.rs <root>/ratchets/<filed>/<author> —— 这条道的钥匙烧到哪了
+ratchets.rs <root>/ratchets/<filed>/<filed_author> —— 这条道的钥匙烧到哪了
+
+`<filed_author>` = `naming::filed_author(seed, filed, author)`：同一把归档密钥对 `filed ‖ author` 做带密钥哈希。
+**不再是明文 handle**（adversary `surface-SPEC` S3–S5 查出）：同一对端在两条通道上、或在两个被扣的站点上，
+不再留下同一个文件名；一份目录清单交出的仍是计数，不是关系图。cairn 内部仍带 author，所以归档与导入重算文件名。
 invite.rs   Invite 与 kusanagi2: 文本形式
 error.rs    SiteError —— 本机失败的几种形状
 ```

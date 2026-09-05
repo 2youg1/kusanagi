@@ -144,15 +144,24 @@ fn call(site: &Site, params: &Value) -> Value {
     let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
     let answered = called(name, &arguments)
         .and_then(|request| run(site, &request))
-        // A fence is drawn even though JSON ignores it, because `render` takes
-        // one and this front end must not be the place that decides it does not
-        // need it: the day a tool answers prose, the fence is already there.
         .and_then(|outcome| Ok((outcome, crate::world::fresh_fence()?)));
     match answered {
-        Ok((outcome, fence)) => json!({
-            "content": [{ "type": "text", "text": outcome.render(true, fence) }],
-            "isError": false,
-        }),
+        // **The text a model reads is the prose, fenced.** A tool result goes
+        // straight into a language model's context, which is the one reader
+        // that cannot see quotation marks: the peer's bytes and this program's
+        // words arrive as one stream, and the fence (D-08) is the only thing
+        // that says which is which. The structured half is the same JSON the
+        // command line's `--json` reports, parsed rather than rebuilt, so the
+        // two doors cannot describe one outcome in two ways.
+        Ok((outcome, fence)) => {
+            let structured: Value = serde_json::from_str(&outcome.render(true, fence))
+                .unwrap_or_else(|_| json!({ "contract": CONTRACT }));
+            json!({
+                "content": [{ "type": "text", "text": outcome.render(false, fence) }],
+                "isError": false,
+                "structuredContent": structured,
+            })
+        }
         Err(refusal) => json!({
             "content": [{ "type": "text", "text": refusal.render(true) }],
             "isError": true,

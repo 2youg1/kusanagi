@@ -26,7 +26,7 @@
 //! and then does not hold it.
 
 use kusanagi_kernel::{Waypoint, WaypointError};
-use kusanagi_seal::{Stream, derive};
+use kusanagi_seal::{Fit, Stream, derive, seal};
 
 use crate::certificate::{Capability, Certificate, Finding, Verdict};
 use crate::conditional::{Conditional, Fetched, TtlOutcome};
@@ -79,8 +79,11 @@ fn conditional_read<P>(place: &P, namespace: &Stream) -> (Verdict, Verdict)
 where
     P: Waypoint + Conditional,
 {
-    let (addr, _) = derive(namespace, 100);
-    if let Err(error) = place.put_if_absent(&addr, b"conditional-read probe") {
+    let (addr, key) = derive(namespace, 100);
+    let Ok(probe) = seal(&key, Fit::Veil, b"conditional-read probe") else {
+        return (unsealable(), unsealable());
+    };
+    if let Err(error) = place.put_if_absent(&addr, &probe) {
         return (unreachable_host(&error), unreachable_host(&error));
     }
 
@@ -140,8 +143,11 @@ fn expiry<P>(place: &P, namespace: &Stream) -> Verdict
 where
     P: Waypoint + Conditional,
 {
-    let (addr, _) = derive(namespace, 101);
-    match place.put_with_ttl(&addr, b"expiry probe", 0) {
+    let (addr, key) = derive(namespace, 101);
+    let Ok(probe) = seal(&key, Fit::Veil, b"expiry probe") else {
+        return unsealable();
+    };
+    match place.put_with_ttl(&addr, &probe, 0) {
         Ok(TtlOutcome::NotOffered) => Verdict::NotOffered {
             because: "this host has no per-object lifetime; sweep with a bucket rule instead"
                 .to_owned(),
@@ -155,6 +161,14 @@ where
             Err(error) => unreachable_host(&error),
         },
         Err(error) => unreachable_host(&error),
+    }
+}
+
+/// A probe that could not be sealed, which a fixed-size envelope around a
+/// short constant never is; named so the verdict is honest if it ever were.
+fn unsealable() -> Verdict {
+    Verdict::Broken {
+        detail: "this build could not seal a probe the size of a drop".to_owned(),
     }
 }
 

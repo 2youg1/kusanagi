@@ -68,6 +68,64 @@ fn a_payload_that_is_not_text_survives_the_round_trip() {
 }
 
 #[test]
+fn terminal_code_is_not_text_however_well_it_is_encoded() {
+    let ground = scratch("terminal-code");
+    let host = ground.join("host");
+    let alice = Endpoint::new(ground.join("alice"));
+    let bob = Endpoint::new(ground.join("bob"));
+    let invitation = invite_line(&alice, "bob", &host.display().to_string());
+    bob.run(&Request::Join {
+        invite: invitation,
+        name: "alice".to_owned(),
+        habit: kusanagi::Habit::default(),
+    })
+    .unwrap();
+
+    // Valid UTF-8, every one of them; a terminal would act on each rather
+    // than show it, and a reader would see the last one reordered.
+    let code: [&[u8]; 5] = [
+        b"\x1b]52;c;aGVsbG8=\x07",
+        b"harmless\rTRANSFER",
+        b"abc\x7f",
+        "\u{9b}31m".as_bytes(),
+        "pay \u{202e}B not A".as_bytes(),
+    ];
+    for bytes in code {
+        bob.run(&Request::Send {
+            name: "alice".to_owned(),
+            payload: bytes.to_vec(),
+        })
+        .unwrap();
+    }
+    bob.run(&Request::Send {
+        name: "alice".to_owned(),
+        payload: b"a line\r\nand another\twith a tab".to_vec(),
+    })
+    .unwrap();
+
+    let heard = json(
+        &alice
+            .run(&Request::Read {
+                name: "bob".to_owned(),
+                after: None,
+                whose: Whose::Peer,
+            })
+            .unwrap(),
+    );
+    for index in 0..code.len() {
+        assert!(
+            heard["segments"][index]["text"].is_null(),
+            "segment {index} was shown as text"
+        );
+        assert!(heard["segments"][index]["payload"].is_string());
+    }
+    assert_eq!(
+        heard["segments"][code.len()]["text"],
+        "a line\r\nand another\twith a tab"
+    );
+}
+
+#[test]
 fn reading_after_a_height_reports_only_what_follows() {
     let ground = scratch("after");
     let host = ground.join("host");

@@ -42,6 +42,8 @@ module Kusanagi.Veil
   , noSharedStructure
   , noPositionIsFixed
   , theSameSentenceTwiceSharesNothing
+  , apart
+  , pairs
   ) where
 
 import Data.ByteString qualified as ByteString

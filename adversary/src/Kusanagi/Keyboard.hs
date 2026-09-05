@@ -35,7 +35,7 @@ module Kusanagi.Keyboard
   ) where
 
 import Data.ByteString qualified as ByteString
-import Data.Char (isUpper)
+import Data.Char (isControl, isUpper)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
@@ -343,9 +343,20 @@ bytesSurviveTheTrip door site channel payload = do
     -- The door reports text when every byte of it is text and hexadecimal
     -- when they are not. Which one appears is a fact about the bytes, so
     -- what to expect is derived the same way rather than fixed to one.
+    -- Text is narrower than valid UTF-8 (door-SPEC §10): a control character
+    -- other than tab, newline and the return of a `\r\n` pair, or a
+    -- bidirectional override, makes the whole payload not text.
     sent = case Text.decodeUtf8' payload of
-      Right said -> AsText said
-      Left _ -> AsBytes (wire payload)
+      Right said | inert (Text.unpack said) -> AsText said
+      _ -> AsBytes (wire payload)
+    inert ('\r' : '\n' : rest) = inert rest
+    inert (c : rest) = allowed c && inert rest
+    inert [] = True
+    allowed c
+      | c == '\t' || c == '\n' = True
+      | c >= '\x202A' && c <= '\x202E' = False
+      | c >= '\x2066' && c <= '\x2069' = False
+      | otherwise = not (isControl c)
     wire = Text.concat . map hex . ByteString.unpack
     hex byte =
       let digits = "0123456789abcdef"

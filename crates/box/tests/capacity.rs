@@ -31,7 +31,7 @@ use std::path::PathBuf;
 
 use kusanagi_box::Server;
 use kusanagi_kernel::{FixedClock, Instant, PutOutcome, Waypoint as _};
-use kusanagi_seal::{Secret, derive};
+use kusanagi_seal::{Fit, Secret, derive, seal};
 use kusanagi_waypoint::{Access, HttpWaypoint};
 
 /// A host holding at most `capacity` bytes, and the client that talks to it.
@@ -62,18 +62,21 @@ fn box_holding(tag: &str, capacity: u64, requests: usize) -> (HttpWaypoint, Path
 
 #[test]
 fn a_host_that_is_full_keeps_nothing_more_and_says_nothing_about_it() {
-    // Room for exactly three drops of this size, envelope included.
-    let said = vec![7_u8; 1_000];
-    let capacity = 3 * (said.len() as u64 + 8);
-    // Two requests per write — the write and the read that confirms it.
-    let (client, root) = box_holding("capacity", capacity, 8);
+    // Room for exactly three sealed drops, envelope included.
     let namespace =
         Secret::from_bytes([1; 32]).stream(&kusanagi_kernel::Handle::from_bytes([2; 32]));
+    let said = |index: u64| {
+        let (_, key) = derive(&namespace, index);
+        seal(&key, Fit::Veil, &[7; 1_000]).expect("a sealed drop")
+    };
+    let capacity = 3 * (said(0).len() as u64 + 8);
+    // Two requests per write — the write and the read that confirms it.
+    let (client, root) = box_holding("capacity", capacity, 8);
 
     for index in 0..3 {
         let (addr, _) = derive(&namespace, index);
         assert_eq!(
-            client.put_if_absent(&addr, &said).unwrap(),
+            client.put_if_absent(&addr, &said(index)).unwrap(),
             PutOutcome::Stored,
             "the host refused write {index}, which was within its capacity"
         );
@@ -81,7 +84,7 @@ fn a_host_that_is_full_keeps_nothing_more_and_says_nothing_about_it() {
 
     let (addr, _) = derive(&namespace, 3);
     let error = client
-        .put_if_absent(&addr, &said)
+        .put_if_absent(&addr, &said(3))
         .expect_err("a full host kept a fourth drop");
     assert_eq!(error.code(), "waypoint.unwritten");
 

@@ -39,7 +39,8 @@ impl Site {
     /// [`SiteError::BadRecord`] when the record is not a ratchet — which is a
     /// refusal rather than a miss, because guessing would restart a burned lane.
     pub fn ratchet(&self, name: &str, author: &Handle) -> Result<Option<Ratchet>, SiteError> {
-        ratchets::read(self.root(), &self.filed_or_unknown(name)?, author)
+        let (filed, filed_author) = self.filed_lane(name, author)?;
+        ratchets::read(self.root(), &filed, &filed_author)
     }
 
     /// Burns every key below `ratchet`'s floor on this lane, irreversibly.
@@ -49,7 +50,8 @@ impl Site {
     /// [`SiteError::BadName`] when `name` is not usable as one, and
     /// [`SiteError::Local`] when the record cannot be written.
     pub fn burn(&self, name: &str, author: &Handle, ratchet: &Ratchet) -> Result<(), SiteError> {
-        ratchets::write(self.root(), &self.filed_or_unknown(name)?, author, ratchet)
+        let (filed, filed_author) = self.filed_lane(name, author)?;
+        ratchets::write(self.root(), &filed, &filed_author, ratchet)
     }
 
     /// Adds a payload to the queue a slotted channel drains one slot at a time.

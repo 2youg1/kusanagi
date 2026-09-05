@@ -47,6 +47,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 
 use kusanagi_kernel::{Clock, DropAddr, Instant, PutOutcome, Waypoint as _};
+use kusanagi_seal::DROP;
 
 use crate::capacity::{CAPACITY, held};
 use crate::exchange::{IDLE, Request, Response, address_of, etag, max_age};
@@ -208,6 +209,13 @@ impl<C: Clock> Server<C> {
         if request.header("if-none-match") != Some("*") {
             return refused;
         }
+        // A drop is one size, and a box holds drops. Anything else is a
+        // stranger's object: it costs the directory space, it lets a squatter
+        // take somebody's next address for one byte, and it is nothing an
+        // endpoint of this network ever writes.
+        if request.body.len() != DROP {
+            return refused;
+        }
         let expires_at = match request.header("cache-control").and_then(max_age) {
             None => Instant::NEVER,
             Some(seconds) => self.clock.now().plus_seconds(seconds),
@@ -241,40 +249,6 @@ impl<C: Clock> Server<C> {
     reason = "test code"
 )]
 mod tests {
-    use super::Server;
-    use kusanagi_kernel::{FixedClock, Instant, PutOutcome, Signer, Waypoint as _};
-    use kusanagi_seal::{Secret, Stream, derive};
-    use kusanagi_waypoint::{Access, Conditional as _, Fetched, HttpWaypoint, TtlOutcome};
-    use std::net::TcpListener;
-
-    fn namespace(tag: u8) -> Stream {
-        Secret::from_bytes([tag; 32]).stream(&Signer::from_seed(&[tag; 32]).handle())
-    }
-
-    /// Starts a real server on a real port and returns a client pointed at it.
-    ///
-    /// The two processes of the acceptance criterion become two threads here;
-    /// what crosses between them is a TCP connection either way, which is the
-    /// part that had never been exercised before this module existed.
-    fn box_on(tag: &str, clock: FixedClock) -> (HttpWaypoint, std::path::PathBuf) {
-        let root =
-            std::env::temp_dir().join(format!("kusanagi-serve-{}-{tag}", std::process::id()));
-        let listener = TcpListener::bind("127.0.0.1:0").expect("could not bind a port");
-        let port = listener.local_addr().expect("no local address").port();
-        let directory = root.clone();
-        std::thread::spawn(move || {
-            let host = Server::new(&directory, clock);
-            match host.serve(&listener) {
-                Ok(()) => {}
-                Err(error) => eprintln!("test host stopped: {error}"),
-            }
-        });
-        (
-            HttpWaypoint::new(&format!("http://127.0.0.1:{port}"), &Access::default()),
-            root,
-        )
-    }
-
     #[test]
     fn a_lifetime_is_read_out_of_an_ordinary_cache_header() {
         // Every one of these is something a real cache sends. Getting any of
@@ -288,7 +262,7 @@ mod tests {
             super::max_age("public, max-age=3600, immutable"),
             Some(3_600)
         );
-        // Not a lifetime, and ignored rather than refused: RFC 9111 §5.2 asks a
+        // Not a lifetime, and ignored rather than refused: RFC 9111 asks a
         // recipient to skip what it does not understand, and refusing would make
         // a malformed value into a way of telling this host apart from a cache.
         assert_eq!(super::max_age("max-age="), None);
@@ -296,90 +270,5 @@ mod tests {
         assert_eq!(super::max_age("max-age=-1"), None);
         assert_eq!(super::max_age("s-maxage=60"), None);
         assert_eq!(super::max_age(""), None);
-    }
-
-    #[test]
-    fn a_segment_crosses_a_tcp_connection_and_comes_back_whole() {
-        let (client, root) = box_on(
-            "roundtrip",
-            FixedClock::at(Instant::from_unix_seconds(1_000)),
-        );
-        let (addr, _) = derive(&namespace(1), 0);
-
-        assert_eq!(client.get(&addr).unwrap(), None);
-        assert_eq!(
-            client.put_if_absent(&addr, b"a segment").unwrap(),
-            PutOutcome::Stored
-        );
-        assert_eq!(client.get(&addr).unwrap(), Some(b"a segment".to_vec()));
-
-        std::fs::remove_dir_all(&root).ok();
-    }
-
-    #[test]
-    fn a_claimed_drop_is_refused_a_second_time() {
-        let (client, root) = box_on(
-            "write-once",
-            FixedClock::at(Instant::from_unix_seconds(1_000)),
-        );
-        let (addr, _) = derive(&namespace(2), 0);
-
-        assert_eq!(
-            client.put_if_absent(&addr, b"first").unwrap(),
-            PutOutcome::Stored
-        );
-        assert_eq!(
-            client.put_if_absent(&addr, b"second").unwrap(),
-            PutOutcome::AlreadyPresent
-        );
-        assert_eq!(client.get(&addr).unwrap(), Some(b"first".to_vec()));
-
-        std::fs::remove_dir_all(&root).ok();
-    }
-
-    #[test]
-    fn a_reader_that_is_current_is_told_so_without_the_bytes() {
-        let (client, root) = box_on(
-            "conditional",
-            FixedClock::at(Instant::from_unix_seconds(1_000)),
-        );
-        let (addr, _) = derive(&namespace(3), 0);
-        client.put_if_absent(&addr, b"a segment").unwrap();
-
-        let Fetched::Fresh { validator, .. } = client.get_if_changed(&addr, None).unwrap() else {
-            panic!("the host did not send the bytes it was holding");
-        };
-        let validator = validator.expect("the host named no version");
-        assert_eq!(
-            client.get_if_changed(&addr, Some(&validator)).unwrap(),
-            Fetched::Unchanged
-        );
-
-        std::fs::remove_dir_all(&root).ok();
-    }
-
-    #[test]
-    fn an_object_written_already_expired_is_never_served() {
-        let (client, root) = box_on("expiry", FixedClock::at(Instant::from_unix_seconds(1_000)));
-        let (addr, _) = derive(&namespace(4), 0);
-
-        assert_eq!(
-            client.put_with_ttl(&addr, b"transient", 0).unwrap(),
-            TtlOutcome::Accepted
-        );
-        assert_eq!(client.get(&addr).unwrap(), None);
-
-        std::fs::remove_dir_all(&root).ok();
-    }
-
-    #[test]
-    fn the_whole_contract_holds_over_tcp() {
-        let (client, root) = box_on(
-            "conformance",
-            FixedClock::at(Instant::from_unix_seconds(1_000)),
-        );
-        kusanagi_waypoint::conformance::run(&client, &namespace(5))
-            .expect("the box broke the contract");
-        std::fs::remove_dir_all(&root).ok();
     }
 }

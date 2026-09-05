@@ -68,7 +68,9 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
         Request::Send { name, payload } => send(site, name, payload, now),
         Request::Group { name, members } => group(site, name, members),
         Request::Fanout { group, payload } => fanout(site, group, payload, now),
-        Request::Read { name, after, whose } => read(site, name, *after, *whose, now),
+        Request::Read { name, after, whose } => {
+            read(site, &signer(site)?, name, *after, *whose, now)
+        }
         Request::Revoke { name } => revoke(site, name),
         Request::Forget { name } => forget(site, name),
         Request::Doctor { waypoint } => doctor(waypoint, now),

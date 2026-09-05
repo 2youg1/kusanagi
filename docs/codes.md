@@ -73,6 +73,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `locator.credentials_missing` | a bucket was named without credentials | set `KUSANAGI_S3_ACCESS_KEY` and `KUSANAGI_S3_SECRET_KEY` |
 | `locator.empty` | a waypoint was named as an empty string | a waypoint is a path, an `http://` url, or `s3://…` |
 | `locator.unknown_scheme` | a locator names a scheme this build does not speak | a waypoint is a path, an `http://` url, or `s3://…` |
+| `locator.network_path` | a directory locator is a network path (`\\host\share`, `//host/share`); opening it would be a connection the inviter chose, outside any proxy | mount the share yourself and name the drive or mount point it appears as |
 | `seal.burned` | a key this endpoint destroyed on purpose was asked for again; the channel releases what its peer has read | restore from the archive `kusanagi export` made, or accept that those segments are gone |
 | `seal.oversize` | a payload is larger than a drop can carry | send less in one segment |
 | `seal.rejected` | sealed bytes did not open under the key this address derives | keep the bytes and report it |
