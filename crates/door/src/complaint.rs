@@ -16,7 +16,7 @@
 
 use kusanagi_chain::ChainError;
 use kusanagi_grant::GrantError;
-use kusanagi_kernel::{SegmentError, WaypointError};
+use kusanagi_kernel::{AliasError, SegmentError, WaypointError};
 use kusanagi_seal::OpenFailed;
 use kusanagi_site::SiteError;
 use kusanagi_waypoint::LocatorError;
@@ -41,6 +41,9 @@ pub enum Complaint {
     /// A grant does not authorise this.
     #[error(transparent)]
     Grant(#[from] GrantError),
+    /// A name a peer declared was not signed by their key, or is not a name.
+    #[error(transparent)]
+    Alias(#[from] AliasError),
     /// The waypoint locator does not name a place.
     #[error(transparent)]
     Locator(#[from] LocatorError),
@@ -328,6 +331,7 @@ impl Complaint {
             Self::Chain(error) => error.code(),
             Self::Sealed(error) => error.code(),
             Self::Grant(error) => error.code(),
+            Self::Alias(_) => "kusanagi.bad_name",
             Self::Locator(error) => error.code(),
             Self::Listening { .. } => "kusanagi.address_unavailable",
             Self::Local { .. } => "kusanagi.local",

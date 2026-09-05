@@ -42,6 +42,7 @@ answer and exit: `host`, `port`, `export`.
 | `channels` | every channel and group this endpoint has | — |
 | `group --name G` | set which channels a group name stands for (empty list deletes it) | the member names, one per line |
 | `revoke --from N` · `forget --channel N` | cut the peer off · delete the channel | `N` when `-` |
+| `name [--as NAME \| --clear]` | what this endpoint asks to be called; signed by its key, carried sealed in every later invitation and greeting; `read` and `channels` report the peer's as `alias`, separate from `author` (the handle) and `name` (the channel); an alias is a label and never appears inside the fence | `NAME` when `--as -` |
 | `sweep [--digits D]` | how many of the ward's four hex digits a read names; fewer hides among more wards, at bandwidth | — |
 | `tick --from N` | fill this channel's current time slot (only on channels opened with `--every`) | `N` when `-` |
 | `doctor HOST` | measure what a host actually does before relying on it | — |

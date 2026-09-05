@@ -63,6 +63,21 @@ pub enum Whose {
     Mine,
 }
 
+/// What to do about this endpoint's name.
+///
+/// Three cases rather than an `Option<Option<String>>`: asking, setting and
+/// clearing are three different things a caller means, and a nested option
+/// would make two of them look alike at every call site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Naming {
+    /// Report the name as it stands.
+    Ask,
+    /// Record this name. It is checked before it is written.
+    Set(String),
+    /// Record that this endpoint has no name.
+    Clear,
+}
+
 /// One thing to do.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -132,6 +147,14 @@ pub enum Request {
     Proxy {
         /// `None` reads; `Some` records.
         require: Option<bool>,
+    },
+    /// Read, change or clear what this endpoint asks to be called.
+    ///
+    /// The name travels, signed by this endpoint's key, in every invitation
+    /// and greeting made after it is set; peers met before see no change.
+    Name {
+        /// What to do about it.
+        naming: Naming,
     },
     /// Read, or change, how many hex digits of its ward a read names.
     Sweep {

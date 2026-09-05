@@ -10,6 +10,7 @@ members = [
     "crates/vault",
     "crates/site",
     "crates/door",
+    "crates/walk",
     "crates/kusanagi",
 ]
 
@@ -31,6 +32,7 @@ kusanagi-grant = { path = "crates/grant", version = "0.0.1" }
 kusanagi-vault = { path = "crates/vault", version = "0.0.1" }
 kusanagi-site = { path = "crates/site", version = "0.0.1" }
 kusanagi-door = { path = "crates/door", version = "0.0.1" }
+kusanagi-walk = { path = "crates/walk", version = "0.0.1" }
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
 thiserror = "2"
 # Only the parts of clap this program uses. What the default set adds is

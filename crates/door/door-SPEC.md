@@ -208,6 +208,14 @@ pub const CONTRACT: u8 = 1;
 三者的 `recover` 都点名一个动词——前两个指向 `import` 与 `send --to`，`waypoint.deletion_refused`
 指向「不带 `--release` 重开，或换一个会删的宿主」。
 
+### 名字的一处规则（L1 · D-10）
+
+`rows::called(alias, handle)` 是**唯一**决定「叫对端什么」的函数：有签名的 alias 用它，否则 handle 前 12 字符；
+`Summary.peer` 与 `prose::stream` 的 header 行都经它。`Summary` 多 `alias` 列（可空）、`Identity` 多 `alias`、
+`Read` 多 `alias`——三处都是 `Option<String>`，机器读者据此分得清「名字」与「缩写」。alias 只出现在本程序的行上，
+**从不进围栏**；`Carried` 一字未动。新码 `kusanagi.bad_name`（`Complaint::Alias` 透传 `kernel::AliasError`），
+恢复语与 `bad_greeting` 同句：认证过的问候携带了别人的名字，留字节报问题。
+
 ## 14 硬编码声明
 
 | 硬编码 | 意图 | 后续影响 |

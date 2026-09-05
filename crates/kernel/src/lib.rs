@@ -17,6 +17,7 @@
 //! the decoder verifies — so no caller downstream has to remember to check.
 
 mod address;
+mod alias;
 mod clock;
 mod digest;
 mod filing;
@@ -29,6 +30,7 @@ mod waypoint;
 mod wire;
 
 pub use address::DropAddr;
+pub use alias::{Alias, AliasError, Declaration};
 pub use clock::{Clock, FixedClock, Instant};
 pub use digest::{Digest, DigestParseError};
 pub use filing::{Bin, NotAKey, Object, Period, Sweep, Ward};

@@ -11,7 +11,9 @@
 //! is a version byte there.
 
 use kusanagi_grant::Grant;
-use kusanagi_kernel::{Reader, VerifyingKey, Ward};
+use kusanagi_kernel::{Declaration, Reader, VerifyingKey, Ward};
+
+use crate::blocks::{put_block, take_block};
 
 use crate::error::SiteError;
 use crate::invite::mangled;
@@ -25,12 +27,18 @@ use crate::retention::Retention;
 /// argument about whether it mattered.
 ///
 /// ```text
-/// version    1 byte     = 3
+/// version    1 byte     = 4
 /// inviter 2592 bytes    the inviter's verifying key
 /// ward       2 bytes    the bin of the host the inviter reads
 /// retention  1 byte     0 = keep, 1 = release once acknowledged
+/// name     2+n bytes    a length, then the inviter's signed declaration; 0 = none
 /// grant      the rest   inviter -> bearer
 /// ```
+///
+/// The name travels here because this is the one drop the newcomer reads about
+/// the inviter before either has a lane: a `kernel::Declaration`, checked by
+/// `join` against the key beside it, so it costs no segment and no second
+/// exchange. Renaming later reaches only channels opened afterwards.
 ///
 /// Retention travels here because it is a property of the channel, not of
 /// one endpoint: a releasing lane ratchets its keys, so two ends that disagree
@@ -47,12 +55,15 @@ pub struct Offer {
     pub ward: Ward,
     /// What becomes of a drop once the peer acknowledges it, on both ends.
     pub retention: Retention,
+    /// What the inviter calls itself, signed by the key above; absent when
+    /// they declared nothing.
+    pub declaration: Option<Declaration>,
     /// The grant from the inviter to the one-time key.
     pub grant: Grant,
 }
 
 /// The layout of an offer, which versions apart from the invitation's own.
-const OFFER_VERSION: u8 = 3;
+const OFFER_VERSION: u8 = 4;
 
 impl Offer {
     /// The bytes that go in the drop.
@@ -62,6 +73,13 @@ impl Offer {
         out.extend_from_slice(self.inviter.as_bytes());
         out.extend_from_slice(&self.ward.bits().to_be_bytes());
         self.retention.write(&mut out);
+        put_block(
+            &mut out,
+            &self
+                .declaration
+                .as_ref()
+                .map_or_else(Vec::new, Declaration::to_bytes),
+        );
         out.extend_from_slice(&self.grant.to_canonical_bytes());
         out
     }
@@ -93,11 +111,22 @@ impl Offer {
             reader.take_array::<2>().map_err(mangled)?,
         ));
         let retention = Retention::read(&mut reader)?;
+        let declared = take_block(&mut reader)?;
+        let declaration = if declared.is_empty() {
+            None
+        } else {
+            Some(
+                Declaration::from_bytes(&declared).map_err(|error| SiteError::BadInvitation {
+                    reason: format!("the inviter's name does not read: {error}"),
+                })?,
+            )
+        };
         let rest = reader.take(reader.remaining()).map_err(mangled)?;
         Ok(Self {
             inviter,
             ward,
             retention,
+            declaration,
             grant: Grant::from_canonical_bytes(rest)?,
         })
     }
@@ -114,7 +143,7 @@ mod tests {
     use super::{OFFER_VERSION, Offer};
     use crate::retention::Retention;
     use kusanagi_grant::{Abilities, Grant, Scope};
-    use kusanagi_kernel::{Instant, Signer, Ward};
+    use kusanagi_kernel::{Alias, Declaration, Instant, Signer, Ward};
 
     fn offer() -> Offer {
         let inviter = Signer::from_seed(&[1; 32]);
@@ -123,6 +152,7 @@ mod tests {
             inviter: inviter.verifying_key(),
             ward: Ward::from_bits(0x3c5a),
             retention: Retention::ReleaseOnAck,
+            declaration: Some(Declaration::sign(&inviter, Alias::new("Alice").unwrap())),
             grant: Grant::issue(
                 &inviter,
                 &bearer.handle(),
@@ -138,7 +168,18 @@ mod tests {
         assert_eq!(parsed.inviter.as_bytes(), original.inviter.as_bytes());
         assert_eq!(parsed.ward, original.ward);
         assert_eq!(parsed.retention, original.retention);
+        assert_eq!(parsed.declaration, original.declaration);
         assert_eq!(parsed.grant, original.grant);
+        let unnamed = Offer {
+            declaration: None,
+            ..original
+        };
+        assert!(
+            Offer::from_bytes(&unnamed.to_bytes())
+                .unwrap()
+                .declaration
+                .is_none()
+        );
     }
 
     #[test]

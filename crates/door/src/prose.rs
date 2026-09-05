@@ -13,7 +13,7 @@
 
 use crate::fence::Fence;
 use crate::report::Outcome;
-use crate::rows::{Delivery, Entry, Grouping, Landed, Measured, Summary};
+use crate::rows::{Delivery, Entry, Grouping, Landed, Measured, Summary, called};
 
 /// The channels, then every group and what it stands for.
 fn grouped_listing(channels: &[Summary], groups: &[Grouping]) -> String {
@@ -30,9 +30,16 @@ fn grouped_listing(channels: &[Summary], groups: &[Grouping]) -> String {
 /// Renders one outcome as prose.
 pub fn render(outcome: &Outcome, fence: Fence) -> String {
     match outcome {
-        Outcome::Identity { handle, site } => {
-            format!("this endpoint is {handle}\n  site  {site}")
-        }
+        Outcome::Identity {
+            handle,
+            site,
+            alias,
+        } => format!(
+            "this endpoint is {handle}\n  name  {}\n  site  {site}",
+            alias
+                .as_deref()
+                .unwrap_or("(none; `kusanagi name --as NAME` sets one)")
+        ),
         Outcome::Channels { channels, groups } if channels.is_empty() && groups.is_empty() => {
             "no channels yet; `kusanagi invite` starts one".to_owned()
         }
@@ -82,9 +89,10 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
         Outcome::Read {
             name,
             author,
+            alias,
             height,
             segments,
-        } => stream(name, author, *height, segments, fence),
+        } => stream(name, author, alias.as_deref(), *height, segments, fence),
         Outcome::Revoked { name, step } => format!(
             "the peer of `{name}` is cut off\n  step  {step}\n\
              nothing they write from now on will be accepted here."
@@ -319,13 +327,15 @@ fn scheduled(outcome: &Outcome) -> String {
 fn stream(
     name: &str,
     author: &str,
+    alias: Option<&str>,
     height: Option<u64>,
     segments: &[Entry],
     fence: Fence,
 ) -> String {
-    // The listing abbreviates a handle and so does this: the full one is in the
-    // `author` field for whatever needs to match on it.
-    let who: String = author.chars().take(12).collect();
+    // The one naming rule, here as in the listing: the full handle is in the
+    // `author` field for whatever needs to match on it. The alias appears on
+    // this header line only — this program's line — and never inside a fence.
+    let who = called(alias, author);
     let header = match height {
         None => format!("`{name}`: {who} has written nothing yet"),
         Some(height) => format!(

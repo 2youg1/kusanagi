@@ -47,6 +47,10 @@ pub enum Outcome {
         handle: String,
         /// Where the site lives.
         site: String,
+        /// What this endpoint asks to be called, if it has said. Set with
+        /// `kusanagi name --as`; it travels, signed, in every invitation and
+        /// every greeting made afterwards.
+        alias: Option<String>,
     },
     /// Every channel here, and every group of them.
     Channels {
@@ -150,6 +154,10 @@ pub enum Outcome {
         /// The peer's, or this endpoint's own when the read was `--mine`. It is
         /// not called `peer` because with that flag it would not be one.
         author: String,
+        /// The name that author signed for themselves, verified when it
+        /// arrived. **Never inside a segment**: it is this program's word
+        /// about the author, and the fence holds only the author's own.
+        alias: Option<String>,
         /// The verified height, absent when nothing has been written.
         height: Option<u64>,
         /// Every segment, in order.
@@ -274,12 +282,14 @@ impl Outcome {
     pub fn read<'a>(
         name: &str,
         author: &str,
+        alias: Option<&str>,
         height: Option<u64>,
         segments: impl IntoIterator<Item = (u64, u64, &'a [u8])>,
     ) -> Self {
         Self::Read {
             name: name.to_owned(),
             author: author.to_owned(),
+            alias: alias.map(str::to_owned),
             height,
             segments: segments
                 .into_iter()

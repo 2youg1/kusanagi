@@ -19,7 +19,7 @@
 
 use serde_json::{Value, json};
 
-use crate::request::{Habit, Request, Whose};
+use crate::request::{Habit, Naming, Request, Whose};
 use kusanagi_door::Complaint;
 use kusanagi_grant::{Abilities, Ability};
 
@@ -149,6 +149,21 @@ const CATALOGUE: &[Tool] = &[
         },
     },
     Tool {
+        name: "kusanagi_name",
+        about: "Read, set or clear what this endpoint asks to be called. The name is signed \
+                by its key and travels in every invitation and greeting made afterwards; it \
+                is one printable line of at most 32 bytes and proves nothing by itself.",
+        schema: || {
+            object(
+                &json!({
+                    "alias": text("record this name; omit to read"),
+                    "clear": { "type": "boolean", "description": "stop declaring a name" },
+                }),
+                &[],
+            )
+        },
+    },
+    Tool {
         name: "kusanagi_sweep",
         about: "Read, or set, how many hex digits of this endpoint's ward a read names: 4 is \
                 its own ward, each digit fewer hides among sixteen times as many wards at the \
@@ -228,8 +243,18 @@ fn need<'a>(arguments: &'a Value, field: &'static str) -> Result<&'a str, Compla
 /// [`Complaint::Argument`] when the tool is not one of these or an argument is
 /// missing or the wrong shape. Both arrive at the caller as an ordinary failed
 /// tool result carrying a stable code, which is what an agent can act on.
-pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint> {
-    let habit = Habit {
+/// What a `kusanagi_name` call means: `alias` sets, `clear` clears, neither asks.
+fn naming(arguments: &Value) -> Naming {
+    match arguments.get("alias").and_then(Value::as_str) {
+        Some(alias) => Naming::Set(alias.to_owned()),
+        None if arguments.get("clear").and_then(Value::as_bool) == Some(true) => Naming::Clear,
+        None => Naming::Ask,
+    }
+}
+
+/// The two habits a channel is opened with, as a call spells them.
+fn habit(arguments: &Value) -> Result<Habit, Complaint> {
+    Ok(Habit {
         cadence: match arguments.get("every").and_then(Value::as_u64) {
             None => kusanagi_site::Cadence::OnDemand,
             Some(seconds) => kusanagi_site::Cadence::Slotted {
@@ -248,8 +273,11 @@ pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint
         } else {
             kusanagi_site::Retention::Keep
         },
-    };
+    })
+}
 
+pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint> {
+    let habit = habit(arguments)?;
     Ok(match name {
         "kusanagi_id" => Request::Identity,
         "kusanagi_channels" => Request::Channels,
@@ -303,6 +331,9 @@ pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint
         },
         "kusanagi_proxy" => Request::Proxy {
             require: arguments.get("require").and_then(Value::as_bool),
+        },
+        "kusanagi_name" => Request::Name {
+            naming: naming(arguments),
         },
         "kusanagi_sweep" => Request::Sweep {
             digits: arguments

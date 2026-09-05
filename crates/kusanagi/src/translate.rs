@@ -12,7 +12,7 @@
 
 use core::num::NonZeroU32;
 
-use kusanagi::{Cadence, Complaint, Habit, Request, Retention, Whose};
+use kusanagi::{Cadence, Complaint, Habit, Naming, Request, Retention, Whose};
 use kusanagi_grant::{Abilities, Ability};
 
 use crate::intake;
@@ -81,6 +81,41 @@ fn width(digits: Option<u8>) -> Result<Option<u8>, Complaint> {
     }
 }
 
+/// `--as` sets, `--clear` clears, neither asks; `-` after `--as` reads stdin.
+fn naming(alias: Option<String>, clear: bool) -> Result<Naming, Complaint> {
+    Ok(match alias {
+        Some(alias) => Naming::Set(intake::channel(alias)?),
+        None if clear => Naming::Clear,
+        None => Naming::Ask,
+    })
+}
+
+/// Two destinations, and the command line carries at most one of them.
+///
+/// clap refuses both at once; the case it cannot express is neither, and saying
+/// so here gives that a stable code and a way out.
+fn sending(
+    name: Option<String>,
+    group: Option<String>,
+    text: Option<String>,
+) -> Result<Request, Complaint> {
+    match (name, group) {
+        (Some(name), _) => {
+            let (name, payload) = intake::addressed(name, text)?;
+            Ok(Request::Send { name, payload })
+        }
+        (None, Some(group)) => {
+            let (group, payload) = intake::addressed(group, text)?;
+            Ok(Request::Fanout { group, payload })
+        }
+        (None, None) => Err(Complaint::Argument {
+            what: "send",
+            reason: "was given nobody to send to".to_owned(),
+            instead: "pass --to NAME for one channel, or --to-group NAME for a group",
+        }),
+    }
+}
+
 pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
     Ok(match verb {
         Verb::Id => Request::Identity,
@@ -114,26 +149,7 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
         Verb::Tick { name } => Request::Tick {
             name: intake::channel(name)?,
         },
-        // Two destinations, and the command line carries at most one of them.
-        // clap refuses both at once; the case it cannot express is neither, and
-        // saying so here gives that a stable code and a way out.
-        Verb::Send { name, group, text } => match (name, group) {
-            (Some(name), _) => {
-                let (name, payload) = intake::addressed(name, text)?;
-                Request::Send { name, payload }
-            }
-            (None, Some(group)) => {
-                let (group, payload) = intake::addressed(group, text)?;
-                Request::Fanout { group, payload }
-            }
-            (None, None) => {
-                return Err(Complaint::Argument {
-                    what: "send",
-                    reason: "was given nobody to send to".to_owned(),
-                    instead: "pass --to NAME for one channel, or --to-group NAME for a group",
-                });
-            }
-        },
+        Verb::Send { name, group, text } => sending(name, group, text)?,
         Verb::Doctor { waypoint, here } => match waypoint {
             Some(waypoint) => Request::Doctor { waypoint },
             // `required_unless_present` has already refused the empty case, so
@@ -163,6 +179,9 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
         },
         Verb::Sweep { digits } => Request::Sweep {
             digits: width(digits)?,
+        },
+        Verb::Name { alias, clear } => Request::Name {
+            naming: naming(alias, clear)?,
         },
         Verb::Revoke { name } => Request::Revoke {
             name: intake::channel(name)?,

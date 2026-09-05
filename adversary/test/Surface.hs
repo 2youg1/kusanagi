@@ -36,6 +36,7 @@ surface door =
     [ testGroup
         "the host, holding every object"
         [ cell "holds no word anybody said, no name and no secret" Leakage.hostHoldsNoWord
+        , cell "holds no self-chosen name in the clear, though both ends see the other's" Leakage.namesRideSealed
         , cell "cannot pair one identity's two channels" Leakage.twoChannelsShareNothing
         , cell "cannot pair one identity across two hosts" Leakage.twoHostsShareNothing
         , cell "cannot pair the two drops of one broadcast" Insider.aBroadcastIsTwoStrangers

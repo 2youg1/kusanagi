@@ -171,6 +171,21 @@ pub(crate) enum Verb {
         #[arg(long)]
         optional: bool,
     },
+    /// Say what you want to be called, or ask.
+    ///
+    /// The name is signed by your key and travels inside every invitation and
+    /// greeting you make from now on, so a peer sees it beside your handle and
+    /// can check it is yours. It is one printable line of at most 32 bytes. It
+    /// is not a proof of who you are — the handle and the check code are — and
+    /// peers you met before you set it will not see it.
+    Name {
+        /// The name, or `-` to read it from stdin.
+        #[arg(long = "as", value_name = "NAME", conflicts_with = "clear")]
+        alias: Option<String>,
+        /// Stop declaring a name.
+        #[arg(long)]
+        clear: bool,
+    },
     /// Say how many hex digits of your ward a read names, or ask.
     ///
     /// Four is your ward alone. Each digit fewer hides your reads among sixteen

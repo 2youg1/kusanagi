@@ -20,12 +20,17 @@ use kusanagi_kernel::{Handle, Hex, Instant};
 use kusanagi_site::{Channel, Retention, Standing};
 use serde::Serialize;
 
-/// A handle rendered short enough to read, for listings.
+/// What to call somebody: the name they signed for themselves, or twelve
+/// characters of their handle when they signed none.
 ///
-/// Shortening is a rendering decision, so it lives with the renderings and not
-/// with the record: what is stored is always the whole handle.
-fn abbreviate(handle: &Handle) -> String {
-    handle.to_string().chars().take(12).collect()
+/// **The one rule for naming a peer** (D-10): a listing, a stream header and a
+/// merged thread all ask this function, so they cannot disagree. The alias
+/// arrives already verified against the key beside it and already held to one
+/// printable line, so nothing here re-checks it; the full handle stays in its
+/// own field for whatever needs to match on it.
+#[must_use]
+pub fn called(alias: Option<&str>, handle: &str) -> String {
+    alias.map_or_else(|| handle.chars().take(12).collect(), str::to_owned)
 }
 
 /// One group as it is reported: what it is called, and who is in it.
@@ -187,7 +192,12 @@ pub struct Summary {
     pub(crate) name: String,
     pub(crate) waypoint: String,
     pub(crate) standing: &'static str,
+    /// The peer, as [`called`] names them: their signed alias, or an
+    /// abbreviated handle. Absent until somebody joins.
     pub(crate) peer: Option<String>,
+    /// The alias the peer signed for themselves, on its own so a caller can
+    /// tell a name from an abbreviation. Absent when they declared none.
+    pub(crate) alias: Option<String>,
     /// How many seconds one slot lasts, absent on a channel that writes on
     /// demand.
     pub(crate) period: Option<u32>,
@@ -304,7 +314,17 @@ impl Summary {
                 Retention::Keep => "keep",
                 Retention::ReleaseOnAck => "release",
             },
-            peer: channel.peer.as_ref().map(|peer| abbreviate(&peer.handle())),
+            peer: channel.peer.as_ref().map(|peer| {
+                called(
+                    peer.alias.as_ref().map(kusanagi_kernel::Alias::as_str),
+                    &peer.handle().to_string(),
+                )
+            }),
+            alias: channel
+                .peer
+                .as_ref()
+                .and_then(|peer| peer.alias.as_ref())
+                .map(|alias| alias.as_str().to_owned()),
             can,
             expires_at,
             expires_in,

@@ -379,6 +379,7 @@ dependencies = [
  "kusanagi-seal",
  "kusanagi-site",
  "kusanagi-vault",
+ "kusanagi-walk",
  "kusanagi-waypoint",
  "serde",
  "serde_json",
@@ -477,6 +478,17 @@ dependencies = [
  "thiserror",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "kusanagi-walk"
+version = "0.0.1"
+dependencies = [
+ "kusanagi-chain",
+ "kusanagi-door",
+ "kusanagi-kernel",
+ "kusanagi-seal",
+ "kusanagi-site",
 ]
 
 [[package]]

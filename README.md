@@ -72,6 +72,7 @@ checking one before you rely on it.
 | `channels` | List the channels here, what each one still permits, and until when. |
 | `revoke --from N` | Cut a peer off, immediately and permanently. |
 | `forget --channel N` | Drop a channel from this endpoint. |
+| `name [--as NAME \| --clear]` | Say what you want to be called. The name is signed by your key and rides, sealed, inside every invitation and greeting you make from now on; the peer sees it beside your handle and can check it is yours. It is a label, not a proof: the handle and the check code are what you compare in person. Peers met before you set it see no change. |
 | `sweep [--digits 0-4]` | Say how many digits of your ward a read names. `4` is your ward alone; each digit fewer hides your reads among sixteen times as many wards and downloads what all of them received. Without the flag, reports the current width. |
 | `tick --from N` | Fill this channel's current slot and look once. For a channel opened with `--every`; a scheduler outside this program runs it. |
 | `doctor <WAYPOINT>` | Measure what a host actually does, and certify it. `--here` measures this machine instead. |

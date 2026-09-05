@@ -25,4 +25,4 @@ mod rows;
 pub use complaint::Complaint;
 pub use fence::Fence;
 pub use report::{CONTRACT, Outcome};
-pub use rows::{Carried, Delivery, Entry, Grouping, Landed, Measured, Summary};
+pub use rows::{Carried, Delivery, Entry, Grouping, Landed, Measured, Summary, called};

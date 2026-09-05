@@ -82,17 +82,16 @@
 ```
 lib.rs        模块索引与再导出
 request.rs    Request / Habit —— 动词集合的唯一权威
-lane.rs       Lane —— 一条道怎么开：bin、地址、钥匙、烧到哪（I5）、通道开于哪个 period。bin = period(now)/读者 ward（写者用 peer 的，读者用自己的）
-source.rs     Source —— walk 从哪拿密封字节的 seam：按地址的 Waypoint（测试用），或 Sweeping（生产）
-sweep.rs      Sweeping —— 整 bin 取回（D-20）：逐 period 列举、只取上次列举之外的键、本机按地址匹配；CAP 与 DIGITS
-walk.rs       peek / walk / track —— 读一条流并逐段检查；track 决定从哪个 cairn 续、从哪个 period 扫、写哪两条记录
+（lane / source / sweep / walk 四个文件已搬到 `kusanagi-walk`，见 `crates/walk/walk-SPEC.md`；本 crate 再导出它们）
+greeting.rs   问候段的编解码与 greet：join 写、greet 读，同一消息一处权威；名字在此被验（L1）
 slot.rs       tick —— 填一个时隙（I3）
 port.rs       MCP 的 stdio 会话循环（D3）
 tools.rs      动词集合的 MCP 工具目录（D3）
 roots.rs      默认 root：每平台一个 cfg 分支
 world.rs      时钟与熵的唯一采样点
 assembly.rs   动词的组装
-settings.rs   站点的两项设置动词：proxy（egress）与 sweep（扫几位 ward）
+settings.rs   站点的三项设置动词：proxy（egress）、sweep（扫几位 ward）、name（自报的称呼，L1）
+settle.rs     释放通道上一次 read 的结算：只烧钥匙，不 DELETE（从 traffic.rs 拆出以守 400）
 main.rs       clap ↔ Request
 verbs.rs      命令行的形状（clap 声明）
 translate.rs  命令行那一读：Verb → Request，旗标的每项检查是一个有名字的函数
@@ -105,9 +104,9 @@ intake.rs     动词从 stdin 收下的一切（属二进制，不属 lib）
 本 crate 依赖全部七个内部 crate，加 `clap` 与 `getrandom`；`serde` / `serde_json` /
 `thiserror` 随输出契约一并搬走。
 
-### 行数预算：三次拆分已完成
+### 行数预算：四次拆分已完成
 
-`site`（磁盘格式）、`door`（输出契约）、`vault`（平台矩阵）各因撞线拆出，理由住在各自 SPEC。
+`site`（磁盘格式）、`door`（输出契约）、`vault`（平台矩阵）、`walk`（读取机械，L1 这轮撞 4 000 行时拆出：HEAD 已 4 066 而上一版 HANDOFF 记为绿）各因撞线拆出，理由住在各自 SPEC。
 **形状归碰了磁盘的那一层，名字归门**：`SiteError` 说操作系统拒绝了什么，`Complaint` 说这叫哪个码、用哪个动词恢复。
 `main.rs` 的 clap 胶水不拆：预算是为了「一个想法装进脑子」，搬走最不占脑子的 240 行只改善数字。
 
@@ -351,6 +350,22 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 
 ---
+
+## 附：自报的称呼（L1 · D-10 已落地）
+
+**名字搭介绍的车，不搭流量的车。** D-10 建议的 `Purpose::Named` 段被弃：它要给流量路径加一种段、给每条通道加一个「已声明」标志、
+首发多写一个 drop；而 offer 与 greeting 本来就各携带一方的 key，且只在介绍时各走一次。所以 `invite` 把 `Declaration::sign(me, alias)`
+放进 offer v4，`join` 把自己的放进 greeting（`key ‖ ward ‖ u16 len ‖ declaration ‖ grant`），对端在 `join`/`greet` 里用**同一消息里的 key**
+验它（`membership::believed`），过则写进 `Peer.alias`，不过即 `kusanagi.bad_name` 拒绝——一份从 A 的介绍里搬到 B 的 key 下的声明验不过，
+因为 handle 在签名覆盖之内。**写明的边界**：改名只到达此后新开的通道（`a_later_rename_reaches_only_channels_opened_afterwards`）。
+
+**一处规则渲染。** `door::called(alias, handle)`：有签名的名字用名字，否则 handle 前 12 字符；列表 `peer` 列与 `read` 的 header 行都问它。
+`--json` 三字段独立：`name`（本地通道名）、`alias`（对端签名的名字，可空）、`author`（验过每段的 handle）。**alias 永不进围栏**：
+它是本程序对作者的话，围栏里只有作者自己的字节（`named.rs::…stays_outside_the_fence`）。
+
+**动词。** `kusanagi name --as NAME | --clear`（`-` 收 stdin），MCP 工具 `kusanagi_name`；`Request::Name { naming: Naming }`，
+`Naming::{Ask, Set, Clear}` 三态而非 `Option<Option<_>>`。不合格的名字在键入处即 `kusanagi.argument`（`settings::named`），
+不留到记录层。判据：`tests/named.rs` 三条 + adversary `Leakage.namesRideSealed`（宿主字节 grep 不到两个名字，且两端列表互见对方）。
 
 ## 附：读取路径是隐私决策（D-20 已落地）
 

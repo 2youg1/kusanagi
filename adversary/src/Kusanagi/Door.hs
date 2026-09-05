@@ -111,6 +111,9 @@ data Verb
     -- read it, and burns the key with it.
     InviteReleasing ChannelName FilePath
   | Join Invitation ChannelName
+  | -- | What this endpoint asks to be called. The name arrives on stdin, like
+    -- every other word that identifies somebody.
+    Name Text
   | -- | Say which channels one name stands for. Members arrive on stdin.
     Group ChannelName [ChannelName]
   | -- | One sentence to every member of a group.
@@ -232,6 +235,7 @@ piped = \case
   InviteEvery name _ _ -> Just (line name)
   InviteReleasing name _ -> Just (line name)
   Join (Invitation invitation) name -> Just (line name <> Text.encodeUtf8 invitation)
+  Name alias -> Just (Text.encodeUtf8 (alias <> "\n"))
   Group name members -> Just (line name <> foldMap line members)
   SendGroup name text -> Just (line name <> Text.encodeUtf8 text)
   ReadMine name -> Just (line name)
@@ -285,6 +289,7 @@ spoken = \case
     , "--release"
     ]
   Join _ _ -> ["join", "--name", onStdin]
+  Name _ -> ["name", "--as", onStdin]
   Group _ _ -> ["group", "--name", onStdin]
   SendGroup _ _ -> ["send", "--to-group", onStdin]
   ReadMine _ -> ["read", "--from", onStdin, "--mine"]

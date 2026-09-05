@@ -198,10 +198,10 @@ acts.** Splitting answers a long file and never a full crate, whose number count
 `.rs` under `src/`: there the answers are deleting a feature or moving one to a crate
 with a reason to hold it — which is what `vault` is.
 
-Four crates exist because the budget forced a split, argued where it happened rather
-than here: `kusanagi` gave up the disk formats to `site` (`site-SPEC.md` §3) and the
-output contract to `door` (`door-SPEC.md` §4), `site` gave up the platform matrix to
-`vault` (`vault-SPEC.md` §1), and `waypoint` gave up the server to `box`, **overturning
+Five crates exist because the budget forced a split, argued where it happened rather
+than here: `kusanagi` gave up the disk formats to `site` (`site-SPEC.md` §3), the
+output contract to `door` (`door-SPEC.md` §4) and how a read reaches a host to `walk`
+(`walk-SPEC.md`), `site` gave up the platform matrix to `vault` (`vault-SPEC.md` §1), and `waypoint` gave up the server to `box`, **overturning
 `waypoint-SPEC.md` §7** because separating two jobs — *reaching* a host and *being* one —
 beat separating two implementations of one seam. What that reversal feared is held by a
 test: the box's own tests drive the shipped client against the shipped server.

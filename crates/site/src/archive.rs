@@ -27,7 +27,7 @@
 
 use kusanagi_chain::Cairn;
 use kusanagi_grant::StepId;
-use kusanagi_kernel::{Handle, Reader, Ward};
+use kusanagi_kernel::{Alias, Handle, Reader, Ward};
 use kusanagi_seal::{Fit, Ratchet, backup_key, open, seal};
 use zeroize::Zeroize as _;
 
@@ -40,7 +40,7 @@ use crate::site::Site;
 const MAGIC: &[u8; 4] = b"KSNB";
 
 /// The archive layout this build writes and reads.
-const VERSION: u8 = 2;
+const VERSION: u8 = 3;
 
 /// What one entry in an archive is.
 ///
@@ -73,6 +73,8 @@ enum Kind {
     /// A caller was told the send succeeded, and on a slotted channel that
     /// promise is kept by this directory rather than by a host.
     Outbox = 7,
+    /// What this endpoint calls itself, as `alias.rs` records it.
+    Alias = 8,
 }
 
 impl Kind {
@@ -86,6 +88,7 @@ impl Kind {
             Self::Group => 5,
             Self::Ratchet => 6,
             Self::Outbox => 7,
+            Self::Alias => 8,
         }
     }
 
@@ -98,6 +101,7 @@ impl Kind {
             5 => Some(Self::Group),
             6 => Some(Self::Ratchet),
             7 => Some(Self::Outbox),
+            8 => Some(Self::Alias),
             _ => None,
         }
     }
@@ -208,6 +212,9 @@ pub fn export(site: &Site, recovery: &[u8; 32], nonce: [u8; 12]) -> Result<Vec<u
     // forgotten who it talks to at once.
     for roster in site.groups()? {
         put(&mut plain, Kind::Group, &roster.to_bytes())?;
+    }
+    if let Some(alias) = site.alias()? {
+        put(&mut plain, Kind::Alias, alias.as_str().as_bytes())?;
     }
 
     let key = backup_key(recovery, nonce);
@@ -331,6 +338,13 @@ fn restore(site: &Site, plain: &[u8]) -> Result<(), SiteError> {
                 let id = <[u8; 32]>::try_from(bytes.as_slice())
                     .map_err(|_| malformed("a step identifier is 32 bytes"))?;
                 site.revoke(StepId::from_bytes(id))?;
+            }
+            Kind::Alias => {
+                let text = String::from_utf8(bytes)
+                    .map_err(|_| malformed("an alias in an archive is not text"))?;
+                let alias = Alias::new(&text)
+                    .map_err(|error| malformed(format!("an alias in an archive: {error}")))?;
+                site.set_alias(Some(&alias))?;
             }
             Kind::Group => {
                 let text = String::from_utf8_lossy(&bytes);

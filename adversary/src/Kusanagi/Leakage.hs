@@ -19,6 +19,7 @@
 -- bytes leaks it exactly as much as one that stores 64 hexadecimal digits.
 module Kusanagi.Leakage
   ( hostHoldsNoWord
+  , namesRideSealed
   , twoChannelsShareNothing
   , twoHostsShareNothing
   , theSiteHoldsNoMessage
@@ -40,7 +41,7 @@ import System.Directory (createDirectoryIfMissing)
 import System.FilePath (splitDirectories, takeDirectory, (</>))
 import System.Info (os)
 
-import Kusanagi.Answer (Address (..), ChannelName (..), Handle (..))
+import Kusanagi.Answer (Address (..), Answer (..), ChannelName (..), Handle (..), Outcome (..), Summary (..))
 import Kusanagi.Door (Door)
 import Kusanagi.Door qualified as Door
 import Kusanagi.Service qualified as Service
@@ -60,6 +61,29 @@ hostHoldsNoWord door ground = do
   exchange door stage
   held <- stored ground
   pure (nowhere "an object the host holds" (needles stage) [(Text.unpack address, bytes) | (Address address, bytes) <- held])
+
+-- | Both ends name themselves before they meet. The host holds neither name in
+-- the clear — a declaration rides inside the sealed offer and the sealed
+-- greeting — and each end sees the other's name on its own listing, which is
+-- what shows the name travelled at all rather than being merely absent.
+namesRideSealed :: Door -> Ground -> IO (Either String ())
+namesRideSealed door ground = do
+  let (alice, bob) = ("Alice Verity", "Bob Ossory")
+  _ <- Door.ask door (siteOf ground Alice) (Door.Name alice)
+  _ <- Door.ask door (siteOf ground Bob) (Door.Name bob)
+  stage <- talk door ground Alice Bob (fresh "by-name")
+  exchange door stage
+  held <- stored ground
+  writerSees <- aliases <$> Door.ask door (talkWriter stage) Door.Channels
+  readerSees <- aliases <$> Door.ask door (talkReader stage) Door.Channels
+  pure $ do
+    nowhere "an object the host holds" (map Text.encodeUtf8 [alice, bob]) [(Text.unpack address, bytes) | (Address address, bytes) <- held]
+    if writerSees == [bob] && readerSees == [alice]
+      then Right ()
+      else Left ("the listings name " <> show (writerSees, readerSees) <> " rather than each other")
+  where
+    aliases (Accepted (Channels rows)) = [alias | Summary {summaryAlias = Just alias} <- rows]
+    aliases _ = []
 
 -- | One identity on two channels leaves the host objects that pair off with
 -- nothing: neither channel's drops look like the other's.

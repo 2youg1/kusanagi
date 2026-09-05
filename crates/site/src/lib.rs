@@ -20,6 +20,7 @@
 //! by the door in `kusanagi::Complaint` — because recovery is phrased in verbs
 //! (`kusanagi channels`, `--root`) that only a front end knows it has.
 
+mod alias;
 mod archive;
 mod blocks;
 mod cadence;
@@ -33,6 +34,7 @@ mod invite;
 mod naming;
 mod offer;
 mod outbox;
+mod peer;
 mod ratchets;
 mod records;
 mod retention;
@@ -46,13 +48,14 @@ mod sweeps;
 
 pub use archive::{export, import};
 pub use cadence::Cadence;
-pub use channel::{Channel, Peer};
+pub use channel::Channel;
 pub use crowd::MOST_DIGITS;
 pub use egress::Egress;
 pub use error::SiteError;
 pub use invite::Invite;
 pub use offer::Offer;
 pub use outbox::Queued;
+pub use peer::Peer;
 pub use retention::Retention;
 pub use roster::Roster;
 pub use site::Site;

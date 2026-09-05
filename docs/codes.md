@@ -51,6 +51,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `kusanagi.needs_cairn` | a channel opened with `--release` was read, and the record of what had already been read is gone; the host no longer holds those drops | run `kusanagi import` with the archive `kusanagi export` made |
 | `kusanagi.not_slotted` | `tick` was run on a channel that writes when it is asked to | send on it with `kusanagi send --to NAME`, or open the channel with `--every SECONDS` |
 | `kusanagi.bad_recovery_key` | an archive did not open under the recovery key that was offered | check the key: it is the 64 hexadecimal digits `kusanagi export` printed once, and it goes in on the first line of stdin |
+| `kusanagi.bad_name` | a name a peer declared was not signed by their key for their own handle, or is not one printable line | keep the bytes and report it: the greeting or offer authenticated and then carried somebody else's name |
 | `kusanagi.bad_greeting` | the introduction on a channel is not one this build can read | keep the bytes and report it |
 | `kusanagi.cannot_revoke_root` | the peer of this channel is the authority that invited you | `kusanagi forget --channel NAME` instead |
 | `kusanagi.proxy_required` | this site never reaches a host without a proxy, and `KUSANAGI_PROXY` is not set | set `KUSANAGI_PROXY`, or `kusanagi proxy --optional` |

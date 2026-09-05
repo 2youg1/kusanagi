@@ -12,28 +12,25 @@
 //! a shell script nobody runs.
 
 mod assembly;
-mod lane;
+mod greeting;
 mod membership;
 mod port;
 mod request;
 mod roots;
 mod settings;
+mod settle;
 mod slot;
-mod source;
-mod sweep;
 mod tools;
 mod traffic;
-mod walk;
 mod world;
 
 pub use assembly::{HOST_ADDRESS, run};
-pub use lane::Lane;
+pub use kusanagi_walk::{
+    CAP, DIGITS, Held, Lane, Reach, Source, Sweeping, WINDOW, Walked, peek, track, walk,
+};
 pub use port::serve;
-pub use request::{Habit, Request, Whose};
+pub use request::{Habit, Naming, Request, Whose};
 pub use roots::{default_host_dir, default_root};
-pub use source::Source;
-pub use sweep::{CAP, DIGITS, Sweeping};
-pub use walk::{Held, Reach, WINDOW, Walked, peek, track, walk};
 pub use world::{SystemClock, fresh_fence, fresh_seed};
 
 // What an endpoint keeps on its own disk is a crate of its own, and so is what a

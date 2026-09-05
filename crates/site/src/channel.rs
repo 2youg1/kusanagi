@@ -37,6 +37,7 @@
 //! has_peer        1 byte
 //! peer         2592 bytes   the peer's verifying key; zeroes when absent
 //! peer_standing   1 byte    as above
+//! peer_alias     33 bytes   a length, then the name the peer signed for itself, zero-padded
 //! ```
 //!
 //! **The name is in the record because it is no longer in the file name.** A
@@ -54,12 +55,15 @@ use kusanagi_seal::Secret;
 use crate::blocks::{malformed, put_block, take_text};
 use crate::cadence::Cadence;
 use crate::error::SiteError;
+use crate::peer::{ALIAS_BLOCK, Peer, put_alias, take_alias};
 use crate::retention::Retention;
 use crate::standing::Standing;
 
 /// The record this build writes and reads.
 ///
-/// Version 6 carries the period the channel was opened in: the earliest bin a
+/// Version 7 carries the alias the peer declared at introduction, already
+/// verified against the key beside it (`kernel::Declaration`), so a listing and
+/// a read can name the peer without a second verification. Version 6 carries the period the channel was opened in: the earliest bin a
 /// sweep for it can have anything in, and so where a reader with no record of
 /// what it swept starts. Version 5 carried the peer's ward, which is where this
 /// endpoint files what it writes to them. Version 4 carried the two choices that change what this endpoint does on the
@@ -69,31 +73,7 @@ use crate::standing::Standing;
 /// by handle — the two are the same width and neither decodes as the other,
 /// which is why the version byte moves at all: a silent reinterpretation would
 /// leave an endpoint verifying every segment against 32 bytes that are not a key.
-const VERSION: u8 = 6;
-
-/// The other end of a conversation, once it has said who it is.
-#[derive(Clone, Debug)]
-pub struct Peer {
-    /// The key that checks the peer's segments.
-    pub key: VerifyingKey,
-    /// Which bin of the host the peer reads, and so where to write to them.
-    ///
-    /// Not an `Option`. A peer this endpoint knows is a peer it can write to,
-    /// and both ways of learning one — an offer for the newcomer, a greeting for
-    /// the inviter — carry the ward beside the key. A peer without a ward would
-    /// be a peer whose messages go somewhere nobody sweeps.
-    pub ward: Ward,
-    /// Why the peer is allowed here.
-    pub standing: Standing,
-}
-
-impl Peer {
-    /// What the peer is called: the name their stream is derived through.
-    #[must_use]
-    pub fn handle(&self) -> Handle {
-        self.key.handle()
-    }
-}
+const VERSION: u8 = 7;
 
 /// One conversation, as this endpoint knows it.
 #[derive(Clone, Debug)]
@@ -143,12 +123,14 @@ impl Channel {
                 out.extend_from_slice(&[0_u8; VerifyingKey::WIDTH]);
                 out.extend_from_slice(&[0_u8; 2]);
                 Standing::Root.write(&mut out);
+                put_alias(&mut out, None);
             }
             Some(peer) => {
                 out.push(1);
                 out.extend_from_slice(peer.key.as_bytes());
                 out.extend_from_slice(&peer.ward.bits().to_be_bytes());
                 peer.standing.write(&mut out);
+                put_alias(&mut out, peer.alias.as_ref());
             }
         }
         out
@@ -197,11 +179,15 @@ impl Channel {
         ));
         let peer_standing = Standing::read(&mut reader)?;
         let peer = match has_peer {
-            0 => None,
+            0 => {
+                reader.take(ALIAS_BLOCK).map_err(malformed)?;
+                None
+            }
             1 => Some(Peer {
                 key,
                 ward,
                 standing: peer_standing,
+                alias: take_alias(&mut reader)?,
             }),
             other => {
                 return Err(SiteError::BadRecord {
@@ -237,13 +223,14 @@ impl Channel {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::indexing_slicing,
     reason = "test code"
 )]
 mod tests {
     use super::{Cadence, Channel, Peer, Retention};
     use crate::standing::Standing;
     use kusanagi_grant::{Abilities, Ability, Grant, GrantError, Revocations, Scope};
-    use kusanagi_kernel::{Instant, Period, Signer, Ward};
+    use kusanagi_kernel::{Alias, Instant, Period, Signer, Ward};
     use kusanagi_seal::Secret;
 
     fn channel(with_peer: bool) -> Channel {
@@ -264,6 +251,7 @@ mod tests {
                 ward: Ward::from_bits(0x00ab),
                 key: guest.verifying_key(),
                 standing: Standing::Granted(Grant::issue(&root, &guest.handle(), scope)),
+                alias: Some(Alias::new("Bob").unwrap()),
             }),
         }
     }
@@ -285,9 +273,29 @@ mod tests {
         let decoded = Channel::from_bytes(&original.to_bytes()).unwrap();
         assert_eq!(decoded.to_bytes(), original.to_bytes());
         assert_eq!(
-            decoded.peer.map(|peer| peer.handle()),
-            original.peer.map(|peer| peer.handle())
+            decoded.peer.as_ref().map(Peer::handle),
+            original.peer.as_ref().map(Peer::handle)
         );
+        assert_eq!(
+            decoded.peer.and_then(|peer| peer.alias),
+            original.peer.and_then(|peer| peer.alias)
+        );
+    }
+
+    /// A record that carries no name reads back as a peer with none, and one
+    /// that carries an unfit name is refused rather than shown.
+    #[test]
+    fn a_peer_without_an_alias_round_trips_and_an_unfit_one_is_refused() {
+        let mut original = channel(true);
+        if let Some(peer) = original.peer.as_mut() {
+            peer.alias = None;
+        }
+        let decoded = Channel::from_bytes(&original.to_bytes()).unwrap();
+        assert!(decoded.peer.unwrap().alias.is_none());
+        let mut bytes = original.to_bytes();
+        bytes.pop();
+        bytes.extend_from_slice(&[4, b'B', b'o', b'b', b'\n']);
+        assert!(Channel::from_bytes(&bytes).is_err());
     }
 
     #[test]

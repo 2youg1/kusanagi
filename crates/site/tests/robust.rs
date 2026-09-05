@@ -37,9 +37,18 @@ const ROOT_STANDING: usize = 1 + 2;
 /// that **the size of a record does not say whether the invitation was ever
 /// taken**. When there is no peer both are zeroes that nothing reads.
 fn peer_block(bytes: &[u8]) -> std::ops::Range<usize> {
-    let end = bytes.len() - ROOT_STANDING;
+    let end = bytes.len() - ROOT_STANDING - ALIAS;
     end - kusanagi_kernel::VerifyingKey::WIDTH - WARD..end
 }
+
+/// Where the peer's alias sits: a length and thirty-two bytes of name, zeroes
+/// nothing reads when there is no peer.
+fn alias_block(bytes: &[u8]) -> std::ops::Range<usize> {
+    bytes.len() - ALIAS..bytes.len()
+}
+
+/// An alias on the wire: one length byte and `Alias::MOST` of name.
+const ALIAS: usize = 1 + kusanagi_kernel::Alias::MOST;
 
 /// A ward on the wire: two bytes, beside the key of whoever reads in it.
 const WARD: usize = 2;
@@ -122,7 +131,7 @@ fn every_byte_the_decoder_reads_matters() {
     // Everything except the peer's key and ward, which are the one block this
     // record carries and does not read when there is no peer.
     let placeholder = peer_block(&bytes);
-    let looked_at = (0..placeholder.start).chain(placeholder.end..bytes.len());
+    let looked_at = (0..placeholder.start).chain(placeholder.end..alias_block(&bytes).start);
     for index in looked_at {
         let mut damaged = bytes.clone();
         damaged[index] ^= 0b0001_0000;
@@ -145,6 +154,7 @@ fn a_record_is_the_same_size_whether_or_not_anybody_has_joined() {
             ward: Ward::from_bits(0x00ab),
             key: Signer::from_seed(&[8; 32]).verifying_key(),
             standing: Standing::Root,
+            alias: Some(kusanagi_kernel::Alias::new("Bob").unwrap()),
         }),
         ..channel()
     };
@@ -157,7 +167,7 @@ fn a_record_is_the_same_size_whether_or_not_anybody_has_joined() {
     // The other half of that: what fills the space when nobody has joined is
     // never read, so it cannot be made to mean anything either.
     let bytes = alone.to_bytes();
-    for index in peer_block(&bytes) {
+    for index in peer_block(&bytes).chain(alias_block(&bytes)) {
         let mut different = bytes.clone();
         different[index] ^= 0b0001_0000;
         let read = Channel::from_bytes(&different)

@@ -17,13 +17,16 @@ use kusanagi_kernel::{Freight, Instant, Purpose, PutOutcome, Segment, Signer, Wa
 use kusanagi_seal::{Fit, seal};
 use kusanagi_site::{Channel, Site};
 
+use crate::settle::settle;
+
 use crate::assembly::{open, peer_ward, signer, ward};
-use crate::lane::{Lane, verified};
-use crate::membership::greet;
+use crate::greeting::greet;
 use crate::request::Whose;
-use crate::walk::{Reach, Walked, track};
 use kusanagi_door::Complaint;
 use kusanagi_door::Outcome;
+use kusanagi_kernel::Alias;
+use kusanagi_walk::{Lane, verified};
+use kusanagi_walk::{Reach, Walked, track};
 
 /// What a `read` owes its caller: everything, or only what sits above the height
 /// the caller says it already holds.
@@ -271,7 +274,13 @@ pub(crate) fn read(
 
     let theirs = Lane::open(site, name, &channel, &peer.key, ward(site)?, now)?;
     let walked = track(site, name, &place, &theirs, reach(after), now)?;
-    let answer = reported(name, &peer.handle().to_string(), &walked, after);
+    let answer = reported(
+        name,
+        &peer.handle().to_string(),
+        peer.alias.as_ref(),
+        &walked,
+        after,
+    );
 
     // Only now, once the caller holds what was read: settling is the step that
     // destroys it.
@@ -279,54 +288,6 @@ pub(crate) fn read(
         settle(site, name, &channel, &walked, &theirs, me, now)?;
     }
     Ok(answer)
-}
-
-/// Acts on what a read just learned, on a channel that releases.
-///
-/// **The ratchet is the whole of it.** The peer said how much of this endpoint's
-/// stream they had verified, so the keys that opened those drops are destroyed
-/// here, and a host that kept a copy holds bytes nobody can open. This endpoint
-/// no longer deletes them: a `DELETE` names an address, which is the one thing
-/// a read stopped doing (D-20), and a drop is filed in the period it was
-/// written, which its author does not keep. Removing the bytes is the host's
-/// hygiene — a lifetime on a bin — and `ARCHITECTURE.md` §3 says so.
-fn settle(
-    site: &Site,
-    name: &str,
-    channel: &Channel,
-    walked: &Walked,
-    theirs: &Lane,
-    me: &Signer,
-    now: Instant,
-) -> Result<(), Complaint> {
-    // The peer repeats their acknowledgement in every segment, so the highest
-    // one in this walk is the current answer and an older segment cannot undo a
-    // newer one.
-    let acknowledged = walked
-        .held()
-        .iter()
-        .map(|held| held.segment.acknowledged())
-        .max()
-        .unwrap_or(0);
-
-    if acknowledged > 0 {
-        let ours = Lane::open(
-            site,
-            name,
-            channel,
-            &me.verifying_key(),
-            peer_ward(channel, name)?,
-            now,
-        )?;
-        ours.burn_below(site, name, acknowledged.saturating_sub(1))?;
-    }
-
-    // The peer's own lane burns behind the reader in the same way. What was
-    // verified has been handed over; nothing will ask for it again.
-    if let Some(head) = walked.head() {
-        theirs.burn_below(site, name, head.index())?;
-    }
-    Ok(())
 }
 
 /// Turns a walk into the answer for it, dropping what the caller already holds
@@ -343,10 +304,17 @@ fn settle(
 /// stream, fillers included — a height that skipped them would tell a reader
 /// exactly how many slots went by empty, which is the fact the fillers were
 /// spent to hide.
-fn reported(name: &str, author: &str, walked: &Walked, after: Option<u64>) -> Outcome {
+fn reported(
+    name: &str,
+    author: &str,
+    alias: Option<&Alias>,
+    walked: &Walked,
+    after: Option<u64>,
+) -> Outcome {
     Outcome::read(
         name,
         author,
+        alias.map(Alias::as_str),
         walked.head().map(|head| head.index()),
         walked
             .held()
@@ -396,5 +364,11 @@ fn mine(
         now,
     )?;
     let walked = track(site, name, &place, &ours, reach(after), now)?;
-    Ok(reported(name, &me.handle().to_string(), &walked, after))
+    Ok(reported(
+        name,
+        &me.handle().to_string(),
+        site.alias()?.as_ref(),
+        &walked,
+        after,
+    ))
 }

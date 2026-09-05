@@ -244,6 +244,16 @@ follows:  tag 1 + index 8 + previous 32 + author 32 + reveal 32 + commit 32
 `tests/segment.rs` 与 `tests/robust.rs` 把这条边界写成可运行断言——签名区内每一位翻转都被拒，
 ack 区翻转则照常解码。
 
+### 自报的称呼（L1 · D-10）
+
+`alias.rs`：`Alias` 是 1–32 字节、单行、无控制字符与双向覆盖（U+202A–202E、U+2066–2069）的 UTF-8；
+`Declaration { alias, signature }` 由身份密钥签在 `"kusanagi/name/1" ‖ alias ‖ handle` 上，
+线上形式 `len u8 ‖ alias ‖ sig 4627`，`verify(&VerifyingKey)` 过则借出 `&Alias`，不过即 `AliasError::Forged`。
+**它不是一种段**：D-10 建议的 `Purpose::Named` 会给流量路径加一种段和一个「已声明」标志；名字只在介绍时交换一次
+（offer 与 greeting 各携一份，见 `site-SPEC.md`、`kusanagi-SPEC.md`），段格式零改动。改名只到达之后新开的通道，这是写明的边界。
+签名把 handle 绑进去，所以同一把密钥在五条通道里报的名字可以核对为同一个，而 A 通道的声明搬到 B 的密钥下即被拒。
+`AliasError::Unfit` 说明为何不合格（供 `--as` 的参数错误复述），`Malformed` 是字节不成形。判据：`tests/alias.rs`。
+
 ## 14 硬编码声明
 
 | 硬编码 | 意图 | 后续影响 |
@@ -255,6 +265,7 @@ ack 区翻转则照常解码。
 | `MAX_PAYLOAD = 65_375` | 单段载荷上限，**是减出来的不是选出来的**：`MAX_SEGMENT` 减去 141 字节固定开销。更大的负载属于尚不存在的分块机制 | 超限一律拒绝而非静默切分 |
 | `OVERHEAD = 141` | 两种形状恰好相等：genesis 的 32 字节 commit 与 64 字节签名，正好抵掉 follows 的 32 字节 previous、32 字节 reveal 与 32 字节 commit | 布局变了这三个数要一起算 |
 | `DropAddr` 宽 20 字节 | 160 位，抗生日碰撞，且文本键长 40 字符 | 改宽度则全部既存地址失效 |
+| `b"kusanagi/name/1"`、`Alias::MOST = 32` | 名字声明的签名域与长度上限；32 字节够写一个可读称呼，又让 `len` 占一字节 | 改域串即所有既存声明验不过，改上限即记录与 offer 换版 |
 
 ## 15 影响面
 

@@ -15,7 +15,7 @@
 //! one.** A walk that named every address it visited handed a host with an
 //! access log the grouping `seal` exists to deny it. So a walk does not talk to
 //! the host: it asks a [`Source`] for the sealed bytes at a height, and the
-//! production source is a [`Sweeping`](crate::sweep::Sweeping) — the reader's whole
+//! production source is a [`Sweeping`](crate::Sweeping) — the reader's whole
 //! ward for a period, taken with one listing and as many fetches as it has
 //! objects, matched against the lane's addresses here on this machine. A host
 //! sees a bin being read and never which object in it was wanted (D-20).

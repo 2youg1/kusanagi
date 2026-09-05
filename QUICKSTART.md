@@ -85,7 +85,9 @@ kusanagi join --name alice < invite.txt
 ```
 
 You should see: `joined `alice``, then `check code 8e5c`. **Read the four
-characters to Alice.** Same on both sides means the invitation arrived intact.
+characters to Alice, and read her the `you` handle line.** Same on both sides
+means the invitation arrived intact and the person who joined is you: the check
+code proves the line was not altered, the handle proves who used it.
 Different means somebody changed it: Alice runs step 4 again and you both
 retry.
 

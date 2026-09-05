@@ -52,6 +52,7 @@ impl Complaint {
             Self::Segment(_)
             | Self::Chain(_)
             | Self::Sealed(_)
+            | Self::Alias(_)
             | Self::NotThePeer { .. }
             | Self::BadGreeting { .. } => {
                 "the bytes at that address are not what this channel expects; \

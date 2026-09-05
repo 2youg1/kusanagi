@@ -303,6 +303,16 @@ version 1 byte = 1 | inviter 2592 bytes | grant 其余
 `send` 在写之前做与 `read` 同样的懒问候（同一请求），所以通常流程（邀请→加入→互发）不受影响。
 归档版本升到 2，`Kind::Identity` 条目为种子 32 字节 + ward 2 字节。
 
+### 通道记录版本 7、offer v4 与 `alias` 记录（L1 · D-10）
+
+`Peer` 加 `alias: Option<Alias>`：对端在介绍时签名声明的名字，到货时已按其 key 验过，记录里只存词。
+**定宽 33 字节**（长度 + 32 字节补零，`peer.rs::ALIAS_BLOCK`），无对端时写全零且**不读**——`robust.rs`
+守着「记录大小不随是否有人加入而变」，变长块会把这个性质连同 alias 长度一起交出去。
+`Offer` 升到版本 4：`retention` 之后多一个 `u16` 长度块，装邀请者的 `kernel::Declaration`（0 = 没有）。
+本端自己的名字是站点记录 `alias`（`alias.rs`，与 `egress`/`sweep` 同一形状），不进身份记录：种子是「我是谁」，
+永不变；名字是「我想被怎么叫」，可变。签名形式在 `invite`/`join` 时由身份密钥现算，盘上不存签名。
+归档升到 **3**，新条目 `Kind::Alias = 8`。`Peer` 与 alias 编解码拆到 `peer.rs`，`channel.rs` 回到 400 行内。
+
 ### 群组（E1）
 
 **一个群组不是密码学对象，而是一份名单。** 每一对关系仍然有自己的密钥与自己的流；

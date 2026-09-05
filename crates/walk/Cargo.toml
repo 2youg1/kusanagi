@@ -1,0 +1,19 @@
+[package]
+name = "kusanagi-walk"
+description = "How one author's stream is read out of a host: a lane, a sweep of one bin, and the walk that verifies it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+kusanagi-kernel.workspace = true
+kusanagi-chain.workspace = true
+kusanagi-seal.workspace = true
+kusanagi-site.workspace = true
+kusanagi-door.workspace = true
+
+[lints]
+workspace = true

@@ -105,12 +105,14 @@ data Summary = Summary
   { summaryName :: ChannelName
   , summaryStanding :: Text
   , summaryPeer :: Maybe Text
+  , -- | The name the peer signed for itself, once it arrived; nothing else.
+    summaryAlias :: Maybe Text
   }
   deriving stock (Eq, Show)
 
 instance FromJSON Summary where
   parseJSON = withObject "Summary" $ \o ->
-    Summary <$> o .: "name" <*> o .: "standing" <*> o .: "peer"
+    Summary <$> o .: "name" <*> o .: "standing" <*> o .: "peer" <*> o .:? "alias"
 
 -- | Where one member's copy of a fan-out went, or why it did not.
 data Landed = Landed

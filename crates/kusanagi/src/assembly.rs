@@ -24,7 +24,7 @@
 use std::net::TcpListener;
 
 use kusanagi_box::Server;
-use kusanagi_kernel::{Clock as _, Instant, Signer, Ward};
+use kusanagi_kernel::{Clock as _, Declaration, Instant, Signer, Ward};
 use kusanagi_seal::Secret;
 use kusanagi_waypoint::{Access, Carrier, Locator, LocatorError, Place, Proxy, probe};
 
@@ -33,7 +33,7 @@ use kusanagi_site::{Channel, Egress, Site};
 use crate::membership::{forget, group, invite, join, revoke};
 use crate::port::serve;
 use crate::request::Request;
-use crate::settings::{crowd, egress};
+use crate::settings::{crowd, egress, named};
 use crate::slot::tick;
 use crate::traffic::{fanout, read, send};
 use crate::world::{SystemClock, fresh_circuit, fresh_seed, fresh_ward};
@@ -74,6 +74,7 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
         }
         Request::Proxy { require } => egress(site, *require),
         Request::Sweep { digits } => crowd(site, *digits),
+        Request::Name { naming } => named(site, naming),
         Request::Revoke { name } => revoke(site, name),
         Request::Forget { name } => forget(site, name),
         Request::Doctor { waypoint } => doctor(site, waypoint, now),
@@ -178,11 +179,21 @@ pub(crate) fn peer_ward(channel: &Channel, name: &str) -> Result<Ward, Complaint
         })
 }
 
-fn identity(site: &Site) -> Result<Outcome, Complaint> {
+pub(crate) fn identity(site: &Site) -> Result<Outcome, Complaint> {
     Ok(Outcome::Identity {
         handle: signer(site)?.handle().to_string(),
         site: site.root().display().to_string(),
+        alias: site.alias()?.map(|alias| alias.as_str().to_owned()),
     })
+}
+
+/// This endpoint's name, signed by `me` for the message about to carry it.
+///
+/// Made when it is needed rather than stored: the record holds the word, and
+/// the signature is a function of the word and the key. `None` when this
+/// endpoint has not said what it is called.
+pub(crate) fn declared(site: &Site, me: &Signer) -> Result<Option<Declaration>, Complaint> {
+    Ok(site.alias()?.map(|alias| Declaration::sign(me, alias)))
 }
 
 /// Lists what is here, with each standing checked against the clock.
