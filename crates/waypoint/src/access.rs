@@ -18,6 +18,8 @@
 
 use std::time::Duration;
 
+use kusanagi_kernel::Hex;
+
 use crate::carrier::Carrier;
 use crate::client::PATIENCE;
 use crate::locator::LocatorError;
@@ -46,11 +48,22 @@ impl Proxy {
     /// this at Tor and watches their own resolver should see nothing, and before
     /// this they saw every host they talked to.
     ///
+    /// **A SOCKS5 proxy is given a circuit of its own.** Tor isolates streams
+    /// by the credentials they present (`IsolateSOCKSAuth`, on by default), so
+    /// a SOCKS5 proxy typed without credentials is given `circuit` as its
+    /// username and password. Every `Place` is opened with a fresh one, and so
+    /// every channel a command touches leaves through its own circuit and
+    /// reaches the host from its own exit — the host that saw one exit poll
+    /// five streams in one second would otherwise have learned that the five
+    /// belong together, which is the one thing handing the IP to Tor was for.
+    /// Credentials the person typed are kept as typed, and pin everything to
+    /// one circuit; the README says so.
+    ///
     /// # Errors
     ///
     /// [`LocatorError::BadProxy`] when the text does not name a proxy.
-    pub fn parse(text: &str) -> Result<Self, LocatorError> {
-        ureq::Proxy::new(&deferring(text))
+    pub fn parse(text: &str, circuit: Circuit) -> Result<Self, LocatorError> {
+        ureq::Proxy::new(&isolating(&deferring(text), &circuit))
             .map(Self)
             .map_err(|source| LocatorError::BadProxy {
                 reason: source.to_string(),
@@ -86,6 +99,54 @@ fn deferring(text: &str) -> String {
         "socks" | "socks5" => format!("socks5h://{rest}"),
         "socks4" => format!("socks4a://{rest}"),
         _ => text.to_owned(),
+    }
+}
+
+/// The same proxy, with `circuit` as its credentials when it is SOCKS5 and
+/// carries none.
+///
+/// The scheme is matched after [`deferring`], so `socks5://` and `socks5h://`
+/// both qualify; SOCKS4 has no credentials to isolate by, and an HTTP CONNECT
+/// proxy has no circuits. A `@` in the authority is credentials the person
+/// chose, and those are left alone.
+fn isolating(text: &str, circuit: &Circuit) -> String {
+    let Some((scheme, rest)) = text.split_once("://") else {
+        return text.to_owned();
+    };
+    let authority = rest.split('/').next().unwrap_or(rest);
+    if scheme != "socks5h" || authority.contains('@') {
+        return text.to_owned();
+    }
+    format!(
+        "{scheme}://{}:{}@{rest}",
+        circuit.username(),
+        circuit.password()
+    )
+}
+
+/// Which circuit of a SOCKS5 proxy a `Place` leaves through.
+///
+/// Sixteen bytes nobody can predict, drawn by `kusanagi::world` — the one
+/// source of randomness in the program — and spent on one `Place`. They are
+/// shown to the proxy as a username and a password, which is how Tor is told
+/// that two connections must not share a circuit. They are not a secret: the
+/// proxy is on this machine, and a circuit label says nothing about a channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Circuit([u8; 16]);
+
+impl Circuit {
+    /// A circuit label from bytes the caller drew.
+    #[must_use]
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+
+    fn username(&self) -> String {
+        Hex(self.0.split_at(8).0).to_string()
+    }
+
+    fn password(&self) -> String {
+        Hex(self.0.split_at(8).1).to_string()
     }
 }
 

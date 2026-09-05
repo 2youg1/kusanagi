@@ -29,7 +29,7 @@ use std::net::TcpListener;
 
 use common::host;
 use kusanagi_kernel::{DropAddr, Waypoint as _};
-use kusanagi_waypoint::{Access, HttpWaypoint, Proxy};
+use kusanagi_waypoint::{Access, Circuit, HttpWaypoint, Proxy};
 
 /// A port nothing is listening on, obtained by listening and then stopping.
 ///
@@ -63,8 +63,11 @@ fn a_configured_proxy_is_the_only_way_out() {
     // The same request through a proxy that leads nowhere. It has to fail: the
     // request must not quietly go direct when the socket it was told to use is
     // not there.
-    let nowhere = Proxy::parse(&format!("socks5://127.0.0.1:{}", closed_port()))
-        .expect("that is a proxy locator");
+    let nowhere = Proxy::parse(
+        &format!("socks5://127.0.0.1:{}", closed_port()),
+        Circuit::from_bytes([0; 16]),
+    )
+    .expect("that is a proxy locator");
     let proxied = HttpWaypoint::new(
         &base,
         &Access {
@@ -85,6 +88,7 @@ fn something_that_is_not_a_proxy_is_refused_when_it_is_read() {
     // Refused at the point it is configured, with this workspace's own error
     // rather than the client library's. A caller who mistyped one has to be told
     // that, not handed a message from a crate they did not know they were using.
-    let refused = Proxy::parse("nonsense://:::").expect_err("that is not a proxy");
+    let refused = Proxy::parse("nonsense://:::", Circuit::from_bytes([0; 16]))
+        .expect_err("that is not a proxy");
     assert_eq!(refused.code(), "locator.bad_proxy");
 }

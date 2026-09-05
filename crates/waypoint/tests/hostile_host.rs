@@ -32,7 +32,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use kusanagi_kernel::{DropAddr, Waypoint as _};
-use kusanagi_waypoint::{Access, HttpWaypoint, Proxy};
+use kusanagi_waypoint::{Access, Circuit, HttpWaypoint, Proxy};
 
 /// The address every read here asks for. Nothing is ever written to it.
 fn address() -> DropAddr {
@@ -193,7 +193,13 @@ fn a_socks_proxy_is_given_the_name_rather_than_the_answer_to_it() {
     let waypoint = HttpWaypoint::new(
         "http://nonexistent.invalid:8963",
         &Access {
-            proxy: Some(Proxy::parse(&format!("socks5://127.0.0.1:{proxy_port}")).unwrap()),
+            proxy: Some(
+                Proxy::parse(
+                    &format!("socks5://127.0.0.1:{proxy_port}"),
+                    Circuit::from_bytes([0; 16]),
+                )
+                .unwrap(),
+            ),
             patience: Duration::from_secs(2),
             ..Access::default()
         },
@@ -207,4 +213,86 @@ fn a_socks_proxy_is_given_the_name_rather_than_the_answer_to_it() {
         atyp, 3,
         "the client resolved the host itself and sent the proxy an address"
     );
+}
+
+/// Answers one SOCKS5 greeting by demanding a username and password, reports
+/// the pair it was given, and then closes without connecting anywhere.
+fn socks5_credentials(listener: TcpListener) -> std::sync::mpsc::Receiver<(String, String)> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut greeting = [0_u8; 2];
+        if stream.read_exact(&mut greeting).is_err() {
+            return;
+        }
+        let mut methods = vec![0_u8; usize::from(greeting[1])];
+        if stream.read_exact(&mut methods).is_err() {
+            return;
+        }
+        // Version 5, username/password (RFC 1929).
+        stream.write_all(&[0x05, 0x02]).ok();
+        let mut head = [0_u8; 2];
+        if stream.read_exact(&mut head).is_err() {
+            return;
+        }
+        let mut username = vec![0_u8; usize::from(head[1])];
+        if stream.read_exact(&mut username).is_err() {
+            return;
+        }
+        let mut length = [0_u8; 1];
+        if stream.read_exact(&mut length).is_err() {
+            return;
+        }
+        let mut password = vec![0_u8; usize::from(length[0])];
+        if stream.read_exact(&mut password).is_err() {
+            return;
+        }
+        sender
+            .send((
+                String::from_utf8_lossy(&username).into_owned(),
+                String::from_utf8_lossy(&password).into_owned(),
+            ))
+            .ok();
+    });
+    receiver
+}
+
+/// Two places opened through one SOCKS5 port identify themselves to it
+/// differently, so Tor (`IsolateSOCKSAuth`) puts them on two circuits and the
+/// host sees two exits rather than one.
+#[test]
+fn two_places_through_one_socks_port_ride_two_circuits() {
+    let mut seen = Vec::new();
+    for circuit in [
+        Circuit::from_bytes([0x11; 16]),
+        Circuit::from_bytes([0x22; 16]),
+    ] {
+        let (proxy_listener, proxy_port) = bound();
+        let credentials = socks5_credentials(proxy_listener);
+        let waypoint = HttpWaypoint::new(
+            "http://nonexistent.invalid:8963",
+            &Access {
+                proxy: Some(
+                    Proxy::parse(&format!("socks5://127.0.0.1:{proxy_port}"), circuit).unwrap(),
+                ),
+                patience: Duration::from_secs(2),
+                ..Access::default()
+            },
+        );
+        let _ = waypoint.get(&address());
+        seen.push(
+            credentials
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the proxy was never offered a username and password"),
+        );
+    }
+    let [(first_user, first_pass), (second_user, second_pass)] = seen.as_slice() else {
+        panic!("two connections were expected");
+    };
+    assert_eq!(first_user, "1111111111111111");
+    assert_eq!(first_pass, "1111111111111111");
+    assert_ne!(first_user, second_user, "two places shared one circuit");
+    assert_ne!((first_user, first_pass), (second_user, second_pass));
 }

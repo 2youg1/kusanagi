@@ -31,7 +31,7 @@ pub mod probe;
 mod s3;
 mod sigv4;
 
-pub use access::{Access, Proxy};
+pub use access::{Access, Circuit, Proxy};
 pub use carrier::{Carrier, CarrierWaypoint};
 pub use certificate::{Capability, Certificate, Finding, Tier, Verdict};
 pub use client::{MAX_OBJECT, PATIENCE};

@@ -15,7 +15,7 @@
 | U5 对象存储 | `S3Waypoint`（SigV4） | 签名复现 AWS 公开向量；有凭据时对真实桶跑通，无凭据时跳过而非假通过 |
 | U6 路由 | `Locator` / `Place` | 一个字符串决定用哪个适配器；四种写法各得正确的 `kind()` |
 | U7 体检 | `probe::examine` → `Certificate` | 四项能力各得 held / not offered / BROKEN；只有 write-once 决定 tier |
-| U8 出口插口 | `Proxy` / `Access` | 同一个请求对同一台活着的宿主：不带代理成功，带一个通向死端口的代理失败。**这两种结果能区分开，才证明设置真的生效**（`box/tests/through_a_proxy.rs`） |
+| U8 出口插口 | `Proxy` / `Access` / `Circuit` | 同一个请求对同一台活着的宿主：不带代理成功，带一个通向死端口的代理失败。**这两种结果能区分开，才证明设置真的生效**（`box/tests/through_a_proxy.rs`）。**每个 `Place` 一条电路**：两个 `Circuit` 打开的两个 `Place` 经同一个 SOCKS5 端口出去时，代理端收到的两组用户名/密码互不相同、都不为空——由一个假 SOCKS5 监听端从线上取证，不看 URL 字符串 |
 
 ## 2 验收标准
 
@@ -70,7 +70,7 @@ sigv4.rs        Signature Version 4：凭据、日期、签名
 locator.rs      Locator / LocatorError —— 一串文本指向哪里
 place.rs        Place —— 唯一知道存在多个适配器的地方
 carrier.rs      CarrierWaypoint —— 别人的客户端搬字节（I4）
-proxy.rs        Proxy —— 请求从哪个套接字出去；是插口，不是机制
+access.rs       Access / Proxy / Circuit —— 请求从哪个套接字出去、坐哪条电路；是插口，不是机制
 probe.rs        examine —— 唯一实测宿主的地方
 certificate.rs  Capability / Verdict / Tier / Certificate —— 实测结果的公开词汇
 ```
@@ -107,7 +107,10 @@ pub trait Conditional {
 
 pub enum Locator { Directory(PathBuf), Box { base: String }, Bucket { .. } }   // FromStr
 pub enum Place { Directory(..), Box(..), Bucket(..) }                          // impl Waypoint + Conditional
-impl Place { pub fn open(&Locator, Option<Credentials>, now: u64) -> Result<Self, LocatorError>; }
+impl Place { pub fn open(&Locator, &Access, now: u64) -> Result<Self, LocatorError>; }
+
+pub struct Circuit([u8; 16]);                       // from_bytes；十六字节由 kusanagi::world 供给，waypoint 不产熵
+impl Proxy { pub fn parse(text: &str, circuit: Circuit) -> Result<Self, LocatorError>; }   // 唯一构造函数：没有不带电路的代理
 
 pub fn probe::examine<P: Waypoint + Conditional>(place: &P, namespace: &Stream) -> Certificate;
 pub enum Verdict { Held, NotOffered { because: String }, Broken { detail: String } }
@@ -158,6 +161,7 @@ doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier →
 | 宙主接了连接却不说话 | `Unanswered`，码 `waypoint.timeout`，`patience` 到点即退——法则 1 要求动词会退出 |
 | 宙主回超过 `MAX_OBJECT` 的正文 | `waypoint.io`，在读完之前停；内存不随宙主的说法增长 |
 | 代理写成 `socks5://` | 改写为 `socks5h://` 再交给 ureq——否则客户端先在本机解析域名，明文 DNS 恰好泄给这个设置要避开的那个观察者 |
+| 代理是 SOCKS5 且没写凭据 | 注入 `Circuit` 的十六字节作用户名与密码（各八字节，小写十六进制）。Tor 默认 `IsolateSOCKSAuth`：凭据不同即电路不同、出口不同。每个 `Place` 由一个新 `Circuit` 打开，所以同一进程里的多条通道各走一条电路——否则宿主按出口 IP 与到达时刻就把「这几条通道属于同一个人」串起来，D-02 把 IP 交给 Tor 就等于没交。用户自己写了凭据则原样保留：那是他的决定，代价是所有通道钉在一条电路上，README 写明 |
 | 请求头超过 8 KiB / body 超过 1 MiB | `400` |
 | 空 payload | 正常往返；**空与缺席是两件事** |
 | S3 返回 403 | 视同 `Absent`（多数桶对不存在的 key 返回 403 而非 404） |

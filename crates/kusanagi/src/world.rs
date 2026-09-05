@@ -15,6 +15,7 @@
 use kusanagi_kernel::{Clock, Instant};
 
 use kusanagi_door::{Complaint, Fence};
+use kusanagi_waypoint::Circuit;
 
 /// The clock of the machine this is running on.
 #[derive(Debug, Clone, Copy)]
@@ -81,6 +82,24 @@ pub fn fresh_fence() -> Result<Fence, Complaint> {
         source: std::io::Error::other(source.to_string()),
     })?;
     Ok(Fence::from_bytes(bytes))
+}
+
+/// Sixteen bytes nobody can predict, for one place's circuit through a proxy.
+///
+/// Drawn here for the same reason as the fence: one source. What a circuit
+/// label buys is in `waypoint::access`.
+///
+/// # Errors
+///
+/// [`Complaint::Local`] when the operating system has no entropy to give. A
+/// predictable label is one two places could share, which is one circuit.
+pub fn fresh_circuit() -> Result<Circuit, Complaint> {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes).map_err(|source| Complaint::Local {
+        action: "ask the operating system for randomness",
+        source: std::io::Error::other(source.to_string()),
+    })?;
+    Ok(Circuit::from_bytes(bytes))
 }
 
 #[cfg(test)]

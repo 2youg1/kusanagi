@@ -35,7 +35,7 @@ use crate::port::serve;
 use crate::request::Request;
 use crate::slot::tick;
 use crate::traffic::{fanout, read, send};
-use crate::world::{SystemClock, fresh_seed};
+use crate::world::{SystemClock, fresh_circuit, fresh_seed};
 use kusanagi_door::Complaint;
 use kusanagi_door::Grouping;
 use kusanagi_door::Outcome;
@@ -198,7 +198,7 @@ pub(crate) fn open(locator: &str, now: Instant) -> Result<Place, Complaint> {
         _ => None,
     };
     let proxy = match std::env::var("KUSANAGI_PROXY") {
-        Ok(text) if !text.trim().is_empty() => Some(Proxy::parse(text.trim())?),
+        Ok(text) if !text.trim().is_empty() => Some(Proxy::parse(text.trim(), fresh_circuit()?)?),
         _ => None,
     };
     // `KUSANAGI_CARRIER` names a program this machine runs, so it is read here

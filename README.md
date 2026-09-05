@@ -252,6 +252,12 @@ value that is not a proxy is refused rather than ignored.
 export KUSANAGI_PROXY=socks5://127.0.0.1:9050
 ```
 
+Through a SOCKS5 proxy, every channel a command touches leaves on a circuit of
+its own: the proxy is shown a fresh username and password per channel, which
+is how Tor is told to keep streams apart, so the host sees your channels arrive
+from different exits rather than from one. Leave the credentials out of the
+value — ones you type are kept as typed, and pin every channel to one circuit.
+
 **Run `kusanagi doctor` against a host before you trust it.** S3-compatible
 stores disagree about conditional writes, and they disagree in the dangerous
 direction: the condition is ignored, the write succeeds, and a protocol that
