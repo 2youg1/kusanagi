@@ -18,6 +18,8 @@ kusanagi send --to alice "构建通过了"
 
 配置到此为止。没有账户，没有配置文件，也不需要你自己的服务器。
 
+**第一次用？** [QUICKSTART.md](QUICKSTART.md) 用十条命令带一个人走完全程（英文）。**你是程序？** [LLM.md](LLM.md) 一页就是全部接口。
+
 **版本 0.0.1，pre-alpha。密码学部分没有经过任何外部审计。线格式会变，且不提供迁移路径。**
 
 ## 目录
@@ -89,7 +91,7 @@ kusanagi --root ~/.alice revoke --from bob
 
 如果 Alice 想彻底丢掉这条 channel，用 `kusanagi forget --channel bob`。主机上的字节原样保留，但这条 channel 再也进不去了。
 
-`docs/joining.md` 用一页纸讲同一件事，写给完全没见过这个仓库的人。
+[QUICKSTART.md](QUICKSTART.md) 一次一条命令讲同一件事，写给完全没见过这个仓库的人；[docs/joining.md](docs/joining.md) 是宿主那一侧——怎么跑一台、怎么测一台。
 
 ## 命令
 

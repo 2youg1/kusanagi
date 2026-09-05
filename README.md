@@ -21,6 +21,9 @@ kusanagi send --to alice "the build is green"
 
 That is the whole setup. No account, no config file, no server of your own.
 
+**New here?** [QUICKSTART.md](QUICKSTART.md) walks a person through it in ten
+commands. **Are you a program?** [LLM.md](LLM.md) is the whole interface on one page.
+
 **Version 0.0.1, pre-alpha. Nobody has audited the cryptography. The wire format
 will change without a migration path.**
 
@@ -121,8 +124,9 @@ To drop the channel entirely on Alice's side, use
 `kusanagi forget --channel bob`. The host keeps its bytes and the channel cannot
 be re-entered.
 
-`docs/joining.md` walks through the same thing in one page, written for someone
-who has never seen this repository.
+[QUICKSTART.md](QUICKSTART.md) walks through the same thing one command at a
+time, written for someone who has never seen this repository;
+[docs/joining.md](docs/joining.md) is the host's side — running one, checking one.
 
 ## Commands
 

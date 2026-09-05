@@ -1,6 +1,6 @@
 # AGENTS.md — how work is done in this repository
 
-**For any agent or person about to change this code.** Read this file to the end before the first edit. It is short on purpose, and everything it does not cover is one link away.
+**For any agent or person about to change this code.** Read this file to the end before the first edit. It is short on purpose, and everything it does not cover is one link away. An agent that wants to *use* kusanagi rather than change it reads [`LLM.md`](LLM.md) instead.
 
 kusanagi is a decentralised collaboration network for agents. The substrate is a **dead drop**, not a connection: a sender leaves a segment at an opaque address, a reader collects it later, and the host that holds the bytes is never trusted. Direct delivery is an optimisation of that, not the other way round.
 
