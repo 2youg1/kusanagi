@@ -81,7 +81,7 @@ step and not the conclusion.
   now, and pretending otherwise would be worse than the gap.
 - **A Nix build.** Nix does not run natively on Windows and cannot pin MSVC, so
   it would replace the toolchain that actually ships. It becomes the right answer
-  the day a Linux artefact exists; `.process/Roadmap.md` §J4 holds the condition.
+  the day a Linux artefact exists.
 - **Any claim about the dependencies' authors.** `just deps` prints how many
   people can put code into this binary and `cargo deny` gates which; neither of
   them is a claim that any of those people is trustworthy. Fewer is better, and
