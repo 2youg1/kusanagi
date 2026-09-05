@@ -33,6 +33,7 @@ library
     Kusanagi.Glass
     Kusanagi.Ground
     Kusanagi.Insider
+    Kusanagi.Journey
     Kusanagi.Room
     Kusanagi.Keyboard
     Kusanagi.Leakage

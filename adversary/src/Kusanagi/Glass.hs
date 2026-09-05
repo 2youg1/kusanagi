@@ -30,6 +30,10 @@ module Kusanagi.Glass
   , controlBytesAreShownAsHex
   , theDiskHoldsNoPeer
   , theClipboardWaitsForAHand
+  , prepared
+  , running
+  , byName
+  , awaiting
   ) where
 
 import Control.Concurrent (threadDelay)
@@ -37,7 +41,7 @@ import Control.Exception (SomeException, bracket, try)
 import Control.Monad (forM, forM_, unless)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, listToMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
@@ -83,7 +87,21 @@ notBuilt = "the window is not built; run `native build -Dautomation=true -Dtrace
 -- once cost half an hour. The window's site invites under the name @lin@,
 -- which is what the rail shows; Bob joins under the name @me@.
 staged :: Door -> Ground -> IO (Either String Glass)
-staged door@(Door binary) ground =
+staged door ground =
+  prepared door ground >>= \case
+    Left reason -> pure (Left reason)
+    Right glass ->
+      Door.ask door (glassSite glass) (Door.Invite (ChannelName "lin") (waypoint ground) Door.Forever Door.both) >>= \case
+        Accepted (Invited _ invitation _) ->
+          Door.ask door (siteOf ground Bob) (Door.Join invitation (ChannelName "me")) >>= \case
+            Accepted Joined {} -> pure (Right glass)
+            other -> pure (Left ("Bob could not join: " <> show other))
+        other -> pure (Left ("the window's site could not invite: " <> show other))
+
+-- | The window's home for one run, with the binary under test beside it and
+-- nothing said yet: the site is empty until the window or a verb writes it.
+prepared :: Door -> Ground -> IO (Either String Glass)
+prepared (Door binary) ground =
   available >>= \case
     Nothing -> pure (Left notBuilt)
     Just dir -> do
@@ -98,13 +116,25 @@ staged door@(Door binary) ground =
       there <- doesFileExist beside
       same <- if there then (==) <$> ByteString.readFile binary <*> ByteString.readFile beside else pure False
       unless same (copyFile binary beside)
-      let glass = Glass {glassDir = dir, glassAppData = appdata, glassHome = home, glassSite = appdata </> "kusanagi"}
-      Door.ask door (glassSite glass) (Door.Invite (ChannelName "lin") (waypoint ground) Door.Forever Door.both) >>= \case
-        Accepted (Invited _ invitation _) ->
-          Door.ask door (siteOf ground Bob) (Door.Join invitation (ChannelName "me")) >>= \case
-            Accepted Joined {} -> pure (Right glass)
-            other -> pure (Left ("Bob could not join: " <> show other))
-        other -> pure (Left ("the window's site could not invite: " <> show other))
+      pure (Right Glass {glassDir = dir, glassAppData = appdata, glassHome = home, glassSite = appdata </> "kusanagi"})
+
+-- | Snapshots until one of `names` is drawn, or gives up after ten seconds:
+-- the window boots by asking three verbs, and the first screen follows them.
+-- Snapshotting the instant the automation server answers reads a window
+-- that has not yet heard back, and blamed the rail for it.
+awaiting :: Glass -> [Text] -> IO Text
+awaiting glass names = go (20 :: Int)
+  where
+    go attempts = do
+      shot <- snapshot glass
+      if any ((`elem` names) . widgetName) (widgets shot) || attempts == 0
+        then pure shot
+        else threadDelay 500_000 >> go (attempts - 1)
+
+-- | A widget by what it says, whatever its role: the two languages the
+-- window speaks are both accepted.
+byName :: [Text] -> [Widget] -> Maybe Widget
+byName names = listToMaybe . filter ((`elem` names) . widgetName)
 
 -- | What Bob says is what the window renders.
 bobSays :: Door -> Ground -> Text -> IO ()
@@ -150,7 +180,7 @@ running glass act = do
 -- | The window open on the channel, with the thread drawn.
 opened :: Glass -> (Text -> IO (Either String a)) -> IO (Either String a)
 opened glass act = running glass $ do
-  first <- snapshot glass
+  first <- awaiting glass ["lin"]
   case named "listitem" ["lin"] (widgets first) of
     Nothing -> pure (Left "the rail does not list the channel")
     Just row -> do
@@ -235,7 +265,7 @@ controlBytesAreShownAsHex door ground =
 -- was shown, and the copy button when there is one.
 minting :: Glass -> Ground -> IO (Either String Widget)
 minting glass ground = do
-  first <- snapshot glass
+  first <- awaiting glass ["新邀请", "New invitation"]
   case named "button" ["新邀请", "New invitation"] (widgets first) of
     Nothing -> pure (Left "the rail has no invite button")
     Just new -> do

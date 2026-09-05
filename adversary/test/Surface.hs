@@ -21,6 +21,7 @@ import Kusanagi.Forging qualified as Forging
 import Kusanagi.Glass qualified as Glass
 import Kusanagi.Ground (withGround)
 import Kusanagi.Insider qualified as Insider
+import Kusanagi.Journey qualified as Journey
 import Kusanagi.Leakage qualified as Leakage
 import Kusanagi.Port qualified as Port
 import Kusanagi.Reach qualified as Reach
@@ -143,6 +144,8 @@ window door =
           , cell "shows terminal bytes as hexadecimal" Glass.controlBytesAreShownAsHex
           , cell "writes nothing of the peer outside the site" Glass.theDiskHoldsNoPeer
           , cell "writes the clipboard only by hand, and says what the clipboard is" Glass.theClipboardWaitsForAHand
+          , cell "starts a conversation from the sheet, and hears the reply" Journey.aConversationStartsInTheWindow
+          , cell "founds a room from the sheet, and hears a member" Journey.aRoomIsFoundedInTheWindow
           ]
   where
     cell name act = testCase name (withGround (act door) >>= either (`assertBool` False) pure)

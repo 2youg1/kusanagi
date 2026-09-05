@@ -86,6 +86,16 @@
 | W4 | 会话（含在窗口里铸一张邀请）后，站点之外的盘上只有清单里的文件（两个偏好、`windows.zon`、有 trace 时的 `native-sdk.jsonl`），且 grep 不到正文、`kusanagi2:`、宿主路径 | 窗口或 SDK 多写一个文件 | 绿；查出 SDK 默认写每帧事件日志（使用时间线），发布构建改 `-Dtrace=off` |
 | W5 | 铸出邀请后剪贴板仍是哨兵；按下「复制邀请」后才是 `kusanagi2:…`，且窗口说明剪贴板是日志 | 自动复制，或复制不说明 | 绿；查出复制后**无 B4 警告**，已加说明 + 60 s 回收（`scrub`） |
 
+### 一个人，对着窗口走完整程（H7）— `Journey.hs`
+
+黑盒 e2e：sheet 里铸邀请 → Bob 在终端加入 → 撰写框里发 → Bob 读到 → Bob 回 → 窗口在下一次轮询（≤ 20 s）画出来。控件按中英两种文案找（本机窗口是中文）。`awaiting` 等首屏画出再快照——H8 原先在 automation server 一应答就快照，负载高时轮流偶红「rail 没有那一行」，本轮一并修。
+
+| # | 性质 | 会让它红的改动 | 今日 |
+|---|---|---|---|
+| J1 | 私聊：窗口铸的行 Bob 能 `join`；窗口发的话 Bob `read` 得到；Bob `send` 的话窗口 30 s 内画出 | sheet 字段改名、`kusanagi2:` 行不整行显示、轮询停了 | 绿（28 s） |
+| J2 | 房间：开关「建房间」→ `room` + `room-invite` 连发；Bob `room-join`；窗口 `room-send` 的话 Bob `room-read` 得到（founder 的读先准入了他）；Bob `room-send` 的话窗口画出 | 房间开关丢了、`room-read --after -` 的 stdin 形状变了 | 绿（28 s） |
+| 边界 | 备份 → 换机恢复在窗口里**未走**（`export` 走 stdout 归档、`import` 走管道，窗口只有 backup sheet 的写文件一步）；`native` 不在 PATH 或窗口未构建即整组 skipped | — | 诚实缺口 |
+
 ### 群组内鬼与前对端 — `Insider.hs`
 
 | # | 性质 | 会让它红的改动 | 今日 |
@@ -94,6 +104,13 @@
 | G2 | 群发段与私发段的 JSON 键集合相等 | 段上带了群标记 | ? |
 | G3 | 撤销 Bob 后 `send --to-group`：Bob 的 `Landed` 为拒，Mallory 送达；Bob 的 `read` 看不到新话 | — | 已修：`appended` 问 peer 的 standing |
 | X2 | 撤销后对该通道 `send` → `grant.revoked`，`recover` 指向 `forget` | 撤销只管读不管写 | 已修 |
+
+### 房间成员与持有房间的宿主（F8，D-17）— `Room.hs`
+
+| # | 性质 | 会让它红的改动 | 今日 |
+|---|---|---|---|
+| R1 | Bob 的 `room-read` 列出三人 handle——**明写的代价**：房间成员互知 | 名册不再随 offer 与名册段分发 | 绿 |
+| R2 | 宿主对象 grep 不到任一成员 handle（十六进制与原始字节）、房间名、三句话 | 名册或 handle 落到密封外 | 绿 |
 
 ### 持有某件东西的人 — `Twins.hs`
 
