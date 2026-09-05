@@ -24,6 +24,7 @@ import Kusanagi.Insider qualified as Insider
 import Kusanagi.Leakage qualified as Leakage
 import Kusanagi.Port qualified as Port
 import Kusanagi.Reach qualified as Reach
+import Kusanagi.Room qualified as Room
 import Kusanagi.Scanner qualified as Scanner
 import Kusanagi.Sweep qualified as Sweep
 import Kusanagi.Terminal qualified as Terminal
@@ -99,6 +100,11 @@ surface door =
         , cell "cannot tell a broadcast from a whisper" Insider.aBroadcastLooksLikeAWhisper
         , cell "is left out of a fan-out once revoked" Insider.aRevokedMemberIsLeftOut
         , cell "cannot be sent to once revoked, for the same reason as read" Insider.sendingToTheRevokedFailsLikeReadingThem
+        ]
+    , testGroup
+        "a member of a room, and the host that holds it"
+        [ cell "can name every other member: the price of a room" Room.aMemberCanListEveryMember
+        , cell "leaves the host no handle, no room name and no sentence" Room.theHostHoldsNoMember
         ]
     , testGroup
         "two writers who are one author"

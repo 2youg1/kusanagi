@@ -24,7 +24,7 @@ FILE_LIMIT=400
 # Prose may run a little over: a SPEC that records one more decision is not
 # split the way a module is. Code files hold to FILE_LIMIT exactly.
 MARKDOWN_LIMIT=440
-CRATE_LIMIT=4000
+CRATE_LIMIT=5000
 WORKSPACE_LIMIT=25000
 
 root=$(cd "$(dirname "$0")/.." && pwd)

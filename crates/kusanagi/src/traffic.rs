@@ -11,7 +11,7 @@
 //! the one that enforces a revocation, because it needs no cooperation from the
 //! peer or from the host.
 
-use kusanagi_door::{Delivery, Landed};
+use kusanagi_door::Outcome;
 use kusanagi_grant::Ability;
 use kusanagi_kernel::{Freight, Instant, Purpose, PutOutcome, Segment, Signer, Waypoint};
 use kusanagi_seal::{Fit, seal};
@@ -23,7 +23,6 @@ use crate::assembly::{open, peer_ward, signer, ward};
 use crate::greeting::greet;
 use crate::request::Whose;
 use kusanagi_door::Complaint;
-use kusanagi_door::Outcome;
 use kusanagi_kernel::Alias;
 use kusanagi_walk::{Lane, verified};
 use kusanagi_walk::{Reach, Walked, track};
@@ -70,59 +69,18 @@ pub(crate) fn send(
             period: channel.cadence.period(),
         });
     }
-    let written = appended(site, &signer(site)?, name, Purpose::Message, payload, now)?;
+    let written = appended(
+        site,
+        &signer(site)?,
+        name,
+        Freight::message(payload.to_vec())?,
+        now,
+    )?;
     Ok(Outcome::Sent {
         name: name.to_owned(),
         index: written.index,
         id: written.id,
         address: written.address,
-    })
-}
-
-/// Appends one segment to every member of a group, and reports each separately.
-///
-/// **One member's failure is not the send's failure.** A host that is down, a
-/// channel that was forgotten, or a grant that was revoked stops that member
-/// from hearing this and stops nothing else; collapsing the five results into
-/// one would either hide a person who did not receive it or claim four people
-/// did not when they did. The caller reads the rows.
-///
-/// # Errors
-///
-/// [`Complaint::UnknownGroup`] when there is no such group. That is the one
-/// failure of the fan-out itself rather than of a member.
-pub(crate) fn fanout(
-    site: &Site,
-    group: &str,
-    payload: &[u8],
-    now: Instant,
-) -> Result<Outcome, Complaint> {
-    // One signer for every member: N members used to cost N identity reads.
-    let me = signer(site)?;
-    let roster = site.roster(group).map_err(|error| match error {
-        kusanagi_site::SiteError::UnknownChannel { name } => Complaint::UnknownGroup { name },
-        other => other.into(),
-    })?;
-    let delivered = roster
-        .members
-        .iter()
-        .map(|member| Delivery {
-            member: member.clone(),
-            landed: match appended(site, &me, member, Purpose::Message, payload, now) {
-                Ok(written) => Landed::Sent {
-                    index: written.index,
-                    address: written.address,
-                },
-                Err(refusal) => Landed::Refused {
-                    code: refusal.code(),
-                    error: refusal.to_string(),
-                },
-            },
-        })
-        .collect();
-    Ok(Outcome::FannedOut {
-        group: group.to_owned(),
-        delivered,
     })
 }
 
@@ -137,8 +95,7 @@ pub(crate) fn appended(
     site: &Site,
     me: &Signer,
     name: &str,
-    purpose: Purpose,
-    payload: &[u8],
+    freight: Freight,
     now: Instant,
 ) -> Result<Appended, Complaint> {
     let channel = site.channel(name)?;
@@ -182,26 +139,51 @@ pub(crate) fn appended(
     // The height still comes from the waypoint rather than from a local count:
     // the cairn moves the walk's starting point and proves the join to it, so a
     // lost or absent cairn changes what this costs and never what it decides.
-    // The trail is derived here and dropped at the end of this command. It is
-    // never written down: an author recomputes it from a deterministic signature
-    // over their own lane, so a killed process loses nothing and a seized disk
-    // holds no proof of anything.
     let acknowledged = match &channel.peer {
         None => 0,
         Some(peer) => verified(site, name, &peer.handle())?,
     };
-    let freight = match purpose {
-        Purpose::Message => Freight::message(payload.to_vec()),
-        Purpose::Filler => Freight::filler(),
-    }?
-    .acknowledging(acknowledged);
+    append(
+        site,
+        name,
+        &place,
+        &mine,
+        me,
+        freight.acknowledging(acknowledged),
+        walked,
+    )
+}
 
+/// Seals `freight` as the next segment of `mine` and leaves it on the host.
+///
+/// The one place a segment is written, whichever stream it is on: a channel's,
+/// a room member's, or a founder's roster. `walked` is the walk to the head
+/// the caller just made, and this extends it.
+///
+/// The trail is derived here and dropped at the end of this command. It is
+/// never written down: an author recomputes it from a deterministic signature
+/// over their own lane, so a killed process loses nothing and a seized disk
+/// holds no proof of anything.
+///
+/// # Errors
+///
+/// [`Complaint::DropTaken`] when the address the head derives is already held,
+/// which is another writer on this lane; and whatever sealing, the host, or the
+/// two records report.
+pub(crate) fn append(
+    site: &Site,
+    name: &str,
+    place: &impl Waypoint,
+    mine: &Lane,
+    me: &Signer,
+    freight: Freight,
+    walked: Walked,
+) -> Result<Appended, Complaint> {
     let trail = mine.keys.trail(me);
     let segment = match walked.head() {
         None => Segment::genesis(me, &trail, freight),
         Some(head) => Segment::extend(&trail, me.handle(), freight, head),
     }?;
-
     let address = mine.keys.address(segment.index());
     let sealed = seal(
         &mine.keys.key(segment.index())?,
@@ -209,7 +191,7 @@ pub(crate) fn appended(
         &segment.to_canonical_bytes(),
     )?;
     let object = mine.at(address);
-    match Waypoint::put_if_absent(&place, &object, &sealed)? {
+    match Waypoint::put_if_absent(place, &object, &sealed)? {
         // The host took it at an address that was empty, so this endpoint knows
         // the segment is there without reading it back. Recording that now is
         // what keeps the next send at one request: a position left one behind
@@ -221,7 +203,7 @@ pub(crate) fn appended(
                 site.mark(name, &cairn)?;
             }
             if let Some(listed) = walked.listed {
-                site.sweep_to(name, &me.handle(), &listed.including(object))?;
+                site.sweep_to(name, mine.bin.ward(), &listed.including(object))?;
             }
         }
         PutOutcome::AlreadyPresent => {
@@ -231,7 +213,6 @@ pub(crate) fn appended(
             });
         }
     }
-
     // The key rather than the address alone: since a drop is filed in a bin,
     // the address by itself no longer says where on the host anything is.
     Ok(Appended {

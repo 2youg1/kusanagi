@@ -53,13 +53,12 @@ use std::path::{Path, PathBuf};
 
 use kusanagi_chain::Cairn;
 use kusanagi_grant::{Revocations, StepId};
-use kusanagi_kernel::Handle;
+use kusanagi_kernel::{Handle, Ward};
 
 use crate::cairns;
 use crate::channel::Channel;
 use crate::error::SiteError;
 use crate::naming;
-use crate::records;
 use crate::revoked;
 use crate::roster::{self, Roster};
 use crate::sweeps::{self, Swept};
@@ -114,16 +113,20 @@ impl Site {
         }
     }
 
-    /// Whether a channel of this name is already here.
+    /// Whether a channel or a room of this name is already here.
+    ///
+    /// One answer for both, because the two share one name space: cairns and
+    /// sweep records are filed under the name, so a room and a channel called
+    /// the same would inherit each other's heights.
     ///
     /// # Errors
     ///
     /// [`SiteError::BadName`] when the name is not usable as one.
     pub fn holds(&self, name: &str) -> Result<bool, SiteError> {
-        match self.channel_path(name) {
-            Ok(path) => Ok(path.exists()),
-            Err(SiteError::UnknownChannel { .. }) => Ok(false),
-            Err(other) => Err(other),
+        match self.filed(name)? {
+            None => Ok(false),
+            Some(filed) => Ok(self.root.join("channels").join(&filed).exists()
+                || self.root.join("rooms").join(&filed).exists()),
         }
     }
 
@@ -168,25 +171,29 @@ impl Site {
         cairns::write(&self.root, &filed, &filed_author, cairn)
     }
 
-    /// The last sweep of `author`'s lane on `name`, if a record survives.
-    /// Missing and unreadable are one answer; `sweeps` says why.
+    /// The last sweep of `ward` for `name`, if a record survives. Missing and
+    /// unreadable are one answer; `sweeps` says why.
+    ///
+    /// Keyed by the ward and not by an author, because a sweep lists a ward:
+    /// every lane of `name` filed in that ward — one for a channel, every
+    /// member's for a room — is served by the one listing.
     ///
     /// # Errors
     ///
     /// [`SiteError::BadName`] when `name` is not usable as one.
-    pub fn swept(&self, name: &str, author: &Handle) -> Result<Option<Swept>, SiteError> {
-        let (filed, filed_sweep) = self.filed_sweep(name, author)?;
+    pub fn swept(&self, name: &str, ward: Ward) -> Result<Option<Swept>, SiteError> {
+        let (filed, filed_sweep) = self.filed_sweep(name, ward)?;
         Ok(sweeps::read(&self.root, &filed, &filed_sweep))
     }
 
-    /// Writes down the last sweep of `author`'s lane on `name`.
+    /// Writes down the last sweep of `ward` for `name`.
     ///
     /// # Errors
     ///
     /// [`SiteError::BadName`] when `name` is not usable as one, and
     /// [`SiteError::Local`] when the record cannot be written.
-    pub fn sweep_to(&self, name: &str, author: &Handle, swept: &Swept) -> Result<(), SiteError> {
-        let (filed, filed_sweep) = self.filed_sweep(name, author)?;
+    pub fn sweep_to(&self, name: &str, ward: Ward, swept: &Swept) -> Result<(), SiteError> {
+        let (filed, filed_sweep) = self.filed_sweep(name, ward)?;
         sweeps::write(&self.root, &filed, &filed_sweep, swept)
     }
 
@@ -228,8 +235,8 @@ impl Site {
     /// Deletes one channel record.
     ///
     /// This is the only destructive operation a site has, and what it destroys
-    /// is the channel secret: every address on that channel derives from it, so
-    /// a forgotten channel cannot be re-entered by any means, including a fresh
+    /// is the secret of a channel or a room: every address derives from it, so
+    /// a forgotten one cannot be re-entered by any means, including a fresh
     /// copy of the invitation that opened it.
     ///
     /// The revocation list is deliberately left alone. A revoked step has to
@@ -238,11 +245,17 @@ impl Site {
     ///
     /// # Errors
     ///
-    /// [`SiteError::UnknownChannel`] when there is no such channel, and
+    /// [`SiteError::UnknownChannel`] when there is no channel or room so called, and
     /// [`SiteError::Local`] when the file cannot be removed.
     pub fn forget(&self, name: &str) -> Result<(), SiteError> {
-        let path = self.channel_path(name)?;
-        match fs::remove_file(&path) {
+        let channel = fs::remove_file(self.channel_path(name)?);
+        let removed = match channel {
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                fs::remove_file(self.room_path(name)?)
+            }
+            other => other,
+        };
+        match removed {
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
                 Err(SiteError::UnknownChannel {
                     name: name.to_owned(),
@@ -266,26 +279,6 @@ impl Site {
                 Ok(())
             }
         }
-    }
-
-    /// Every channel name here, in a stable order.
-    ///
-    /// Each name is read out of its record, because the file is no longer named
-    /// after it. That costs one read per channel and buys the property the file
-    /// names used to give away; a listing is rare and short, and every caller of
-    /// this opens each record immediately afterwards anyway.
-    ///
-    /// # Errors
-    ///
-    /// [`SiteError::Local`] when a record cannot be read, and
-    /// [`SiteError::BadRecord`] when one does not decode.
-    pub fn names(&self) -> Result<Vec<String>, SiteError> {
-        let mut names = records::each(&self.root, "channels", "list the channels")?
-            .iter()
-            .map(|bytes| Channel::from_bytes(bytes).map(|channel| channel.name))
-            .collect::<Result<Vec<String>, SiteError>>()?;
-        names.sort();
-        Ok(names)
     }
 
     /// Every step this endpoint has revoked.
@@ -322,7 +315,7 @@ impl Site {
     /// that has never had one has never written a channel either.
     ///
     /// What it is called instead is [`naming::filed`]'s rule, not this one's.
-    fn filed(&self, name: &str) -> Result<Option<String>, SiteError> {
+    pub(crate) fn filed(&self, name: &str) -> Result<Option<String>, SiteError> {
         naming::check(name)?;
         Ok(self.seed()?.map(|seed| naming::filed(&seed, name)))
     }
@@ -331,6 +324,9 @@ impl Site {
             .root
             .join("channels")
             .join(self.filed_or_unknown(name)?))
+    }
+    pub(crate) fn room_path(&self, name: &str) -> Result<PathBuf, SiteError> {
+        Ok(self.root.join("rooms").join(self.filed_or_unknown(name)?))
     }
 
     /// What `name` is filed as, when a site with no identity means no such thing.
@@ -352,28 +348,27 @@ impl Site {
         name: &str,
         author: &Handle,
     ) -> Result<(String, String), SiteError> {
-        self.filed_as(name, author, naming::filed_author)
+        self.filed_as(name, |seed, filed| {
+            naming::filed_author(seed, filed, author)
+        })
     }
 
-    /// The two file names one author's sweep record on one channel is kept
-    /// under; the second differs from the cairn's so that no two files share
-    /// a name.
-    fn filed_sweep(&self, name: &str, author: &Handle) -> Result<(String, String), SiteError> {
-        self.filed_as(name, author, naming::filed_sweep)
+    /// The two file names one ward's sweep record for one name is kept under.
+    fn filed_sweep(&self, name: &str, ward: Ward) -> Result<(String, String), SiteError> {
+        self.filed_as(name, |seed, filed| naming::filed_sweep(seed, filed, ward))
     }
 
     fn filed_as(
         &self,
         name: &str,
-        author: &Handle,
-        within: fn(&[u8; 32], &str, &Handle) -> String,
+        within: impl FnOnce(&[u8; 32], &str) -> String,
     ) -> Result<(String, String), SiteError> {
         naming::check(name)?;
         let seed = self.seed()?.ok_or_else(|| SiteError::UnknownChannel {
             name: name.to_owned(),
         })?;
         let filed = naming::filed(&seed, name);
-        let inner = within(&seed, &filed, author);
+        let inner = within(&seed, &filed);
         Ok((filed, inner))
     }
 }

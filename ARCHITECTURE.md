@@ -181,7 +181,7 @@ Dependencies point one way: `kernel` depends on nothing of ours, `kusanagi` on a
 | Limit | Applies to | What it bounds |
 |---|---|---|
 | **400 lines** | every text file in the repository; a binary carries no lines | how much has to be in your head to judge one line |
-| **4,000 lines** | each crate's `src/` | how large one idea may grow |
+| **5,000 lines** | each crate's `src/` | how large one idea may grow |
 | **25,000 lines** | every crate's `src/`, tests outside it | how much implementation there is to hold in mind |
 
 The file is the unit that actually gets opened — a reviewer opens one, an editor jumps
@@ -193,10 +193,10 @@ where it may stand. `Cargo.lock` and `LICENSE` are outside the count because the
 contents are not written here; what each crate spends is what `just budget` prints,
 never copied here, because a number kept in two places drifts.
 
-**The crate limit moved once, 2,500 to 4,000, because the two are met by different
-acts.** Splitting answers a long file and never a full crate, whose number counts every
-`.rs` under `src/`: there the answers are deleting a feature or moving one to a crate
-with a reason to hold it — which is what `vault` is.
+**The crate limit moved twice, 2,500 to 4,000 to 5,000, because the two are met by
+different acts.** Splitting answers a long file and never a full crate, whose number counts
+every `.rs` under `src/`: there the answers are deleting a feature or moving one to a crate
+with a reason to hold it — which is what `vault` and `walk` are; 5,000 was ruled when neither applied (F8).
 
 Five crates exist because the budget forced a split, argued where it happened rather
 than here: `kusanagi` gave up the disk formats to `site` (`site-SPEC.md` §3), the

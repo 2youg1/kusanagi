@@ -11,6 +11,7 @@
 //! let a second front end — a socket, an MCP server — arrive without teaching the
 //! verbs to a second parser.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use kusanagi_grant::Abilities;
@@ -195,6 +196,43 @@ pub enum Request {
     Forget {
         /// Which channel.
         name: String,
+    },
+    /// Open a room and record it here: a shared secret, a ward every member
+    /// sweeps, and a roster signed by this endpoint as founder.
+    Room {
+        /// What to call the room here.
+        name: String,
+        /// Where the drops will live.
+        waypoint: String,
+    },
+    /// Mint the one line that invites somebody into a room.
+    RoomInvite {
+        /// Which room.
+        name: String,
+        /// How long the invitation remains valid.
+        lifetime: u64,
+    },
+    /// Accept a room invitation, read from stdin.
+    RoomJoin {
+        /// The invitation, as one line.
+        invite: String,
+        /// What to call the room here.
+        name: String,
+    },
+    /// Append one segment to this endpoint's stream in a room.
+    RoomSend {
+        /// Which room.
+        name: String,
+        /// What the segment carries, as bytes.
+        payload: Vec<u8>,
+    },
+    /// Read a room: sweep its ward once, verify every member's stream.
+    RoomRead {
+        /// Which room.
+        name: String,
+        /// Per author handle, the height the caller already holds; an author
+        /// not named here is reported whole.
+        after: BTreeMap<String, u64>,
     },
     /// Measure what a host actually does, and issue a certificate.
     Doctor {

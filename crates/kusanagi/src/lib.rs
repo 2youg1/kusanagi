@@ -12,6 +12,10 @@
 //! a shell script nobody runs.
 
 mod assembly;
+mod assembly_backup;
+mod assembly_here;
+mod chamber;
+mod chamber_talk;
 mod greeting;
 mod membership;
 mod port;
@@ -21,13 +25,14 @@ mod settings;
 mod settle;
 mod slot;
 mod tools;
+mod tools_args;
+mod tools_room;
 mod traffic;
+mod traffic_fanout;
 mod world;
 
 pub use assembly::{HOST_ADDRESS, run};
-pub use kusanagi_walk::{
-    CAP, DIGITS, Held, Lane, Reach, Source, Sweeping, WINDOW, Walked, peek, track, walk,
-};
+pub use kusanagi_walk::{CAP, DIGITS, Held, Lane, Reach, Sweeping, Walked, peek, track, track_all};
 pub use port::serve;
 pub use request::{Habit, Naming, Request, Whose};
 pub use roots::{default_host_dir, default_root};

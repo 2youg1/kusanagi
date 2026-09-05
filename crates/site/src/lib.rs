@@ -22,9 +22,11 @@
 
 mod alias;
 mod archive;
+mod archive_restore;
 mod blocks;
 mod cadence;
 mod cairns;
+mod chamber;
 mod channel;
 mod crowd;
 mod egress;
@@ -40,6 +42,7 @@ mod records;
 mod retention;
 mod revoked;
 mod rhythm;
+mod room;
 mod roster;
 mod site;
 mod slots;
@@ -57,6 +60,7 @@ pub use offer::Offer;
 pub use outbox::Queued;
 pub use peer::Peer;
 pub use retention::Retention;
+pub use room::{Room, RoomOffer};
 pub use roster::Roster;
 pub use site::Site;
 pub use standing::Standing;

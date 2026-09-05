@@ -34,10 +34,17 @@ pub enum Purpose {
     /// sees a stream that never goes quiet. It is never reported, so a reader
     /// sees only what somebody meant.
     Filler,
+    /// The founder re-signed the room roster, and every member replaces theirs.
+    ///
+    /// It is sealed, chained and counted exactly like a message, so a roster
+    /// change is indistinguishable on the wire from a sentence. It is never
+    /// reported as a message: a reader replaces its roster and shows nothing.
+    Roster,
 }
 
 const PURPOSE_MESSAGE: u8 = 0;
 const PURPOSE_FILLER: u8 = 1;
+const PURPOSE_ROSTER: u8 = 2;
 
 impl Purpose {
     /// The byte this purpose is written as.
@@ -45,6 +52,7 @@ impl Purpose {
         match self {
             Self::Message => PURPOSE_MESSAGE,
             Self::Filler => PURPOSE_FILLER,
+            Self::Roster => PURPOSE_ROSTER,
         }
     }
 
@@ -53,6 +61,7 @@ impl Purpose {
         match byte {
             PURPOSE_MESSAGE => Ok(Self::Message),
             PURPOSE_FILLER => Ok(Self::Filler),
+            PURPOSE_ROSTER => Ok(Self::Roster),
             other => Err(SegmentError::UnknownPurpose { purpose: other }),
         }
     }
@@ -95,6 +104,20 @@ impl Freight {
         Ok(Self {
             payload: Payload::new(Vec::new())?,
             purpose: Purpose::Filler,
+            acknowledged: 0,
+        })
+    }
+
+    /// A roster the founder re-signed, carried so every member replaces theirs.
+    ///
+    /// # Errors
+    ///
+    /// [`SegmentError::PayloadTooLarge`] when the bytes exceed
+    /// [`MAX_PAYLOAD`](crate::MAX_PAYLOAD).
+    pub fn roster(payload: Vec<u8>) -> Result<Self, SegmentError> {
+        Ok(Self {
+            payload: Payload::new(payload)?,
+            purpose: Purpose::Roster,
             acknowledged: 0,
         })
     }

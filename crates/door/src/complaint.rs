@@ -16,7 +16,7 @@
 
 use kusanagi_chain::ChainError;
 use kusanagi_grant::GrantError;
-use kusanagi_kernel::{AliasError, SegmentError, WaypointError};
+use kusanagi_kernel::{AliasError, RosterError, SegmentError, WaypointError};
 use kusanagi_seal::OpenFailed;
 use kusanagi_site::SiteError;
 use kusanagi_waypoint::LocatorError;
@@ -44,6 +44,9 @@ pub enum Complaint {
     /// A name a peer declared was not signed by their key, or is not a name.
     #[error(transparent)]
     Alias(#[from] AliasError),
+    /// A room roster is not one, names too many, or was not signed by its founder.
+    #[error(transparent)]
+    Roster(#[from] RosterError),
     /// The waypoint locator does not name a place.
     #[error(transparent)]
     Locator(#[from] LocatorError),
@@ -143,8 +146,8 @@ pub enum Complaint {
         /// The name that was asked for.
         name: String,
     },
-    /// A channel by that name already exists.
-    #[error("a channel called `{name}` is already here")]
+    /// A channel or a room by that name already exists; the two share one name space.
+    #[error("a channel or room called `{name}` is already here")]
     ChannelExists {
         /// The name that was asked for.
         name: String,
@@ -233,6 +236,12 @@ pub enum Complaint {
     )]
     CannotRevokeRoot {
         /// Which channel.
+        name: String,
+    },
+    /// Only the founder of a room signs its roster, so only the founder invites.
+    #[error("only the founder of `{name}` can invite into it; ask them for the line")]
+    NotTheFounder {
+        /// Which room.
         name: String,
     },
     /// A segment on a peer's stream was not written by that peer.
@@ -332,6 +341,8 @@ impl Complaint {
             Self::Sealed(error) => error.code(),
             Self::Grant(error) => error.code(),
             Self::Alias(_) => "kusanagi.bad_name",
+            Self::Roster(_) => "kusanagi.bad_roster",
+            Self::NotTheFounder { .. } => "kusanagi.not_the_founder",
             Self::Locator(error) => error.code(),
             Self::Listening { .. } => "kusanagi.address_unavailable",
             Self::Local { .. } => "kusanagi.local",

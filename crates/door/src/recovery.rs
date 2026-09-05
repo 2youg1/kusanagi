@@ -31,6 +31,37 @@ fn locator_trouble(error: &LocatorError) -> String {
     }
 }
 
+/// What to do when an invitation is not one this endpoint can act on.
+///
+/// The advice for a malformed one names the pipe because there is no other way
+/// in: an invitation carries the channel secret, so it is not an argument, and
+/// telling somebody to "copy the invitation" without saying where to put it
+/// sends them looking for a flag that does not exist.
+fn invitation_trouble(complaint: &Complaint) -> String {
+    match complaint {
+        Complaint::BadInvitation { .. } => {
+            "pipe the whole invitation in, including the \
+             `kusanagi2:` prefix: pbpaste | kusanagi join --name NAME"
+        }
+        Complaint::NoInvitation => {
+            "ask for a fresh invitation: this one has expired, \
+             or the host no longer holds what it points at"
+        }
+        Complaint::InviteSpent => {
+            "ask for a fresh invitation; each one admits exactly one endpoint"
+        }
+        Complaint::OwnInvitation => {
+            "hand this line to the endpoint you mean to admit; \
+             the channel it opens is already here under the name you gave it"
+        }
+        Complaint::NotTheFounder { .. } => {
+            "ask the founder to run `kusanagi room-invite` and hand you the line"
+        }
+        _ => "ask for a fresh invitation",
+    }
+    .to_owned()
+}
+
 /// What to do when the history a read needs is not where a read looks.
 fn history_trouble(complaint: &Complaint) -> String {
     match complaint {
@@ -53,6 +84,7 @@ impl Complaint {
             | Self::Chain(_)
             | Self::Sealed(_)
             | Self::Alias(_)
+            | Self::Roster(_)
             | Self::NotThePeer { .. }
             | Self::BadGreeting { .. } => {
                 "the bytes at that address are not what this channel expects; \
@@ -82,22 +114,14 @@ impl Complaint {
             Self::BadName { .. } => "pick a name of 1 to 32 characters from a-z, 0-9 and -, \
                  not starting with -, and run the command again"
                 .to_owned(),
-            // The advice names the pipe because there is no other way in. An
-            // invitation carries the channel secret, so it is not an argument,
-            // and telling somebody to "copy the invitation" without saying where
-            // to put it sends them looking for a flag that does not exist.
-            Self::BadInvitation { .. } => "pipe the whole invitation in, including the \
-                 `kusanagi2:` prefix: pbpaste | kusanagi join --name NAME"
-                .to_owned(),
+            Self::BadInvitation { .. }
+            | Self::NoInvitation
+            | Self::InviteSpent
+            | Self::OwnInvitation
+            | Self::NotTheFounder { .. } => invitation_trouble(self),
             Self::BadRecord { .. } => "this file is not one this build can read; keep it and \
                  report it, because a record written here should not fail to parse"
                 .to_owned(),
-            Self::NoInvitation => "ask for a fresh invitation: this one has expired, \
-                 or the host no longer holds what it points at"
-                .to_owned(),
-            Self::InviteSpent => {
-                "ask for a fresh invitation; each one admits exactly one endpoint".to_owned()
-            }
             // The second command names its argument as a slot rather than
             // standing alone. `kusanagi import` by itself is advice nobody can
             // take — it reads a key and an archive from a pipe, so typing it at a
@@ -118,10 +142,8 @@ impl Complaint {
             Self::BadRecovery => "check the recovery key: it is the 64 hexadecimal digits \
                  `kusanagi export` printed once, and it goes in on the first line of stdin"
                 .to_owned(),
-            Self::OwnInvitation => "hand this line to the endpoint you mean to admit; \
-                 the channel it opens is already here under the name you gave it"
-                .to_owned(),
-            Self::ProxyRequired => "set KUSANAGI_PROXY=socks5://127.0.0.1:9050 (or another proxy) and run                  the command again; `kusanagi proxy --optional` lifts the requirement"
+            Self::ProxyRequired => "set KUSANAGI_PROXY=socks5://127.0.0.1:9050 (or another proxy) \
+                 and run the command again; `kusanagi proxy --optional` lifts the requirement"
                 .to_owned(),
             Self::CannotRevokeRoot { name } => {
                 format!(

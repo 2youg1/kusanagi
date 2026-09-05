@@ -9,7 +9,7 @@
 //! and [`filed`] says what appears on the disk when they take one — and the
 //! answer to the second is never the first.
 
-use kusanagi_kernel::{Handle, Hex};
+use kusanagi_kernel::{Handle, Hex, Ward};
 
 use crate::error::SiteError;
 
@@ -22,7 +22,7 @@ const MAX_NAME: usize = 32;
 /// forever, so two derivations from one seed can never collide.
 const FILING: &str = "kusanagi 2026 channel file name v1";
 const AUTHOR_FILING: &str = "kusanagi 2026 author file name v1";
-const SWEEP_FILING: &str = "kusanagi 2026 sweep file name v1";
+const SWEEP_FILING: &str = "kusanagi 2026 sweep file name v2";
 
 /// Refuses anything that is not plainly a name.
 ///
@@ -79,24 +79,24 @@ pub(crate) fn filed(seed: &[u8; 32], name: &str) -> String {
 /// channel's filed name, the same author leaves a different name on every
 /// channel and every site, and a listing gives up a count and nothing else.
 pub(crate) fn filed_author(seed: &[u8; 32], filed: &str, author: &Handle) -> String {
-    lane_name(AUTHOR_FILING, seed, filed, author)
+    within(AUTHOR_FILING, seed, filed, author.as_bytes())
 }
 
-/// What this site calls the file that holds one author's sweep record on the
-/// channel filed as `filed`.
+/// What this site calls the file that holds one ward's sweep record for the
+/// channel or room filed as `filed`.
 ///
 /// A different key from [`filed_author`] on purpose: a cairn and a sweep record
-/// for one lane must not share a name, or whoever holds the disk can pair the
-/// two and learn that two files describe one stream. No two files in a site
-/// share a name; `adversary/` holds that as a property.
-pub(crate) fn filed_sweep(seed: &[u8; 32], filed: &str, author: &Handle) -> String {
-    lane_name(SWEEP_FILING, seed, filed, author)
+/// for one stream must not share a name, or whoever holds the disk can pair
+/// the two and learn that two files describe one stream. No two files in a
+/// site share a name; `adversary/` holds that as a property.
+pub(crate) fn filed_sweep(seed: &[u8; 32], filed: &str, ward: Ward) -> String {
+    within(SWEEP_FILING, seed, filed, &ward.bits().to_be_bytes())
 }
 
-fn lane_name(context: &str, seed: &[u8; 32], filed: &str, author: &Handle) -> String {
+fn within(context: &str, seed: &[u8; 32], filed: &str, under: &[u8]) -> String {
     let key = blake3::derive_key(context, seed);
     let mut hasher = blake3::Hasher::new_keyed(&key);
     hasher.update(filed.as_bytes());
-    hasher.update(author.as_bytes());
+    hasher.update(under);
     Hex(hasher.finalize().as_bytes()).to_string()
 }

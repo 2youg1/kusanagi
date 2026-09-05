@@ -158,11 +158,8 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 **步骤 5：两端都检查权限。** `send` 检查自己的 standing，`read` 检查 peer 的 standing 是否允许 Send。第二项才是真正的执行点：撤销之后，对方写的东西在**这一侧**被拒，而不需要对方或宿主的配合。
 **步骤 6：`host` 的进度写 stderr。** 一个永不返回的动词不能用「返回值即结果」的形状；stdout 只承载结果，绑定地址写在 stderr。
 **步骤 6b：`--bind` 收三种写法，它们在 `assembly::listening` 一处归一。**
-`HOST:PORT` 原样交给操作系统；光一个端口号（`--bind 9000`）补成 `127.0.0.1:9000`；
-`--bind 0` 是后者的特例，让操作系统挑一个空闲端口，实际地址照样印在 stderr。
-**补全的是 `127.0.0.1` 而不是 `0.0.0.0`**：少打五个字的便利不应当把一台宿主放上局域网，
-面向外部监听要把那个意图完整打出来。无法监听时的报告是 `kusanagi.address_unavailable`，
-而不再是 `kusanagi.local`——后者的恢复文案叫人去检查 `--root`。
+`HOST:PORT` 原样交系统；光端口号补成 `127.0.0.1:9000`（不是 `0.0.0.0`：少打五个字的便利不该把宿主放上局域网）；
+`--bind 0` 让系统挑空闲端口，实际地址印 stderr。被占报 `kusanagi.address_unavailable`。
 
 **步骤 6c：扇出是 n 次单发，不是一个新的写入路径。** `traffic::appended` 抽出“追加一段”这件事本身，
 `send` 与 `fanout` 各自把它的结果说成自己那种形状。**一个成员失败不是这次发送失败**：
@@ -174,26 +171,16 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 因为写名单的人就是能修它的人。而写完之后才被 `forget` 掉的成员仍会在扇出时失败——那是报告里的一行，
 不是整次发送的拒绝。
 
-**步骤 6e：`doctor --here` 与 `doctor <waypoint>` 是两个 `Request`，不是一个带旗标的请求（K8）。**
-一个问别人的承诺、要走网络、产出证书；另一个问本机、什么都不要、产出四个事实。
-报告里**没有一个字节来自站点**：路径、三个是否题、以及一个任何人拿到二进制都能自己算的哈希——
-因为它存在的意义就是“能直接贴进 issue”，`tests/here.rs` 把这一条写成了对站点下每一个文件的断言。
-**代理只报“设了没有”而不报值**：代理地址说明一个人信任哪个网络，那正是这份报告要护住的东西。
-二进制哈希用 **BLAKE3 而不是 SHA-256**：本仓所有地方都用它，而一个不需要第二个工具的校验步骤
-比“能对上 `sha256sum` 的输出”值钱。
+**步骤 6e：`doctor --here` 与 `doctor <waypoint>` 是两个 `Request`（K8）。**
+一个问别人的承诺、走网络、产出证书；另一个问本机、产出四个事实。报告里**没有一个字节来自站点**
+（路径、三个是否题、一个谁都能算的 BLAKE3）；代理只报“设了没有”而不报值。
 
 **步骤 7：通道名当作路径分量来校验，不做转义。** 只放行 `a-z0-9-`、长度 1..=32。转义容易写错的方式全都始于「允许一点有趣的东西」。
 **步骤 8：载荷是字节，不是字符串。** `Request::Send` 收 `Vec<u8>`；命令行给了文本就用它的字节，没给就从 stdin 读到 EOF。理由不是便利：代理要发的东西里有引号、换行与非 UTF-8 字节，而 argv 既有长度上限又要经过一层 shell 引用规则。**入口有界**：最多读 `MAX_PAYLOAD + 1` 字节，多出的那一个字节让 kernel 给出 `segment.payload_too_large`，而不是让本进程去吃一个无界的管道。
 
-**步骤 8b：取回是有界并发的，验证仍严格按序（I2）。** `walk` 以 1→2→4→8 的窗口一次性要多个地址，
-宿主于是看到一批同时在飞的请求，而不是「N 答完再问 N+1」那条链。三件事各自成立：
-
-1. **窗口从 1 开始**，所以一次轮询仍然只点名一个地址、只花一个请求——`unwatched.rs` 那两条旧断言一字未改。
-2. **窗口有上限 8**，所以法则 2 成立：同时持有的 drop 数是常数，与流高无关。
-3. **追赶时会多问一个窗口**，因此宿主只能把活跃边缘定位到一个窗口以内——不是代价，是收益。
-
-测试断言的是**最大并发度 > 1**，不是地址到达顺序：后者由调度器决定，测它就是在测调度器。
-接口上多了一条 `Sync` 约束（`walk` / `track` 的 `impl Waypoint + Sync`），代价是测试里的假宿主要用 `Mutex` 而不是 `RefCell`。
+**步骤 8b：取回是有界并发的，验证仍严格按序（I2）。** W1 之后并发发生在 `Sweeping::bin`：一个 bin 里列举新增的对象同时在飞，
+宿主看到「一个 bin 被取」而不是一串地址；验证由每条 lane 的 `Stepping` 按高度顺序做。从前的 1→2→4→8 地址窗口随 `Source` seam 一起删除
+（它只服务按地址取的路径，而那条路径在生产里已不存在）。接口保留 `Sync`，假宿主用 `Mutex`。
 
 **步骤 9：`--after` 只剪报告，不剪验证。** 链仍从创世段逐段验证（`ARCHITECTURE.md` 的读取契约），`--after` 只决定哪几段进入 `segments`。它省的是输出与调用方的比对，**不省请求钱**——把它写成省钱会诱使人以为验证变短了。
 
@@ -214,9 +201,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 已撤销的 grant 复活。它删掉的是通道密钥，所以那条通道**再也回不去**，这句话必须
 出现在散文输出里。
 
-**步骤 14：名字与正文都能不进 argv，机制只有一条。** 命令行是公开的——同机器任何账户在进程运行期间读得到别人的 argv，shell 事后还留一份。`ARCHITECTURE.md` §8 为邀请裁过这件事，本步只是把同一条裁决推广到它的同类，而**通道名泄漏的东西比邀请更重**：邀请泄漏一次入网机会，`send --to bob` 每发一条消息就泄漏一次「谁在跟谁说话」——正是 §3 属性 2a/2b 用地址派生去藏的关系图。
-
-规则一条：**名字旗标取值 `-`，即 stdin 第一行是名字，其余仍是该动词本来就要从 stdin 读的东西。** 于是 `read`/`revoke`/`forget`/`invite` 的管道里只有一行名字，`send` 的管道里是名字加正文，`join` 的管道里是名字加邀请，四种形状共用一个 `split_name`。
+**步骤 14：名字与正文都能不进 argv，机制只有一条。** 命令行是公开的（同机器账户读得到 argv，shell 事后留一份），而**通道名泄漏的东西比邀请更重**：`send --to bob` 每发一条就泄漏一次关系图。规则一条：**名字旗标取值 `-`，即 stdin 第一行是名字**，其余仍是该动词本来要从 stdin 读的东西；`read`/`revoke`/`forget`/`invite` 管道里只有一行名字，`send` 里是名字加正文，`join` 里是名字加邀请，四种形状共用 `split_name`。
 
 **`--to -` 同时给出文本参数是拒绝，不是容忍。** 藏住名字而让正文留在命令行是半个修复，而一个读起来像整修的半修比不修更坏。
 
@@ -232,7 +217,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 | 名字含 `../`、`/`、大写、空格 | `kusanagi.malformed` |
 | peer 尚未加入就 `read` 或 `revoke` | `kusanagi.no_peer_yet` |
 | peer 就是根权威而试图 `revoke` | `kusanagi.cannot_revoke_root` |
-| **接受自己发出的邀请** | `kusanagi.own_invitation`。流由 `(secret, author)` 派生，所以自接会让一个端点拿到**同一条流的两个本地名字**，认出的 peer 是自己，于是 `read` 把刚写的东西当作对方说的递回来。**这一条是 `adversary/` 找出来的**，见 §2 第 17 条 |
+| **接受自己发出的邀请** | `kusanagi.own_invitation`。流由 `(secret, author)` 派生，自接让一个端点拿同一条流的两个本地名字，`read` 把刚写的当对方说的递回（`adversary/` 找出，见 §2.17） |
 | 对方流上出现别人签名的段 | `kusanagi.not_the_peer` |
 | 下一个地址已被占 | `kusanagi.drop_taken`，并给出重读后重发的命令 |
 | 通道文件版本不认识 | 拒绝而不是猜 |
@@ -241,13 +226,13 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 | 名字旗标是 `-` 而 stdin 第一行为空或不是文本 | `kusanagi.malformed`（`BadName`），不把空名字送进下一层 |
 | 名字旗标是 `-` 而管道里只有名字没有正文 | 照发。空载荷是合法的段，与「stdin 给了零字节」同一条规则 |
 | `send --to -` 又给了文本参数 | `kusanagi.argument`。见 §10 步骤 14 |
-| `join` 的 stdin 为空或不是邀请 | `kusanagi.malformed`，且恢复命令**必须提到管道**——只说「拷贝整条邀请」会把人送去找一个不存在的参数 |
-| `join` 的 stdin 超过 16 KiB | 读到上限就停、拒绝并退出。父进程因此会拿到 EPIPE，**那正是上限生效的证据** |
+| `join` 的 stdin 为空或不是邀请 | `kusanagi.malformed`，恢复命令**必须提到管道** |
+| `join` 的 stdin 超过 16 KiB | 读到上限就停、拒绝并退出（父进程拿 EPIPE，即上限生效的证据） |
 | stdin 给了超过 `MAX_PAYLOAD` | `segment.payload_too_large`，由 kernel 判定，本层不重复那条规则 |
 | stdin 给了零字节 | 照发。空载荷是合法的段，拒绝它需要一条没人写过的规则 |
 | `--after H` 中 H ≥ 链头 | `segments` 为空而 `height` 照报——这正是轮询者要的那一条回答 |
 | `--can` 里出现不认识的词 | `kusanagi.argument`，而不是静默地少授予一项 |
-| **命令行 clap 都解析不了**（`-root`、`rea`、缺子命令） | `kusanagi.argument`，退出码 1，`--json` 时仍是 JSON。**这条是 `adversary/` 的键盘性质找出来的**：原先它走 clap 自己的出口，退出码 2 且只有散文 |
+| **命令行 clap 都解析不了**（`-root`、`rea`、缺子命令） | `kusanagi.argument`，退出码 1，`--json` 时仍是 JSON（`adversary/` 键盘性质找出：原先走 clap 出口，码 2 且只有散文） |
 | `--help` / `--version` | 不是失败：照打到 stdout，退出码 0 |
 | 不带任何动词 | 打印帮助，退出码 0。人是在提问，不是在犯错 |
 | waypoint 写成 `ftp://…` 这类不认识的 scheme | `locator.unknown_scheme`，而不是当成一个相对目录去实测 |
@@ -269,7 +254,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 | 依赖 | 理由 |
 |---|---|
-| `clap` 4，`default-features = false` | 只在 `main.rs`；派生宏换来的帮助文本与错误信息值这一个依赖。**只开 `std`/`derive`/`help`/`usage`/`error-context`**：默认集合另外带来 `color`（anstream 等九个 crate，含一份 `windows-sys`）与 `suggestions`（strsim），换来的是彩色帮助与「你是不是想输入」。每一个 crate 都是一个能往这个二进制里写代码的人，`just deps` 报出这个数 |
+| `clap` 4，`default-features = false` | 只在 `main.rs`；派生宏换来的帮助文本值这一个依赖。**只开 `std`/`derive`/`help`/`usage`/`error-context`**：默认集合多带 `color`（九个 crate）与 `suggestions`，换的是彩色帮助与纠错提示；每个 crate 都是能往二进制写代码的人（`just deps`） |
 | `getrandom` 0.3 | 直接问操作系统要熵，中间不放生成器，就没有需要正确播种、重播种、fork 后重置的东西 |
 | `kusanagi-door` | 输出契约；`serde` / `serde_json` / `thiserror` 现在是它的依赖，不是本 crate 的 |
 
@@ -371,9 +356,9 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 **问题曾有两层。** 第一层：`walk` 从零走到第一个空地址，一次轮询把整条流的地址按升序连续报给主机（`unwatched.rs` 旧红灯：12 条消息点名 13 个地址）——`Reach` 与 cairn 关掉了它。第二层（事实 37）：即使只点名一个地址，主机也把该地址的**写者与读者配成一对**，Tor 只把这对从 IP 降到出口。D-20 关掉它：**读请求只是公开信息的函数。**
 
-**形状。** 键 = `period/ward/address`（`kernel::filing`）。读者每次 `read` 对自己的 ward 做 sweep：对 `[since, period(now)]` 的每个 period，`LIST period/ward/` → `GET` 列举里**上次没见过的每一个键**（`Sweeping::take`）→ 本机用 `keys.address(h+1)` 匹配（`Source::sealed` 按高度顺序问，找不到就加载下一个 period）→ 命中的走原有 `decode`/`Verifier` 路径一字不改。不命中的对象随进程消失，**不落盘**（法则 1：不建收件箱；`at_rest.rs` 的封闭表登记了 `sweeps/` 这一种文件，内容只有 period 与宿主自己列举出来的键名）。
+**形状。** 键 = `period/ward/address`（`kernel::filing`）。读者每次 `read` 对自己的 ward 做 sweep：对 `[since, period(now)]` 的每个 period，`LIST` → `GET` 列举新增的键 → 本机按地址匹配 → 命中的走原有 `decode`/`Verifier` 路径一字不改。不命中的对象随进程消失，**不落盘**（法则 1；`at_rest.rs` 封闭表登记 `sweeps/`）。
 
-**两条记录，两个时刻。** cairn 记「验证到哪」，`sweeps/<filed>/<author>`（`site::Swept`）记「扫到哪个 period、那个 bin 当时列出了哪些键」。前者在高度移动时写；后者在列举变化时写；同一 period 内空轮询两者都不写（`a_poll_that_finds_nothing_writes_nothing`）。**只取列举新增的键**是性能的关键：一次轮询的字节 = 这个 ward 十分钟内新到的对象数 × 128 KiB，而不是整个 bin；决策只依赖主机先后两次给出的公开列举，同 ward 的每个读者做同样的事，主机学不到「谁要哪个」。写者 `put` 成功后本机把自己的键并进记录（`Swept::including`），下一次不为自己写的那一个 drop 重下整个 bin。
+**两条记录，两个时刻。** cairn 记「验证到哪」，`sweeps/<filed>/<author>`（`site::Swept`）记「扫到哪个 period、那个 bin 当时列出了哪些键」。前者在高度移动时写；后者在列举变化时写；同一 period 内空轮询两者都不写（`a_poll_that_finds_nothing_writes_nothing`）。**只取列举新增的键**是性能的关键：一次轮询的字节 = 该 ward 十分钟内新到对象数 × 128 KiB；决策只依赖主机先后两次公开列举，同 ward 读者做同样的事。写者 `put` 成功后本机把自己的键并进记录（`Swept::including`）。
 
 **since 从哪来。** 续读：sweep 记录的 `through`（含，因为那个 bin 到 period 结束前还在长）；无记录或整链行走：通道记录 v6 的 `opened`（invite/join 当时的 period）。丢掉全部 cairn 与 sweep 记录 → 从 `opened` 重扫每个 bin，**代价是 bin 数，永不是消息**（`losing_every_cairn_changes_what_a_read_costs_and_nothing_else`）。
 
@@ -381,20 +366,13 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 **释放不再 DELETE。** `settle` 只烧钥匙：DELETE 会点名地址，且 drop 归档在写入时的 period 而作者不记它。字节留给宿主的生命周期（D-20 性质 4；`released.rs` 断言三个 drop 仍在）。
 
-**宽度是站点记录，不是旗标。** `kusanagi sweep --digits N`（0–4，默认 4）记在 `sweep` 文件里；调度任务与终端前的人扫同样宽，否则改过宽度的那个读者就是 ward 里请求形状变了的那一个。少一位 = 十六倍的 ward、十六倍的带宽；`ward_overfull` 是它的天然上限。判据 `a_shorter_width_lists_fewer_digits_and_still_finds_every_segment`。
+**宽度是站点记录，不是旗标。** `kusanagi sweep --digits N`（0–4，默认 4）记在 `sweep` 文件里；调度任务与终端前的人扫同样宽。少一位 = 十六倍 ward、十六倍带宽；`ward_overfull` 是天然上限。
 
 **诚实边界。** ① 写者时钟比读者慢超过一个 period（10 min）跨界写入，读者已把 `through` 推过去，那段要等下一次列举变化才被取；② 同一 bin 超过 `CAP`（256）个对象 → `kusanagi.ward_overfull`，拒绝而非泄漏；③ 首次 read/send 在邀请后很久才发生时，要列举 `opened` 以来的每个 period（一周 = 1 008 个请求，只付一次）。
 
 **判据。** 白盒 `unwatched.rs` 四条（没列举过的键不 GET；空轮询只有列举、不随流长变贵；同 ward 两个读者请求集合相同；send 只列举 peer 的 ward）；黑盒 `adversary/Sweep.hs` 两条（H20 读取的 GET 集合 == bin 全部对象含陌生人、报告不变；H21 无请求点名列举之外的地址、无 DELETE）。
 
-**`Reach`——编码调用方的需求，而不是机制。**
-
-```rust
-pub enum Reach { Whole, Above(u64), Head }
-pub fn track(site, name, waypoint, stream, author, reach) -> Result<Walked, Complaint>;
-pub fn walk(waypoint, stream, author, name, from: Option<Cairn>) -> Result<Walked, Complaint>;
-impl Walked { pub fn cairn(&self) -> Option<Cairn>; pub fn extended(&self, &Segment) -> Result<Option<Cairn>, Complaint>; }
-```
+**`Reach`——编码调用方的需求，而不是机制。** `track`/`walk`/`Walked` 签名见 `walk-SPEC.md` §1。
 
 「往回取多远」由需求与磁盘上的 cairn 共同推出，而这个推导只应存在于一处。**`Above(floor)` 在 cairn 高于水位时必须退回整链行走**：中间那些段是调用方要求看的，续读永远不会取回它们。这是本次改动最容易安静丢消息的地方，由 `a_read_that_shows_segments_shows_every_one_it_was_asked_for` 守住。
 
@@ -404,12 +382,19 @@ impl Walked { pub fn cairn(&self) -> Option<Cairn>; pub fn extended(&self, &Segm
 
 **一个动词只读一次身份。** `Signer::from_seed` 实测约 0.9 ms/次，`tick` 一次要经过三次；`appended` 与 `read` 收 `me: &Signer`，由调用方取一次往下传。filing key 缓存不做：整条路径约 0.2 ms，不值得让秘密在内存多停留。
 
-**`confirm`——只对整链行走做。** 续读不可能与它续的记录矛盾，因为它就从那里开始；整链行走可以，而那是主机唯一能靠「少给」说谎的形状：交回一条更短但验证完美的链，没有记忆的读者会相信。两种矛盾各自具名：流比记录短，或已读高度上的段换了一个。
+**`confirm`——只对整链行走做。** 续读从记录开始，不可能与它矛盾；整链行走可以——主机靠「少给」说谎的唯一形状：交回更短但验证完美的链。两种矛盾各自具名：流变短，或已读高度的段被换。
 
-**`Reach::Head` 不确认前驱。** 曾想在 `send` 前多 `peek` 一次记录的头，但那让每次 send 点名**两个相邻地址**，
-`unwatched.rs` 的 2b 断言咬红——隐私法则高于这道检查。真实形状是法则 1：有记忆的读者用 `--after` 续读照样验证，
-无记忆的整链行走得 `history_changed`（adversary `surface-SPEC` H19）。
+**`Reach::Head` 不确认前驱。** 曾想在 `send` 前多 `peek` 一次记录的头，但那让每次 send 点名**两个相邻地址**，`unwatched.rs` 的 2b 断言咬红——隐私法则高于这道检查。真实形状是法则 1：有记忆的读者用 `--after` 续读照样验证，无记忆的整链行走得 `history_changed`（H19）。
 
-**`Complaint::HistoryChanged`，码 `kusanagi.history_changed`。** 恢复命令指向 `kusanagi doctor <waypoint>`：只有 write-once 的主机能承诺这件事不发生，而这一台刚刚做了。
+**`Complaint::HistoryChanged`，码 `kusanagi.history_changed`。** 恢复指向 `kusanagi doctor <waypoint>`。由 `Lying.hs` 找到，`tests/lying.rs` 记住。
 
-由 `adversary/src/Kusanagi/Lying.hs` 找到，`crates/kusanagi/tests/lying.rs` 记住。
+---
+
+## 附：真正的房间（F8 · D-17 已裁决，W1 改写读代价）
+
+**房间 = 一份 founder 签名的名册 + 每个成员一条作者流，全体成员 sweep 同一个 ward；写 O(1)，读 O(1)。** 读 O(1) 由 `walk::track_all` 兑现：N 条 lane 共用一个 `Sweeping`，每个 period 列举一次、取一次新增，bin 在手时逐条 lane 能走多远走多远，全停才翻页——内存仍是一个 bin（法则 2），请求数与成员数无关（`room.rs::a_read_of_three_members_lists_the_host_as_often_as_a_read_of_one`）。sweep 记录因此改键为 `(name, ward)`（`SWEEP_FILING` v2；通道两条 lane 不同 ward 各一份，房间一份）。
+**形状（落地，与 Roadmap 原稿三处不同）。** ① 名册存**公钥**不是 handle（读端要用它验每条流），线上自定界 `count ‖ keys ‖ sig`，不走 `put_block` 的 u16 前缀——32 人是 87 572 字节，u16 会饱和截断（`room.rs` 有 32 人往返判据）。② 邀请 = 通道 offer 同法：`RoomOffer v2`（founder 公钥、ward、名册）密封在 rendezvous bin，邀请行携房间秘密与一次性 usher 种子；新成员在 usher 流高度 0 写下自己的公钥，founder 的下一次 `read --room` 把所有新到的人**一次**重签、以 `Purpose::Roster` 段写到自己流上（trail 证明，与消息段同形、可否认），成员读到即替换、永不报告；已消费的 usher 从记录删除。③ 只有 founder 能 `room-invite`（`kusanagi.not_the_founder`）：别人签的名册没人信，别人发的邀请永远进不了名册——**founder 是单点**，这是写明的边界，不是缺陷。`room_send` 不查名册：秘密即能力，未入册成员写的流在入册后从创世被读出。
+**杀进程不改结果。** 房间记录 v3 存 `roster_at`（名册取自 founder 流的高度）；读 founder lane 的 reach 取 `Above(min(after, roster_at))`，记录落后于 cairn 时自动退回整链行走，名册段不会被续读跳过。
+**动词。** `room`/`room-invite`/`room-join`/`room-send`/`room-read --after HANDLE=HEIGHT`（可重复；一个高度对 N 条流没有意义，故按作者给）；MCP `after` 为对象。`forget` 与 `holds` 认房间：房间名与通道名共一个命名空间（cairn 以 `(name, author)` 键，同名会互相继承高度）。
+**代价与边界（写进 README）。** 成员互知 handle；宿主见 N 条流与 rendezvous bin 里每邀请一个介绍对象（数得出邀请数）；上限 32；无踢人（换秘密只发给留下的人是形状，未实现）；房间无 L1 名字（名册只有钥匙）；大群等 MLS。
+**判据。** kernel `tests/roster.rs` ×2；site `room.rs` ×4（含 32 人、`roster_at`）；door `chamber.rs` ×2；kusanagi `tests/room.rs` ×3（三人互读 + 每作者 after、列举数与成员数无关、非 founder 被拒 + 命名空间）；adversary 两条（成员交出记录能列成员——明写的代价；宿主 grep 不到 handle）。

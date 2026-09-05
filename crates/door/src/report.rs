@@ -18,7 +18,7 @@ use serde::Serialize;
 
 use crate::fence::Fence;
 use crate::prose;
-use crate::rows::{Carried, Delivery, Entry, Grouping, Measured, Summary};
+use crate::rows::{Delivery, Entry, Grouping, Measured, Summary, Thread};
 
 /// The version of the shape a machine reads.
 ///
@@ -163,6 +163,54 @@ pub enum Outcome {
         /// Every segment, in order.
         segments: Vec<Entry>,
     },
+    /// A room was founded.
+    RoomFounded {
+        /// What the room is called here.
+        name: String,
+        /// Which bin of the host every member sweeps.
+        ward: String,
+        /// The founder's handle, the roster's only member.
+        founder: String,
+    },
+    /// An invitation into a room was minted.
+    RoomInvited {
+        /// Which room.
+        name: String,
+        /// The line to hand over. **This is a bearer credential.**
+        invite: String,
+        /// Four hexadecimal digits both ends compute, to read out in person.
+        check: String,
+        /// When it stops being accepted, in seconds since the Unix epoch.
+        expires_at: u64,
+    },
+    /// A room invitation was accepted.
+    RoomJoined {
+        /// What the room is called here.
+        name: String,
+        /// This endpoint's own handle.
+        handle: String,
+        /// The handle that founded the room.
+        founder: String,
+        /// Four hexadecimal digits both ends compute, to read out in person.
+        check: String,
+    },
+    /// A segment was appended to this endpoint's stream in a room.
+    RoomSent {
+        /// Which room.
+        name: String,
+        /// Its height on this endpoint's stream.
+        index: u64,
+        /// Where it was left.
+        address: String,
+    },
+    /// A room was read and verified, one author's stream per row.
+    Room {
+        /// Which room.
+        name: String,
+        /// One row per author, in roster order. **Read every row**: an author
+        /// that failed is an author who has not been heard.
+        threads: Vec<Thread>,
+    },
     /// A peer was cut off.
     Revoked {
         /// Which channel.
@@ -293,11 +341,7 @@ impl Outcome {
             height,
             segments: segments
                 .into_iter()
-                .map(|(index, acknowledged, payload)| Entry {
-                    index,
-                    acknowledged,
-                    carried: Carried::of(payload),
-                })
+                .map(|(index, acknowledged, payload)| Entry::of(index, acknowledged, payload))
                 .collect(),
         }
     }

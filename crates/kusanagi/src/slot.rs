@@ -33,7 +33,7 @@
 //! stream and the clock, so a killed process leaves nothing to reconcile.
 
 use kusanagi_door::{Complaint, Outcome};
-use kusanagi_kernel::{Instant, Purpose};
+use kusanagi_kernel::{Freight, Instant};
 use kusanagi_site::Site;
 
 use crate::assembly::signer as take_signer;
@@ -72,10 +72,11 @@ pub(crate) fn tick(site: &Site, name: &str, now: Instant) -> Result<Outcome, Com
         // the two skips this slot instead of writing twice in it; `site::slots`
         // says why that is the safer of the two wrong answers.
         site.claim_slot(name, slot)?;
-        let written = match &queued {
-            Some(waiting) => appended(site, &me, name, Purpose::Message, &waiting.payload, now)?,
-            None => appended(site, &me, name, Purpose::Filler, &[], now)?,
+        let freight = match &queued {
+            Some(waiting) => Freight::message(waiting.payload.clone())?,
+            None => Freight::filler()?,
         };
+        let written = appended(site, &me, name, freight, now)?;
         // Only once the host has it. A payload cleared before the write would be
         // a message the caller was told had been sent and that nobody will send.
         if let Some(waiting) = &queued {

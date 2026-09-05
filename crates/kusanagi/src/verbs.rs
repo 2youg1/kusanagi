@@ -142,6 +142,50 @@ pub(crate) enum Verb {
         #[arg(long, value_name = "NAME")]
         name: String,
     },
+    /// Open a room: one secret, one ward every member sweeps, one signed roster.
+    Room {
+        /// What to call the room here, or `-` to read it from stdin.
+        #[arg(long, value_name = "NAME")]
+        name: String,
+        /// Where the drops will live: a path, an http:// url, or s3://…
+        #[arg(long, value_name = "LOCATOR")]
+        waypoint: String,
+    },
+    /// Mint the one line that invites somebody into a room.
+    RoomInvite {
+        /// Which room, or `-` to read the name from stdin.
+        #[arg(long, value_name = "NAME")]
+        name: String,
+        /// How many seconds the invitation remains valid.
+        #[arg(long = "for", default_value_t = 604_800, value_name = "SECONDS")]
+        lifetime: u64,
+    },
+    /// Accept a room invitation, read from stdin.
+    RoomJoin {
+        /// What to call the room here, or `-` to read it from the first
+        /// line of stdin, ahead of the invitation.
+        #[arg(long, value_name = "NAME")]
+        name: String,
+    },
+    /// Append one segment to your stream in a room.
+    RoomSend {
+        /// Which room, or `-` to read the name from the first line of stdin
+        /// and the text from the rest of it.
+        #[arg(long, value_name = "NAME")]
+        name: String,
+        /// What the segment carries. Omit it to read the payload from stdin.
+        text: Option<String>,
+    },
+    /// Read a room: sweep its ward once, verify every member's stream.
+    RoomRead {
+        /// Which room, or `-` to read the name from stdin.
+        #[arg(long, value_name = "NAME")]
+        name: String,
+        /// Report only what follows HEIGHT on HANDLE's stream; repeat per
+        /// author. Every stream is verified in full either way.
+        #[arg(long, value_name = "HANDLE=HEIGHT")]
+        after: Vec<String>,
+    },
     /// Read the peer's stream on a channel, verifying it end to end.
     Read {
         /// Which channel, or `-` to read the name from stdin.

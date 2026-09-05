@@ -13,11 +13,12 @@
 //! of nothing the reader knows. Every reader of a ward makes the same requests,
 //! so the host can say a ward was read and not by whom for what.
 //!
-//! What the walk sees is unchanged. It asks for the sealed bytes at a height,
-//! as it always did; a [`Swept`] answers out of the bin it has taken rather
-//! than by asking the host, and moves on to the next period when the height is
-//! not in this one. **One period is held at a time** — law 2 — so catching up
-//! after a week costs a week of listings and never a week of memory.
+//! A sweep is a pass over the bins of one ward from one period through another,
+//! handed out one bin at a time. Whoever drives it matches the objects of the
+//! bin in hand against however many lanes it is walking — one for a channel,
+//! every member's for a room — and lets the bin go before taking the next.
+//! **One period is held at a time** — law 2 — so catching up after a week costs
+//! a week of listings and never a week of memory, whatever the number of lanes.
 //!
 //! **Only what the bin lists beyond the last sweep is fetched.** The keys the
 //! bin listed last time are kept beside the period (`site::sweeps`), and a poll
@@ -26,20 +27,17 @@
 //! served, so every reader of a ward that saw them makes it identically, and
 //! the host learns nothing from the fetches it does not see.
 //!
-//! Heights are asked for in order, and that order is what lets one period be
+//! Heights are matched in order, and that order is what lets one period be
 //! enough: a writer files each segment in the period it was written, so height
 //! `h+1` is never in an earlier bin than `h` unless the writer's clock ran
 //! backwards across a period boundary. That is the honest edge of this design,
 //! written in `kusanagi-SPEC.md` §11 rather than papered over.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use kusanagi_kernel::{Bin, DropAddr, Listing, Object, Period, Sweep, Ward, Waypoint};
 use kusanagi_site::Swept;
 
-use crate::lane::Lane;
-use crate::source::Source;
 use kusanagi_door::Complaint;
 
 /// How many hex digits of its ward a reader names when it has not said.
@@ -59,12 +57,16 @@ pub const DIGITS: u8 = Ward::DIGITS;
 /// bin and named nothing in it.
 pub const CAP: usize = 256;
 
+/// One bin as a sweep took it: what the host listed, and the sealed bytes of
+/// every object listed beyond the last sweep, by address.
+pub struct Taken {
+    /// What the bin listed, for whoever writes down how far the sweep got.
+    pub seen: Swept,
+    /// The sealed bytes fetched, keyed by address so a lane can claim its own.
+    pub held: HashMap<DropAddr, Vec<u8>>,
+}
+
 /// One reader's pass over the bins of its ward, from one period through another.
-///
-/// Answers [`Source::sealed`] out of whatever period it currently holds and
-/// loads the next when a height is not there. Interior mutability because a
-/// source is shared with the walk by reference; the lock is held for the length
-/// of one call and never across a request to the host.
 pub struct Sweeping<'a, P: Waypoint + Listing + Sync> {
     place: &'a P,
     ward: Ward,
@@ -72,22 +74,14 @@ pub struct Sweeping<'a, P: Waypoint + Listing + Sync> {
     through: Period,
     /// What the last sweep saw, so that a bin listed the same is not taken twice.
     known: Option<Swept>,
-    cursor: Mutex<Cursor>,
-}
-
-/// Where a sweep stands: the objects of the period in hand, the next period to
-/// load — none once the last one has been taken — and what the last listing
-/// held, for the record.
-struct Cursor {
-    held: HashMap<DropAddr, Vec<u8>>,
+    /// The next period to take; none once the last one has been.
     next: Option<Period>,
-    listed: Option<Swept>,
 }
 
 impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
     /// A sweep naming `digits` of `ward` on `place`, over every period from
     /// `since` through `through` inclusive, knowing what the last sweep saw.
-    /// Nothing is asked of the host until a height is.
+    /// Nothing is asked of the host until a bin is.
     pub fn over(
         place: &'a P,
         ward: Ward,
@@ -102,33 +96,34 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
             digits,
             through,
             known,
-            cursor: Mutex::new(Cursor {
-                held: HashMap::new(),
-                next: (since <= through).then_some(since),
-                listed: None,
-            }),
+            next: (since <= through).then_some(since),
         }
     }
 
-    /// What the last bin this sweep listed, for whoever writes down how far it
-    /// got. `None` until a height has been asked for.
-    ///
-    /// # Errors
-    ///
-    /// [`Complaint::Local`] when the sweep was abandoned mid-bin by a reader that
-    /// panicked, which is a state nothing should trust.
-    pub fn listed(&self) -> Result<Option<Swept>, Complaint> {
-        Ok(self.cursor.lock().map_err(|_| abandoned())?.listed.clone())
-    }
-
-    /// Lists one bin and takes what it lists beyond the last sweep of it — all
-    /// of it, when this lane has never swept this period.
+    /// The next bin of the sweep, or none once every period through the last
+    /// has been taken.
     ///
     /// # Errors
     ///
     /// [`Complaint::WardOverfull`] when the bin holds more than [`CAP`] objects,
     /// and whatever the host reports.
-    fn take(&self, period: Period) -> Result<(Swept, HashMap<DropAddr, Vec<u8>>), Complaint> {
+    pub fn take(&mut self) -> Result<Option<Taken>, Complaint> {
+        let Some(period) = self.next else {
+            return Ok(None);
+        };
+        // Past the last period of the sweep, or past the last period a `u64`
+        // can count, there is nothing left to take.
+        self.next = period
+            .count()
+            .checked_add(1)
+            .map(Period::from_count)
+            .filter(|after| *after <= self.through);
+        self.bin(period).map(Some)
+    }
+
+    /// Lists one bin and takes what it lists beyond the last sweep of it — all
+    /// of it, when this ward has never been swept in this period.
+    fn bin(&self, period: Period) -> Result<Taken, Complaint> {
         let sweep = Sweep::of(Bin::new(period, self.ward), self.digits);
         // Narrowed here rather than trusted there: an adapter that lists too
         // much is corrected by the one authority on what a sweep covers.
@@ -183,67 +178,6 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
                 held.insert(object.addr(), bytes);
             }
         }
-        Ok((seen, held))
-    }
-}
-
-impl<P: Waypoint + Listing + Sync> Source for Sweeping<'_, P> {
-    /// The sealed bytes at `width` heights from `from`, matched by address
-    /// against the bins of this sweep, loading the next period whenever the
-    /// height is not in the one in hand.
-    ///
-    /// Stops filling at the first height found nowhere, because the walk stops
-    /// there too and a height above it could only be reached by skipping one.
-    fn sealed(
-        &self,
-        lane: &Lane,
-        from: u64,
-        width: usize,
-    ) -> Result<Vec<Option<Vec<u8>>>, Complaint> {
-        let mut cursor = self.cursor.lock().map_err(|_| abandoned())?;
-        let mut found = Vec::with_capacity(width);
-        for step in 0..width {
-            let Some(index) = u64::try_from(step)
-                .ok()
-                .and_then(|step| from.checked_add(step))
-            else {
-                found.push(None);
-                continue;
-            };
-            let address = lane.keys.address(index);
-            let bytes = loop {
-                if let Some(bytes) = cursor.held.remove(&address) {
-                    break Some(bytes);
-                }
-                let Some(period) = cursor.next else {
-                    break None;
-                };
-                let (seen, held) = self.take(period)?;
-                cursor.held = held;
-                cursor.listed = Some(seen);
-                // Past the last period of the sweep, or past the last period a
-                // `u64` can count, there is nothing left to load.
-                cursor.next = period
-                    .count()
-                    .checked_add(1)
-                    .map(Period::from_count)
-                    .filter(|after| *after <= self.through);
-            };
-            let exhausted = bytes.is_none();
-            found.push(bytes);
-            if exhausted {
-                found.resize(width, None);
-                break;
-            }
-        }
-        Ok(found)
-    }
-}
-
-/// The failure of finding a sweep's lock poisoned.
-fn abandoned() -> Complaint {
-    Complaint::Local {
-        action: "resume a sweep",
-        source: std::io::Error::other("a sweep was abandoned mid-bin"),
+        Ok(Taken { seen, held })
     }
 }

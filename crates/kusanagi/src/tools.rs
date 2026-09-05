@@ -19,23 +19,24 @@
 
 use serde_json::{Value, json};
 
-use crate::request::{Habit, Naming, Request, Whose};
+use crate::request::{Request, Whose};
+use crate::tools_args::{abilities, habit, naming};
+use crate::tools_room::room_called;
 use kusanagi_door::Complaint;
-use kusanagi_grant::{Abilities, Ability};
 
 /// One tool as a catalogue entry.
-struct Tool {
-    name: &'static str,
-    about: &'static str,
+pub(crate) struct Tool {
+    pub(crate) name: &'static str,
+    pub(crate) about: &'static str,
     /// The JSON Schema of its arguments, and which of them are required.
-    schema: fn() -> Value,
+    pub(crate) schema: fn() -> Value,
 }
 
-fn text(about: &str) -> Value {
+pub(crate) fn text(about: &str) -> Value {
     json!({ "type": "string", "description": about })
 }
 
-fn object(properties: &Value, required: &[&str]) -> Value {
+pub(crate) fn object(properties: &Value, required: &[&str]) -> Value {
     json!({ "type": "object", "properties": properties, "required": required })
 }
 
@@ -209,10 +210,23 @@ const CATALOGUE: &[Tool] = &[
 ];
 
 /// The catalogue as `tools/list` answers it.
+///
+/// Room tools ride between `group` and `name`: the order `ported.rs` pins is
+/// the order an agent reads, and a room is used where a group is.
 pub(crate) fn catalogue() -> Value {
     Value::Array(
         CATALOGUE
             .iter()
+            .flat_map(|tool| {
+                if tool.name == "kusanagi_name" {
+                    crate::tools_room::ROOM_TOOLS
+                        .iter()
+                        .chain(std::iter::once(tool))
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![tool]
+                }
+            })
             .map(|tool| {
                 json!({
                     "name": tool.name,
@@ -225,7 +239,7 @@ pub(crate) fn catalogue() -> Value {
 }
 
 /// A required string argument, or a complaint naming what was missing.
-fn need<'a>(arguments: &'a Value, field: &'static str) -> Result<&'a str, Complaint> {
+pub(crate) fn need<'a>(arguments: &'a Value, field: &'static str) -> Result<&'a str, Complaint> {
     arguments
         .get(field)
         .and_then(Value::as_str)
@@ -243,39 +257,6 @@ fn need<'a>(arguments: &'a Value, field: &'static str) -> Result<&'a str, Compla
 /// [`Complaint::Argument`] when the tool is not one of these or an argument is
 /// missing or the wrong shape. Both arrive at the caller as an ordinary failed
 /// tool result carrying a stable code, which is what an agent can act on.
-/// What a `kusanagi_name` call means: `alias` sets, `clear` clears, neither asks.
-fn naming(arguments: &Value) -> Naming {
-    match arguments.get("alias").and_then(Value::as_str) {
-        Some(alias) => Naming::Set(alias.to_owned()),
-        None if arguments.get("clear").and_then(Value::as_bool) == Some(true) => Naming::Clear,
-        None => Naming::Ask,
-    }
-}
-
-/// The two habits a channel is opened with, as a call spells them.
-fn habit(arguments: &Value) -> Result<Habit, Complaint> {
-    Ok(Habit {
-        cadence: match arguments.get("every").and_then(Value::as_u64) {
-            None => kusanagi_site::Cadence::OnDemand,
-            Some(seconds) => kusanagi_site::Cadence::Slotted {
-                period: u32::try_from(seconds)
-                    .ok()
-                    .and_then(core::num::NonZeroU32::new)
-                    .ok_or(Complaint::Argument {
-                        what: "every",
-                        reason: "is a period in seconds, from 1 upwards".to_owned(),
-                        instead: "pass a whole number of seconds, or leave it out",
-                    })?,
-            },
-        },
-        retention: if arguments.get("release").and_then(Value::as_bool) == Some(true) {
-            kusanagi_site::Retention::ReleaseOnAck
-        } else {
-            kusanagi_site::Retention::Keep
-        },
-    })
-}
-
 pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint> {
     let habit = habit(arguments)?;
     Ok(match name {
@@ -316,6 +297,7 @@ pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint
         "kusanagi_tick" => Request::Tick {
             name: need(arguments, "name")?.to_owned(),
         },
+        name if name.starts_with("kusanagi_room") => room_called(name, arguments)?,
         "kusanagi_group" => Request::Group {
             name: need(arguments, "name")?.to_owned(),
             members: arguments
@@ -361,28 +343,4 @@ pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint
             });
         }
     })
-}
-
-/// Reads `send,read` into a set of abilities, defaulting to both.
-fn abilities(text: Option<&str>) -> Result<Abilities, Complaint> {
-    let mut abilities = Abilities::NONE;
-    for word in text
-        .unwrap_or("send,read")
-        .split(',')
-        .map(str::trim)
-        .filter(|word| !word.is_empty())
-    {
-        match word {
-            "send" => abilities = abilities.with(Ability::Send),
-            "read" => abilities = abilities.with(Ability::Read),
-            other => {
-                return Err(Complaint::Argument {
-                    what: "can",
-                    reason: format!("does not know the ability `{other}`"),
-                    instead: "pass a comma-separated list of send and read",
-                });
-            }
-        }
-    }
-    Ok(abilities)
 }

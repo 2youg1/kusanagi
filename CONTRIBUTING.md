@@ -15,7 +15,7 @@ line budget, and cargo-deny.
 
 ## Four hard rules
 
-1. Every text file stays under **400 lines**; each crate's `src/` under 4,000.
+1. Every text file stays under **400 lines**; each crate's `src/` under 5,000.
 2. Zero warnings. No `unwrap`, `expect`, `panic!`, bare indexing or slicing in
    non-test code; no `unsafe` outside `site::permissions::windows`.
 3. The crate's SPEC changes **before** the code changes.

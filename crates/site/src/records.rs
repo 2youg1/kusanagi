@@ -12,7 +12,10 @@
 use std::fs;
 use std::path::Path;
 
+use crate::channel::Channel;
 use crate::error::SiteError;
+use crate::room::Room;
+use crate::site::Site;
 use kusanagi_vault::{self as vault, Locked};
 
 /// The bytes of every record in `directory`, or none when it does not exist.
@@ -47,4 +50,44 @@ pub(crate) fn each(
         }
     }
     Ok(found)
+}
+
+impl Site {
+    /// Every channel name here, in a stable order.
+    ///
+    /// Each name is read out of its record, because the file is no longer
+    /// named after it. That costs one read per channel and buys the property
+    /// the file names used to give away; a listing is rare and short, and
+    /// every caller of this opens each record immediately afterwards anyway.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::Local`] when a record cannot be read, and
+    /// [`SiteError::BadRecord`] when one does not decode.
+    pub fn names(&self) -> Result<Vec<String>, SiteError> {
+        let mut names = each(self.root(), "channels", "list the channels")?
+            .iter()
+            .map(|bytes| Channel::from_bytes(bytes).map(|channel| channel.name))
+            .collect::<Result<Vec<String>, SiteError>>()?;
+        names.sort();
+        Ok(names)
+    }
+
+    /// Every room name here, in a stable order.
+    ///
+    /// Each name is read out of its record, because the file is no longer
+    /// named after it — the same rule as [`Site::names`], for the same reason.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::Local`] when a record cannot be read, and
+    /// [`SiteError::BadRecord`] when one does not decode.
+    pub fn room_names(&self) -> Result<Vec<String>, SiteError> {
+        let mut names = each(self.root(), "rooms", "list the rooms")?
+            .iter()
+            .map(|bytes| Room::from_bytes(bytes).map(|room| room.name))
+            .collect::<Result<Vec<String>, SiteError>>()?;
+        names.sort();
+        Ok(names)
+    }
 }

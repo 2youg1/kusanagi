@@ -14,11 +14,11 @@
 //! takes the instant it is at.
 
 mod lane;
-mod source;
+mod stepping;
 mod sweep;
 mod walk;
 
 pub use lane::{Lane, verified};
-pub use source::Source;
-pub use sweep::{CAP, DIGITS, Sweeping};
-pub use walk::{Held, Reach, WINDOW, Walked, peek, track, walk};
+pub use stepping::Held;
+pub use sweep::{CAP, DIGITS, Sweeping, Taken};
+pub use walk::{Reach, Walked, peek, track, track_all};

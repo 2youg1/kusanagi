@@ -25,22 +25,19 @@
 //! The key is `blake3::derive_key("kusanagi/backup/1", recovery)`, and the
 //! recovery key is 32 bytes the caller drew and showed to a person once.
 
-use kusanagi_chain::Cairn;
-use kusanagi_grant::StepId;
-use kusanagi_kernel::{Alias, Handle, Reader, Ward};
-use kusanagi_seal::{Fit, Ratchet, backup_key, open, seal};
+use kusanagi_kernel::Handle;
+use kusanagi_seal::{Fit, backup_key, open, seal};
 use zeroize::Zeroize as _;
 
 use crate::channel::Channel;
 use crate::error::SiteError;
-use crate::roster::Roster;
 use crate::site::Site;
 
 /// What every archive begins with, so that a wrong file is refused as one.
 const MAGIC: &[u8; 4] = b"KSNB";
 
 /// The archive layout this build writes and reads.
-const VERSION: u8 = 3;
+const VERSION: u8 = 4;
 
 /// What one entry in an archive is.
 ///
@@ -49,7 +46,7 @@ const VERSION: u8 = 3;
 /// half-restored.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-enum Kind {
+pub(crate) enum Kind {
     /// The identity: 32 bytes of seed, and the two-byte ward they read in.
     Identity = 1,
     /// One channel record, in the form `channel.rs` writes.
@@ -75,6 +72,8 @@ enum Kind {
     Outbox = 7,
     /// What this endpoint calls itself, as `alias.rs` records it.
     Alias = 8,
+    /// One room record, in the form `room.rs` writes.
+    Room = 9,
 }
 
 impl Kind {
@@ -89,10 +88,11 @@ impl Kind {
             Self::Ratchet => 6,
             Self::Outbox => 7,
             Self::Alias => 8,
+            Self::Room => 9,
         }
     }
 
-    const fn of(byte: u8) -> Option<Self> {
+    pub(crate) const fn of(byte: u8) -> Option<Self> {
         match byte {
             1 => Some(Self::Identity),
             2 => Some(Self::Channel),
@@ -102,6 +102,7 @@ impl Kind {
             6 => Some(Self::Ratchet),
             7 => Some(Self::Outbox),
             8 => Some(Self::Alias),
+            9 => Some(Self::Room),
             _ => None,
         }
     }
@@ -122,7 +123,7 @@ fn named(name: &str, rest: &[u8]) -> Result<Vec<u8>, SiteError> {
 }
 
 /// Reads that framing back.
-fn split_named(bytes: &[u8]) -> Result<(String, &[u8]), SiteError> {
+pub(crate) fn split_named(bytes: &[u8]) -> Result<(String, &[u8]), SiteError> {
     let (len, rest) = bytes
         .split_at_checked(2)
         .ok_or_else(|| malformed("an entry ends before its channel name"))?;
@@ -150,7 +151,7 @@ fn put(out: &mut Vec<u8>, kind: Kind, bytes: &[u8]) -> Result<(), SiteError> {
 }
 
 /// What a malformed archive says.
-fn malformed(reason: impl Into<String>) -> SiteError {
+pub(crate) fn malformed(reason: impl Into<String>) -> SiteError {
     SiteError::BadRecord {
         what: "an archive",
         reason: reason.into(),
@@ -213,6 +214,25 @@ pub fn export(site: &Site, recovery: &[u8; 32], nonce: [u8; 12]) -> Result<Vec<u
     for roster in site.groups()? {
         put(&mut plain, Kind::Group, &roster.to_bytes())?;
     }
+    // A room is not recomputable from anything either: its secret, its ward
+    // and its roster are decisions their owners made, and an archive that
+    // dropped them would restore a site that had forgotten its crowds.
+    for name in site.room_names()? {
+        let room = site.room(&name)?;
+        put(
+            &mut plain,
+            Kind::Room,
+            &room.to_bytes().map_err(|error| SiteError::BadRecord {
+                what: "a room",
+                reason: error.to_string(),
+            })?,
+        )?;
+        for member in room.roster.members() {
+            if let Some(cairn) = site.cairn(&name, &member.handle())? {
+                put(&mut plain, Kind::Cairn, &named(&name, &cairn.to_bytes())?)?;
+            }
+        }
+    }
     if let Some(alias) = site.alias()? {
         put(&mut plain, Kind::Alias, alias.as_str().as_bytes())?;
     }
@@ -273,85 +293,7 @@ pub fn import(site: &Site, recovery: &[u8; 32], archive: &[u8]) -> Result<(), Si
 
     let key = backup_key(recovery, nonce);
     let mut plain = open(&key, Fit::Exact, sealed).map_err(|_| SiteError::BadRecovery)?;
-    let restored = restore(site, &plain);
+    let restored = crate::archive_restore::restore(site, &plain);
     plain.zeroize();
     restored
-}
-
-/// Walks the entries and puts each one back where it came from.
-fn restore(site: &Site, plain: &[u8]) -> Result<(), SiteError> {
-    let mut reader = Reader::new(plain);
-    while reader.remaining() > 0 {
-        let kind = reader
-            .take_byte()
-            .ok()
-            .and_then(Kind::of)
-            .ok_or_else(|| malformed("an entry names a kind this build does not know"))?;
-        let len = reader
-            .take_u32()
-            .map_err(|_| malformed("an entry ends before its length"))?;
-        let len = usize::try_from(len).map_err(|_| malformed("an entry is larger than memory"))?;
-        let bytes = reader
-            .take(len)
-            .map_err(|_| malformed("an entry is shorter than it says"))?
-            .to_vec();
-
-        match kind {
-            Kind::Identity => {
-                let (Some(head), Some(tail)) = (bytes.get(..32), bytes.get(32..34)) else {
-                    return Err(malformed("an identity is a 32-byte seed and a ward"));
-                };
-                let (Ok(mut seed), Ok(ward)) =
-                    (<[u8; 32]>::try_from(head), <[u8; 2]>::try_from(tail))
-                else {
-                    return Err(malformed("an identity is a 32-byte seed and a ward"));
-                };
-                let adopted = site.adopt(&seed, Ward::from_bits(u16::from_be_bytes(ward)));
-                seed.zeroize();
-                adopted?;
-            }
-            Kind::Channel => site.keep(&Channel::from_bytes(&bytes)?)?,
-            Kind::Cairn => {
-                let (name, rest) = split_named(&bytes)?;
-                let cairn = Cairn::from_bytes(rest).map_err(|error| {
-                    malformed(format!("a cairn in an archive is not one: {error}"))
-                })?;
-                site.mark(&name, &cairn)?;
-            }
-            Kind::Ratchet => {
-                let (name, rest) = split_named(&bytes)?;
-                let (author, state) = rest
-                    .split_at_checked(32)
-                    .ok_or_else(|| malformed("a ratchet entry ends before its lane"))?;
-                let author = Handle::from_bytes(
-                    <[u8; 32]>::try_from(author).map_err(|_| malformed("a handle is 32 bytes"))?,
-                );
-                let ratchet = Ratchet::from_bytes(state)
-                    .ok_or_else(|| malformed("a ratchet in an archive is not one"))?;
-                site.burn(&name, &author, &ratchet)?;
-            }
-            Kind::Outbox => {
-                let (name, payload) = split_named(&bytes)?;
-                site.queue(&name, payload)?;
-            }
-            Kind::Revoked => {
-                let id = <[u8; 32]>::try_from(bytes.as_slice())
-                    .map_err(|_| malformed("a step identifier is 32 bytes"))?;
-                site.revoke(StepId::from_bytes(id))?;
-            }
-            Kind::Alias => {
-                let text = String::from_utf8(bytes)
-                    .map_err(|_| malformed("an alias in an archive is not text"))?;
-                let alias = Alias::new(&text)
-                    .map_err(|error| malformed(format!("an alias in an archive: {error}")))?;
-                site.set_alias(Some(&alias))?;
-            }
-            Kind::Group => {
-                let text = String::from_utf8_lossy(&bytes);
-                let named = text.lines().next().unwrap_or_default().trim().to_owned();
-                site.enrol(&Roster::from_bytes(&bytes, &named)?)?;
-            }
-        }
-    }
-    Ok(())
 }

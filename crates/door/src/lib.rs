@@ -15,8 +15,10 @@
 //! renderings are contracts. `--json` is [`Outcome`] as `serde` writes it; the
 //! prose is the same value said to somebody reading a terminal.
 
+pub mod chamber;
 mod complaint;
 mod fence;
+mod passage;
 mod prose;
 mod recovery;
 mod report;
@@ -25,4 +27,4 @@ mod rows;
 pub use complaint::Complaint;
 pub use fence::Fence;
 pub use report::{CONTRACT, Outcome};
-pub use rows::{Carried, Delivery, Entry, Grouping, Landed, Measured, Summary, called};
+pub use rows::{Carried, Delivery, Entry, Grouping, Landed, Measured, Summary, Thread, called};

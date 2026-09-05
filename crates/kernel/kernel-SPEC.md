@@ -254,6 +254,10 @@ ack 区翻转则照常解码。
 签名把 handle 绑进去，所以同一把密钥在五条通道里报的名字可以核对为同一个，而 A 通道的声明搬到 B 的密钥下即被拒。
 `AliasError::Unfit` 说明为何不合格（供 `--as` 的参数错误复述），`Malformed` 是字节不成形。判据：`tests/alias.rs`。
 
+### 房间名册（F8 · D-17）
+
+`roster.rs`：`Roster { members: Vec<VerifyingKey>, signature }` 由建房者密钥签在 `"kusanagi/room/1" ‖ founder_handle ‖ members` 上，线上形式 `count u8 ‖ keys ‖ sig 4627`，**自定界**（`Roster::read(&mut Reader)` 留下其后字节，`from_bytes` 要求恰好读完），因为 32 把钥匙 87 KiB 超出站点记录的 u16 块前缀。成员是**公钥**不是 handle：读端要拿它验每条流，段不携钥匙。`verify(&VerifyingKey)` 过则借出 `&[VerifyingKey]`，不过即 `RosterError::Forged`；`sign` 与 `to_bytes` 都在 `MOST_MEMBERS`（32）处以 `TooMany` 拒绝。`Purpose::Roster` 是第三种段目的：名册变更以段的形式走 founder 自己的流（trail 证明、可否认），读者替换名册且永不报告。判据：`tests/roster.rs`。
+
 ## 14 硬编码声明
 
 | 硬编码 | 意图 | 后续影响 |

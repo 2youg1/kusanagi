@@ -11,7 +11,10 @@
 //! Column widths, the words `cut off`, and the warning under `forgotten` all
 //! belong here and nowhere near the value a machine parses.
 
+use crate::chamber::{founded, invited, joined, room, sent};
 use crate::fence::Fence;
+use crate::passage::members;
+use crate::passage::{enrolled, forgotten, greeted, posted, served, severed, welcomed};
 use crate::report::Outcome;
 use crate::rows::{Delivery, Entry, Grouping, Landed, Measured, Summary, called};
 
@@ -44,28 +47,38 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             "no channels yet; `kusanagi invite` starts one".to_owned()
         }
         Outcome::Channels { channels, groups } => grouped_listing(channels, groups),
-        Outcome::Grouped { group } => format!(
-            "group `{}` now stands for {} channel(s){}\n\
-             sending to it writes one drop per member, and nothing is shared between them.",
-            group.name,
-            group.members.len(),
-            members(group)
-        ),
+        Outcome::Grouped { group } => enrolled(group),
         Outcome::FannedOut { group, delivered } => fanned(group, delivered),
+        Outcome::RoomFounded {
+            name,
+            ward,
+            founder,
+        } => founded(name, ward, founder),
+        Outcome::RoomInvited {
+            name,
+            invite,
+            check,
+            expires_at,
+        } => invited(name, invite, check, *expires_at),
+        Outcome::RoomJoined {
+            name,
+            handle,
+            founder,
+            check,
+        } => joined(name, handle, founder, check),
+        Outcome::RoomSent {
+            name,
+            index,
+            address,
+        } => sent(name, *index, address),
+        Outcome::Room { name, threads } => room(name, threads, fence),
         Outcome::Invited {
             name,
             invite,
             check,
             expires_at,
             expires_in,
-        } => format!(
-            "channel `{name}` is open. This invitation lasts {}, until {expires_at}\n\n{invite}\n\n\
-             hand that line over once. Anybody who holds it can join, so treat it \
-             the way you would treat a key.\n\n\
-             check code {check} \u{2014} read it out to whoever you gave the line to. If their \
-             `join` shows anything else, the line was altered on the way.",
-            lasting(*expires_in)
-        ),
+        } => welcomed(name, invite, check, *expires_at, *expires_in),
         Outcome::Joined {
             name,
             handle,
@@ -73,19 +86,15 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             check,
             waypoint,
             retention,
-        } => format!(
-            "joined `{name}`\n  you       {handle}\n  peer      {peer}\n  waypoint  {waypoint}\n  \
-             retention {retention}\n\
-             \n  check code {check} \u{2014} it should match what the person who invited you says"
-        ),
+        } => greeted(name, handle, peer, check, waypoint, retention),
         Outcome::Sent {
             name,
             index,
             id,
             address,
-        } => format!("sent on `{name}` #{index}\n  id      {id}\n  address {address}"),
+        } => posted(name, *index, id, address),
         Outcome::Queued { .. } | Outcome::Ticked { .. } => scheduled(outcome),
-        Outcome::Served { calls } => format!("answered {calls} call(s); the agent closed the pipe"),
+        Outcome::Served { calls } => served(*calls),
         Outcome::Read {
             name,
             author,
@@ -93,16 +102,9 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             height,
             segments,
         } => stream(name, author, alias.as_deref(), *height, segments, fence),
-        Outcome::Revoked { name, step } => format!(
-            "the peer of `{name}` is cut off\n  step  {step}\n\
-             nothing they write from now on will be accepted here."
-        ),
+        Outcome::Revoked { name, step } => severed(name, step),
         Outcome::Sweeping { .. } | Outcome::Egress { .. } => setting(outcome),
-        Outcome::Forgotten { name, waypoint } => format!(
-            "`{name}` is gone from this endpoint\n  waypoint  {waypoint}\n\
-             the drops stay where they are, and the secret that opened them does not. \
-             This channel cannot be re-entered, by this invitation or any copy of it."
-        ),
+        Outcome::Forgotten { name, waypoint } => forgotten(name, waypoint),
         Outcome::Examined {
             waypoint,
             kind,
@@ -166,19 +168,6 @@ fn machine(
          at rest        {at_rest} \u{2014} {sealed}\n  proxy          {through}\n  \
          binary         {binary}"
     )
-}
-
-/// The members of one group, one per line, or a sentence saying there are none.
-fn members(group: &Grouping) -> String {
-    if group.members.is_empty() {
-        return "\n  (nobody \u{2014} a message to it goes nowhere)".to_owned();
-    }
-    let mut listed = String::new();
-    for member in &group.members {
-        listed.push_str("\n  ");
-        listed.push_str(member);
-    }
-    listed
 }
 
 /// What each member of a group got, with the failures where they cannot be missed.

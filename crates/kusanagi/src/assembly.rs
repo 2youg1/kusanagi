@@ -30,12 +30,17 @@ use kusanagi_waypoint::{Access, Carrier, Locator, LocatorError, Place, Proxy, pr
 
 use kusanagi_site::{Channel, Egress, Site};
 
+use crate::assembly_backup::{export, import};
+use crate::assembly_here::here;
+use crate::chamber;
+use crate::chamber_talk;
 use crate::membership::{forget, group, invite, join, revoke};
 use crate::port::serve;
 use crate::request::Request;
 use crate::settings::{crowd, egress, named};
 use crate::slot::tick;
-use crate::traffic::{fanout, read, send};
+use crate::traffic::{read, send};
+use crate::traffic_fanout::fanout;
 use crate::world::{SystemClock, fresh_circuit, fresh_seed, fresh_ward};
 use kusanagi_door::Complaint;
 use kusanagi_door::Grouping;
@@ -69,6 +74,11 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
         Request::Send { name, payload } => send(site, name, payload, now),
         Request::Group { name, members } => group(site, name, members),
         Request::Fanout { group, payload } => fanout(site, group, payload, now),
+        Request::Room { name, waypoint } => chamber::room(site, name, waypoint, now),
+        Request::RoomInvite { name, lifetime } => chamber::room_invite(site, name, *lifetime, now),
+        Request::RoomJoin { invite, name } => chamber::room_join(site, invite, name, now),
+        Request::RoomSend { name, payload } => chamber_talk::room_send(site, name, payload, now),
+        Request::RoomRead { name, after } => chamber_talk::room_read(site, name, after, now),
         Request::Read { name, after, whose } => {
             read(site, &signer(site)?, name, *after, *whose, now)
         }
@@ -99,35 +109,6 @@ fn port(site: &Site) -> Result<Outcome, Complaint> {
     let input = std::io::stdin();
     let output = std::io::stdout();
     serve(site, &mut input.lock(), &mut output.lock())
-}
-
-/// Seals everything this endpoint holds under a key drawn here and shown once.
-///
-/// **The recovery key is generated rather than chosen.** A passphrase somebody
-/// invents is a passphrase somebody guesses, and there is no rate limit on a
-/// file. Thirty-two bytes from the operating system, in hexadecimal, handed back
-/// exactly once: whoever runs this writes it down or loses the archive.
-fn export(site: &Site) -> Result<Outcome, Complaint> {
-    let mut recovery = fresh_seed()?;
-    let mut nonce = [0_u8; 12];
-    nonce.copy_from_slice(fresh_seed()?.get(..12).unwrap_or(&[0; 12]));
-    let archive = kusanagi_site::export(site, &recovery, nonce)?;
-    let key = kusanagi_kernel::Hex(&recovery).to_string();
-    recovery.zeroize();
-    Ok(Outcome::Exported {
-        recovery: key,
-        archive,
-    })
-}
-
-/// Puts an archive back into a root that has nothing in it.
-fn import(site: &Site, recovery: &[u8; 32], archive: &[u8]) -> Result<Outcome, Complaint> {
-    kusanagi_site::import(site, recovery, archive)?;
-    let names = site.names()?;
-    Ok(Outcome::Imported {
-        site: site.root().display().to_string(),
-        channels: names.len(),
-    })
 }
 
 /// This endpoint's signer, created on first use.
@@ -317,56 +298,6 @@ fn listening(bind: &str) -> String {
 /// Every question here is answerable without reaching anything: the point of
 /// `doctor --here` is that an operator who cannot get to a host can still find
 /// out whether their own side is set up the way the documentation says.
-fn here(site: &Site) -> Result<Outcome, Complaint> {
-    let root = site.root();
-    Ok(Outcome::Here {
-        site: root.display().to_string(),
-        under_profile: under_profile(root),
-        at_rest: kusanagi_vault::store(),
-        // Whether, never what. A proxy address says which network somebody
-        // trusts, which is the kind of fact this report exists to protect.
-        proxy: std::env::var("KUSANAGI_PROXY").is_ok_and(|set| !set.trim().is_empty()),
-        binary: binary_hash()?,
-    })
-}
-
-/// Whether the site sits under this user's profile directory.
-///
-/// `None` where the question has no meaning, which is every platform whose
-/// default root is not chosen for the access control list it inherits.
-#[cfg(windows)]
-fn under_profile(root: &std::path::Path) -> Option<bool> {
-    let profile = std::env::var("LOCALAPPDATA").ok()?;
-    let here = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let profile = std::path::Path::new(&profile);
-    let profile = profile
-        .canonicalize()
-        .unwrap_or_else(|_| profile.to_owned());
-    Some(here.starts_with(profile))
-}
-
-#[cfg(not(windows))]
-const fn under_profile(_root: &std::path::Path) -> Option<bool> {
-    None
-}
-
-/// The BLAKE3 of the file this process was started from.
-///
-/// BLAKE3 rather than SHA-256 because this workspace already hashes with it
-/// everywhere else, and a verification step that needs no second tool is worth
-/// more than matching what `sha256sum` happens to print.
-fn binary_hash() -> Result<String, Complaint> {
-    let path = std::env::current_exe().map_err(|source| Complaint::Local {
-        action: "find the running binary",
-        source,
-    })?;
-    let bytes = std::fs::read(&path).map_err(|source| Complaint::Local {
-        action: "read the running binary",
-        source,
-    })?;
-    Ok(kusanagi_kernel::Hex(blake3::hash(&bytes).as_bytes()).to_string())
-}
-
 fn host(bind: &str, directory: &std::path::Path, capacity: u64) -> Result<Outcome, Complaint> {
     let wanted = listening(bind);
     let listener = TcpListener::bind(&wanted).map_err(|source| Complaint::Listening {

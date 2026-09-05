@@ -116,6 +116,59 @@ fn sending(
     }
 }
 
+/// Reads a room verb into the request it names.
+///
+/// Apart from `request` because that dispatch is at its line limit: five more
+/// arms would push it past what one function may hold.
+fn room_request(verb: Verb) -> Result<Request, Complaint> {
+    Ok(match verb {
+        Verb::Room { name, waypoint } => Request::Room {
+            name: intake::channel(name)?,
+            waypoint,
+        },
+        Verb::RoomInvite { name, lifetime } => Request::RoomInvite {
+            name: intake::channel(name)?,
+            lifetime,
+        },
+        Verb::RoomJoin { name } => {
+            let (name, invite) = intake::invited(name)?;
+            Request::RoomJoin { invite, name }
+        }
+        Verb::RoomSend { name, text } => {
+            let (name, payload) = intake::addressed(name, text)?;
+            Request::RoomSend { name, payload }
+        }
+        Verb::RoomRead { name, after } => Request::RoomRead {
+            name: intake::channel(name)?,
+            after: after
+                .iter()
+                .map(|floor| {
+                    floor
+                        .split_once('=')
+                        .and_then(|(handle, height)| {
+                            height
+                                .parse()
+                                .ok()
+                                .map(|height| (handle.to_owned(), height))
+                        })
+                        .ok_or_else(|| Complaint::Argument {
+                            what: "--after",
+                            reason: format!("`{floor}` is not HANDLE=HEIGHT"),
+                            instead: "write the author's handle, `=`, then the height you hold",
+                        })
+                })
+                .collect::<Result<_, _>>()?,
+        },
+        _ => {
+            return Err(Complaint::Argument {
+                what: "verb",
+                reason: "is not a room verb".to_owned(),
+                instead: "this is a bug: report it",
+            });
+        }
+    })
+}
+
 pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
     Ok(match verb {
         Verb::Id => Request::Identity,
@@ -167,6 +220,11 @@ pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
             let (name, members) = intake::enrolled(name)?;
             Request::Group { name, members }
         }
+        Verb::Room { .. }
+        | Verb::RoomInvite { .. }
+        | Verb::RoomJoin { .. }
+        | Verb::RoomSend { .. }
+        | Verb::RoomRead { .. } => room_request(verb)?,
         Verb::Read { name, after, mine } => Request::Read {
             name: intake::channel(name)?,
             after,

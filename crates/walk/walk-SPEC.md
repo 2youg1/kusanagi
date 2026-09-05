@@ -8,13 +8,15 @@
 ## 1 需求拆解
 
 1. `Lane`：一条道——作者、bin、钥匙（`Keyring`，含棘轮）、通道开于哪个 period；`verified` 报本端验到对端多少条。
-2. `Source`：walk 向谁要某高度的密封字节。按地址的 `Waypoint`（测试用）与 `Sweeping`（生产）是它的两个实现。
-3. `Sweeping`：逐 period 列举读者的 ward，只 GET 上次列举之外的键，本机按地址匹配；`CAP`、`DIGITS`。
-4. `walk`/`peek`/`track`：逐段开封、解码、验作者、验链；`track` 决定从哪个 cairn 续、从哪个 period 扫、写哪两条记录。
+2. `Sweeping`：逐 period 把 ward 的 bin 交出来（`take() -> Option<Taken>`：列举 + 只 GET 上次列举之外的键）；`CAP`、`DIGITS`。
+3. `Stepping`：一条 lane 在手头 bin 里能走多远走多远——开封、解码、验作者、验链——下一个高度不在就停，等下一个 bin。
+4. `track_all`/`track`/`peek`：`track_all` 是唯一的取回路径——N 条同 ward 的 lane 共用一个 `Sweeping`，每个 bin 逐 lane `advance`，翻页前丢弃 bin；决定每条 lane 从哪个 cairn 续、sweep 从哪个 period 起（有一条 lane 整链行走即从 `opened` 起、不带 known）、最后写 N 条 cairn 与一条 `(name, ward)` sweep 记录。`track` = 一条 lane 的 `track_all`。`peek` 是唯一按地址点名的读（rendezvous bin 里的介绍流）。
+   **删除**：`Source` seam 与 `walk()`——按地址取的实现在生产里没有调用者，1→2→4→8 窗口在 W1 后只是本机 HashMap 查找。
 
 ## 2 验收标准
 
 `kusanagi` 的白盒判据不动：`unwatched.rs`、`resuming.rs`、`released.rs`、`at_rest.rs`、`lying.rs`；黑盒 `adversary/Sweep.hs` H20/H21。
+F8 加一条：`room.rs::a_read_of_three_members_lists_the_host_as_often_as_a_read_of_one`（三条 lane 与一条 lane 列举次数相同）。
 `cargo tree -i kusanagi-walk` 只有 `kusanagi` 一个上游。
 
 ## 3 假设与歧义
@@ -28,11 +30,11 @@
 ## 7 模块边界
 
 ```
-lib.rs      索引与再导出
-lane.rs     Lane、verified
-source.rs   Source seam（两个实现在本 crate 内：Waypoint、Sweeping）
-sweep.rs    Sweeping、CAP、DIGITS
-walk.rs     peek / walk / track、Reach、Walked、Held、WINDOW
+lib.rs       索引与再导出
+lane.rs      Lane、verified
+sweep.rs     Sweeping、Taken、CAP、DIGITS
+stepping.rs  Stepping、Held、decode
+walk.rs      track_all / track / peek、Reach、Walked、starting、confirm
 ```
 
 依赖：kernel、chain、seal、site、door。**不依赖** waypoint（只经 `kernel::Waypoint` trait）、不采样时钟、不取随机——每个函数收 `now`。

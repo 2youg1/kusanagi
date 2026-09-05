@@ -58,6 +58,43 @@ pub struct Delivery {
     pub landed: Landed,
 }
 
+/// One author's stream inside a room, as it is reported.
+///
+/// A room has no single stream: every member writes their own lane, and a
+/// read sweeps one ward and matches every lane on this machine. So the answer
+/// is a row per author, each shaped like a [`Outcome::Read`](crate::Outcome)
+/// without the room's name repeated in it.
+#[derive(Serialize, Debug)]
+pub struct Thread {
+    /// The handle that signed every segment reported here. A room carries no
+    /// declared names yet, so this is what a member is called; a name would be
+    /// this program's word about the author and stay outside the fence.
+    pub(crate) author: String,
+    /// The verified height, absent when nothing has been written.
+    pub(crate) height: Option<u64>,
+    /// Every segment, in order.
+    pub(crate) segments: Vec<Entry>,
+}
+
+impl Thread {
+    /// One author's row from its three facts, so the room read builds rows in
+    /// one place rather than in a closure at the call site.
+    pub(crate) fn of(
+        author: String,
+        height: Option<u64>,
+        segments: Vec<(u64, u64, &[u8])>,
+    ) -> Self {
+        Self {
+            author,
+            height,
+            segments: segments
+                .into_iter()
+                .map(|(index, acknowledged, payload)| Entry::of(index, acknowledged, payload))
+                .collect(),
+        }
+    }
+}
+
 /// How one member's copy ended up.
 #[derive(Serialize, Debug)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -92,6 +129,18 @@ pub struct Entry {
     pub(crate) acknowledged: u64,
     #[serde(flatten)]
     pub(crate) carried: Carried,
+}
+
+impl Entry {
+    /// A reported row from its three facts, so a one-stream read and a room
+    /// read build rows in one place rather than in two closures that drift.
+    pub(crate) fn of(index: u64, acknowledged: u64, payload: &[u8]) -> Self {
+        Self {
+            index,
+            acknowledged,
+            carried: Carried::of(payload),
+        }
+    }
 }
 
 /// What a segment carried, in the one encoding that does not lose it.
