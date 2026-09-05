@@ -114,7 +114,7 @@ kusanagi --root ~/.alice revoke --from bob
 
 所有命令都接受 `--json`，每一个 JSON 答案都带 `"contract": 1`。所有失败都带一个稳定的错误码，以及一条能让你走出去的命令——参数打错也算一种失败，同样有。错误码的目录在 [`docs/codes.md`](docs/codes.md)，由一条测试保证它与代码逐条相等。
 
-**两个旗标改变这一端在网络上做什么，都是按通道设的。** `--every SECS` 给通道一个节奏：`send` 把正文排进队列，`tick` 每个周期恰好写一个 drop——要么是排队的那条，要么是一个什么都不载的填充段——于是一个有满肚子话要说的端点和一个无话可说的端点，在任何观察者眼里长得一样。`--release` 在对端说读过之后删掉那个 drop 并烧掉开它的钥匙，于是老实的宿主手上没有历史，不老实的宿主手上是谁也打不开的字节。**`--release` 会让这台机器成为这场对话的唯一副本：请跑 `kusanagi export` 并留好那份归档。** 排班器在本程序之外——Windows 上是 `schtasks /create /sc minute /mo 15 /tn kusanagi-bob /tr "kusanagi tick --from bob"`，其他平台用 `cron` 或 `launchd`。
+**两个旗标改变这一端在网络上做什么，都是按通道设的。** `--every SECS` 给通道一个节奏：`send` 把正文排进队列，`tick` 每个周期恰好写一个 drop——要么是排队的那条，要么是一个什么都不载的填充段——于是一个有满肚子话要说的端点和一个无话可说的端点，在任何观察者眼里长得一样。`--release` 在对端说读过之后删掉那个 drop 并烧掉开它的钥匙，于是老实的宿主手上没有历史，不老实的宿主手上是谁也打不开的字节。**`--release` 会让这台机器成为这场对话的唯一副本：请跑 `kusanagi export` 并留好那份归档。** 排班器在本程序之外——Windows 上是 `schtasks /create /sc minute /mo 15 /tn kusanagi-bob /tr "kusanagi tick --from bob"`，其他平台用 `cron` 或 `launchd`。**给调度器一个周期内的随机延迟**（`schtasks` 加 `/rd 10`，systemd 定时器加 `RandomizedDelaySec=600`，`cron` 在命令前加 `sleep $((RANDOM % 600))`）：时隙在你的链路上和宿主上同一刻被填满，同时看得见两边的人就靠这一刻把两者对上；在时隙内打散之后，宿主仍然每周期见到一个 drop，而那一刻不再说明什么。
 
 **`--root` 默认落在你自己的用户资料目录下**——Windows 上是 `%LOCALAPPDATA%\kusanagi`，其他平台是 `$XDG_DATA_HOME/kusanagi`——而不是相对于程序恰好被启动的那个目录。在 Windows 上，它写的每个文件都带一份只列出你和 `SYSTEM` 的访问控制表，并且经 DPAPI 密封：一份没有你账户密码的硬盘拷贝就是噪声。
 

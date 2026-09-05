@@ -240,6 +240,19 @@ mod tests {
         );
     }
 
+    /// An onion service is a box like any other: the name is handed to the
+    /// SOCKS proxy unresolved (`socks5h`, `hostile_host.rs`), which is what
+    /// lets Tor find it, and nothing here treats the suffix specially.
+    #[test]
+    fn an_onion_service_is_a_box() {
+        assert_eq!(
+            Locator::from_str("http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwxyz234567abcd.onion:8963").unwrap(),
+            Locator::Box {
+                base: "http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwxyz234567abcd.onion:8963".to_owned()
+            }
+        );
+    }
+
     #[test]
     fn a_bucket_locator_carries_endpoint_bucket_prefix_and_region() {
         assert_eq!(

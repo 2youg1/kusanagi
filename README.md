@@ -156,7 +156,12 @@ the key that opened it, so an honest host keeps no history and a dishonest one h
 bytes nobody can open. **`--release` makes this machine the only copy of the
 conversation: run `kusanagi export` and keep the archive.** A scheduler is outside this
 program — `schtasks /create /sc minute /mo 15 /tn kusanagi-bob /tr "kusanagi tick --from bob"`
-on Windows, `cron` or `launchd` elsewhere.
+on Windows, `cron` or `launchd` elsewhere. **Give the scheduler a random delay inside
+the period** (`/rd 10` on `schtasks`, `RandomizedDelaySec=600` on a systemd timer, a
+`sleep $((RANDOM % 600))` before the command under `cron`): a slot fills at the same
+moment on your link and on the host, and an observer who sees both matches the two
+by that moment. Spread inside the slot, the host still sees one drop per period, and
+the moment says nothing.
 
 Every command accepts `--json`, and every JSON answer carries `"contract": 1`.
 Every failure carries a stable error code and a command that recovers from it,
