@@ -39,7 +39,7 @@ use kusanagi_seal::{Fit, open, period};
 use kusanagi_site::Site;
 
 use crate::lane::Lane;
-use crate::sweep::Sweeping;
+use crate::sweep::{DIGITS, Sweeping};
 use kusanagi_door::Complaint;
 use kusanagi_site::Swept;
 
@@ -176,7 +176,8 @@ pub fn track(
         None => (lane.opened, None),
     };
     let through = period(now.as_unix_seconds());
-    let sweeping = Sweeping::over(place, lane.bin.ward(), since, through, known);
+    let digits = site.sweep_digits()?.unwrap_or(DIGITS);
+    let sweeping = Sweeping::over(place, lane.bin.ward(), digits, since, through, known);
     let mut walked = walk(&sweeping, lane, name, from)?;
     walked.listed = sweeping.listed()?;
 

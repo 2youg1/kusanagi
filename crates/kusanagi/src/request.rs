@@ -133,6 +133,11 @@ pub enum Request {
         /// `None` reads; `Some` records.
         require: Option<bool>,
     },
+    /// Read, or change, how many hex digits of its ward a read names.
+    Sweep {
+        /// `None` reads; `Some` records. Fewer digits hide among more wards.
+        digits: Option<u8>,
+    },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
         /// Which channel.

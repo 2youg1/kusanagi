@@ -179,31 +179,21 @@ fn collect(dir: &Path, into: &mut Vec<(String, Vec<u8>)>) {
     }
 }
 
-/// Where the object at `address` sits under `host`, whatever bin it is in.
+/// Where the object a send reported sits under `host`.
 ///
-/// Found by name rather than computed, because the bin an object is filed in is
-/// the endpoint's business and a test that recomputed it would be a second
-/// authority for the key layout — one that goes stale silently.
+/// A send reports the key it filed under, `period/ward/address`, and a
+/// directory host uses that key as a path; the test recomputes nothing.
 ///
 /// # Panics
 ///
-/// When nothing under `host` is named `address`, which for every caller here
-/// means the write under test never landed.
-pub fn object_path(host: &Path, address: &str) -> std::path::PathBuf {
-    fn look(dir: &Path, address: &str) -> Option<std::path::PathBuf> {
-        for entry in std::fs::read_dir(dir).ok()?.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(found) = look(&path, address) {
-                    return Some(found);
-                }
-            } else if path.file_name().and_then(|name| name.to_str()) == Some(address) {
-                return Some(path);
-            }
-        }
-        None
-    }
-    look(host, address).unwrap_or_else(|| panic!("the host holds nothing at {address}"))
+/// When nothing is there, which for every caller here means the write under
+/// test never landed.
+pub fn object_path(host: &Path, key: &str) -> std::path::PathBuf {
+    let path = key
+        .split('/')
+        .fold(host.to_path_buf(), |path, part| path.join(part));
+    assert!(path.is_file(), "the host holds nothing at {key}");
+    path
 }
 
 /// Flips one bit of the object stored at `address`, the way a hostile host would.

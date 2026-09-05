@@ -17,6 +17,7 @@ mod membership;
 mod port;
 mod request;
 mod roots;
+mod settings;
 mod slot;
 mod source;
 mod sweep;

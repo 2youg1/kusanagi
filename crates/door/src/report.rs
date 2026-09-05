@@ -167,6 +167,13 @@ pub enum Outcome {
         /// Whether every host-reaching verb refuses without `KUSANAGI_PROXY`.
         proxy_required: bool,
     },
+    /// How wide this endpoint sweeps, after `sweep` read or changed it.
+    Sweeping {
+        /// How many of the ward's four hex digits a read names.
+        digits: u8,
+        /// How many wards a read is therefore indistinguishable among.
+        wards: u32,
+    },
     /// A channel was deleted from this endpoint.
     Forgotten {
         /// What it was called here.

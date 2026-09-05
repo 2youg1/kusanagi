@@ -42,12 +42,11 @@ use crate::lane::Lane;
 use crate::source::Source;
 use kusanagi_door::Complaint;
 
-/// How many hex digits of its ward a reader names.
+/// How many hex digits of its ward a reader names when it has not said.
 ///
-/// Four is one ward: the smallest crowd and the least bandwidth. The knob
-/// exists in [`Sweep`] and turning it is a reader's decision alone; nothing
-/// exposes it yet, and the constant is here so that the day it is exposed
-/// there is one place to read the default from.
+/// Four is one ward: the smallest crowd and the least bandwidth. `kusanagi
+/// sweep --digits` records another width on the site, and the reader alone
+/// decides; nobody else is told.
 pub const DIGITS: u8 = Ward::DIGITS;
 
 /// The most objects one bin is allowed to hold before a reader gives up on it.
@@ -69,6 +68,7 @@ pub const CAP: usize = 256;
 pub struct Sweeping<'a, P: Waypoint + Listing + Sync> {
     place: &'a P,
     ward: Ward,
+    digits: u8,
     through: Period,
     /// What the last sweep saw, so that a bin listed the same is not taken twice.
     known: Option<Swept>,
@@ -85,12 +85,13 @@ struct Cursor {
 }
 
 impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
-    /// A sweep of `ward` on `place`, over every period from `since` through
-    /// `through` inclusive, knowing what the last sweep saw. Nothing is asked of
-    /// the host until a height is.
+    /// A sweep naming `digits` of `ward` on `place`, over every period from
+    /// `since` through `through` inclusive, knowing what the last sweep saw.
+    /// Nothing is asked of the host until a height is.
     pub fn over(
         place: &'a P,
         ward: Ward,
+        digits: u8,
         since: Period,
         through: Period,
         known: Option<Swept>,
@@ -98,6 +99,7 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
         Self {
             place,
             ward,
+            digits,
             through,
             known,
             cursor: Mutex::new(Cursor {
@@ -127,7 +129,7 @@ impl<'a, P: Waypoint + Listing + Sync> Sweeping<'a, P> {
     /// [`Complaint::WardOverfull`] when the bin holds more than [`CAP`] objects,
     /// and whatever the host reports.
     fn take(&self, period: Period) -> Result<(Swept, HashMap<DropAddr, Vec<u8>>), Complaint> {
-        let sweep = Sweep::of(Bin::new(period, self.ward), DIGITS);
+        let sweep = Sweep::of(Bin::new(period, self.ward), self.digits);
         // Narrowed here rather than trusted there: an adapter that lists too
         // much is corrected by the one authority on what a sweep covers.
         let listed: Vec<Object> = self

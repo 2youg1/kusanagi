@@ -19,10 +19,7 @@ use std::path::PathBuf;
 use core::num::NonZeroU32;
 
 use clap::{Parser, Subcommand};
-use kusanagi::{Cadence, Complaint, HOST_ADDRESS, Habit, Request, Retention, Whose};
-use kusanagi_grant::{Abilities, Ability};
-
-use crate::intake;
+use kusanagi::HOST_ADDRESS;
 
 /// A decentralised collaboration network for agents.
 #[derive(Parser, Debug)]
@@ -174,6 +171,17 @@ pub(crate) enum Verb {
         #[arg(long)]
         optional: bool,
     },
+    /// Say how many hex digits of your ward a read names, or ask.
+    ///
+    /// Four is your ward alone. Each digit fewer hides your reads among sixteen
+    /// times as many wards and downloads what all of them received; `0` is the
+    /// whole host. Nobody else is told, and a scheduler task sweeps the same
+    /// width as you do.
+    Sweep {
+        /// How many of the four digits to name, 0 through 4.
+        #[arg(long, value_name = "N")]
+        digits: Option<u8>,
+    },
     /// Cut the peer of a channel off, immediately and permanently.
     Revoke {
         /// Which channel, or `-` to read the name from stdin.
@@ -236,162 +244,4 @@ pub(crate) enum Verb {
         #[arg(long = "cap", default_value_t = kusanagi_box::CAPACITY, value_name = "BYTES")]
         capacity: u64,
     },
-}
-
-/// Reads `send,read` into a set of abilities.
-///
-/// An unknown word is refused rather than ignored: an invitation that silently
-/// granted less than it was asked for would be discovered by the person it was
-/// given to, days later, as a failure they cannot explain.
-/// Turns the two flags a channel is opened with into the value they mean.
-///
-/// Absent is the default in both cases, and the default is the one that promises
-/// nothing: write when asked, keep everything.
-fn habit(every: Option<NonZeroU32>, release: bool) -> Habit {
-    Habit {
-        cadence: every.map_or(Cadence::OnDemand, |period| Cadence::Slotted { period }),
-        retention: if release {
-            Retention::ReleaseOnAck
-        } else {
-            Retention::Keep
-        },
-    }
-}
-
-fn abilities(text: &str) -> Result<Abilities, Complaint> {
-    let mut abilities = Abilities::NONE;
-    for word in text
-        .split(',')
-        .map(str::trim)
-        .filter(|word| !word.is_empty())
-    {
-        match word {
-            "send" => abilities = abilities.with(Ability::Send),
-            "read" => abilities = abilities.with(Ability::Read),
-            other => {
-                return Err(Complaint::Argument {
-                    what: "--can",
-                    reason: format!("does not know the ability `{other}`"),
-                    instead: "pass a comma-separated list of send and read",
-                });
-            }
-        }
-    }
-    Ok(abilities)
-}
-
-/// Two flags into one answer: `--require` records, `--optional` lifts, neither reads.
-const fn stance(require: bool, optional: bool) -> Option<bool> {
-    match (require, optional) {
-        (true, _) => Some(true),
-        (_, true) => Some(false),
-        _ => None,
-    }
-}
-
-pub(crate) fn request(verb: Verb) -> Result<Request, Complaint> {
-    Ok(match verb {
-        Verb::Id => Request::Identity,
-        Verb::Channels => Request::Channels,
-        Verb::Invite {
-            name,
-            waypoint,
-            lifetime,
-            can,
-            every,
-            release,
-        } => Request::Invite {
-            name: intake::channel(name)?,
-            waypoint,
-            lifetime,
-            abilities: abilities(&can)?,
-            habit: habit(every, release),
-        },
-        Verb::Join {
-            name,
-            every,
-            release,
-        } => {
-            let (name, invite) = intake::invited(name)?;
-            Request::Join {
-                invite,
-                name,
-                habit: habit(every, release),
-            }
-        }
-        Verb::Tick { name } => Request::Tick {
-            name: intake::channel(name)?,
-        },
-        // Two destinations, and the command line carries at most one of them.
-        // clap refuses both at once; the case it cannot express is neither, and
-        // saying so here gives that a stable code and a way out.
-        Verb::Send { name, group, text } => match (name, group) {
-            (Some(name), _) => {
-                let (name, payload) = intake::addressed(name, text)?;
-                Request::Send { name, payload }
-            }
-            (None, Some(group)) => {
-                let (group, payload) = intake::addressed(group, text)?;
-                Request::Fanout { group, payload }
-            }
-            (None, None) => {
-                return Err(Complaint::Argument {
-                    what: "send",
-                    reason: "was given nobody to send to".to_owned(),
-                    instead: "pass --to NAME for one channel, or --to-group NAME for a group",
-                });
-            }
-        },
-        Verb::Doctor { waypoint, here } => match waypoint {
-            Some(waypoint) => Request::Doctor { waypoint },
-            // `required_unless_present` has already refused the empty case, so
-            // reaching here means `--here` was given.
-            None if here => Request::Here,
-            None => {
-                return Err(Complaint::Argument {
-                    what: "doctor",
-                    reason: "was given nothing to measure".to_owned(),
-                    instead: "pass a waypoint to measure a host, or --here for this machine",
-                });
-            }
-        },
-        Verb::Group { name } => {
-            let (name, members) = intake::enrolled(name)?;
-            Request::Group { name, members }
-        }
-        Verb::Read { name, after, mine } => Request::Read {
-            name: intake::channel(name)?,
-            after,
-            // The flag is a flag because that is what a command line has; the
-            // enum starts here so that nothing below carries an unnamed bool.
-            whose: if mine { Whose::Mine } else { Whose::Peer },
-        },
-        Verb::Proxy { require, optional } => Request::Proxy {
-            require: stance(require, optional),
-        },
-        Verb::Revoke { name } => Request::Revoke {
-            name: intake::channel(name)?,
-        },
-        Verb::Forget { name } => Request::Forget {
-            name: intake::channel(name)?,
-        },
-        Verb::Port => Request::Port,
-        Verb::Export => Request::Export,
-        Verb::Import => {
-            let (recovery, archive) = intake::restored()?;
-            Request::Import { recovery, archive }
-        }
-        Verb::Host {
-            bind,
-            directory,
-            capacity,
-        } => Request::Host {
-            bind,
-            directory: match directory {
-                Some(named) => named,
-                None => kusanagi::default_host_dir()?,
-            },
-            capacity,
-        },
-    })
 }

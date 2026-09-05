@@ -92,8 +92,10 @@ tools.rs      动词集合的 MCP 工具目录（D3）
 roots.rs      默认 root：每平台一个 cfg 分支
 world.rs      时钟与熵的唯一采样点
 assembly.rs   动词的组装
+settings.rs   站点的两项设置动词：proxy（egress）与 sweep（扫几位 ward）
 main.rs       clap ↔ Request
-verbs.rs      命令行那一读
+verbs.rs      命令行的形状（clap 声明）
+translate.rs  命令行那一读：Verb → Request，旗标的每项检查是一个有名字的函数
 intake.rs     动词从 stdin 收下的一切（属二进制，不属 lib）
 ```
 
@@ -149,15 +151,12 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 ## 10 实现逻辑
 
 **步骤 1：动词集合是一个枚举，不是 clap 的形状。** 这样第二个门面（socket、MCP）到来时是加法，而不是把动词再教给第二个解析器。
-
 **步骤 2：邀请携带一次性密钥。** 写邀请的人不可能知道谁会接受，所以 grant 签发给一把随邀请同行的钥匙；接受者立刻把它转授给自己的 handle，那把钥匙此后再不使用。撤销这一节，被切断的正好是用过它的那一个人。
 
 **步骤 3：一次性由宿主保证，不由簿记保证。** 介绍段落在一个一次性写入的地址上，因此第二次接受被**宿主**拒绝。程序里没有任何东西记录一份邀请是否用过。
-
 **步骤 4：读操作允许写一次盘。** `greet` 把已验证的 peer 记进通道文件，存的是**公钥**，因为之后每一次读都要拿它验签。它是「三件事同时成立」之后的结论——问候本身在解码时已经对着一次性 bearer 公钥验过、grant 源自本通道的根、且该 grant 签发给的正是问候里宣告的那把公钥的 handle——每条命令重算一次只会付一次必然得到相同答案的请求钱。三者不一致时的报告是 `kusanagi.bad_greeting`。
 
 **步骤 5：两端都检查权限。** `send` 检查自己的 standing，`read` 检查 peer 的 standing 是否允许 Send。第二项才是真正的执行点：撤销之后，对方写的东西在**这一侧**被拒，而不需要对方或宿主的配合。
-
 **步骤 6：`host` 的进度写 stderr。** 一个永不返回的动词不能用「返回值即结果」的形状；stdout 只承载结果，绑定地址写在 stderr。
 **步骤 6b：`--bind` 收三种写法，它们在 `assembly::listening` 一处归一。**
 `HOST:PORT` 原样交给操作系统；光一个端口号（`--bind 9000`）补成 `127.0.0.1:9000`；
@@ -185,7 +184,6 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 比“能对上 `sha256sum` 的输出”值钱。
 
 **步骤 7：通道名当作路径分量来校验，不做转义。** 只放行 `a-z0-9-`、长度 1..=32。转义容易写错的方式全都始于「允许一点有趣的东西」。
-
 **步骤 8：载荷是字节，不是字符串。** `Request::Send` 收 `Vec<u8>`；命令行给了文本就用它的字节，没给就从 stdin 读到 EOF。理由不是便利：代理要发的东西里有引号、换行与非 UTF-8 字节，而 argv 既有长度上限又要经过一层 shell 引用规则。**入口有界**：最多读 `MAX_PAYLOAD + 1` 字节，多出的那一个字节让 kernel 给出 `segment.payload_too_large`，而不是让本进程去吃一个无界的管道。
 
 **步骤 8b：取回是有界并发的，验证仍严格按序（I2）。** `walk` 以 1→2→4→8 的窗口一次性要多个地址，
@@ -367,6 +365,8 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 **写者同样 sweep。** `appended` 为找链头对 **peer 的 ward** 做同一种 sweep（`Reach::Head`，从自己道的 sweep 记录起）：主机早已看见这个端点往那个 ward 写，再看见它列举那个 ward 不添新边。`read --mine` 同理。`join`/`greet` 仍按地址取 rendezvous bin（period 0）里的 offer 与问候——一次性、与后续流量不可关联，是写明的例外（adversary `Sweep.hs` 也排除 period 0）。
 
 **释放不再 DELETE。** `settle` 只烧钥匙：DELETE 会点名地址，且 drop 归档在写入时的 period 而作者不记它。字节留给宿主的生命周期（D-20 性质 4；`released.rs` 断言三个 drop 仍在）。
+
+**宽度是站点记录，不是旗标。** `kusanagi sweep --digits N`（0–4，默认 4）记在 `sweep` 文件里；调度任务与终端前的人扫同样宽，否则改过宽度的那个读者就是 ward 里请求形状变了的那一个。少一位 = 十六倍的 ward、十六倍的带宽；`ward_overfull` 是它的天然上限。判据 `a_shorter_width_lists_fewer_digits_and_still_finds_every_segment`。
 
 **诚实边界。** ① 写者时钟比读者慢超过一个 period（10 min）跨界写入，读者已把 `through` 推过去，那段要等下一次列举变化才被取；② 同一 bin 超过 `CAP`（256）个对象 → `kusanagi.ward_overfull`，拒绝而非泄漏；③ 首次 read/send 在邀请后很久才发生时，要列举 `opened` 以来的每个 period（一周 = 1 008 个请求，只付一次）。
 

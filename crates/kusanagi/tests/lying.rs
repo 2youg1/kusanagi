@@ -116,9 +116,10 @@ fn genuine_bytes_served_at_the_wrong_address_are_not_a_segment() {
     // height is a lie, and no signature can see it — the address is what carries
     // the answer, because the key the bytes are sealed under is derived from it.
     let held: Vec<(String, Vec<u8>)> = stored(&host);
+    // A send reports the key it filed under; `stored` names objects by address.
     let body = held
         .iter()
-        .find(|(address, _)| *address == second)
+        .find(|(address, _)| second.ends_with(address.as_str()))
         .map(|(_, bytes)| bytes.clone())
         .expect("the host is not holding the second segment");
     std::fs::write(common::object_path(&host, &first), body).unwrap();

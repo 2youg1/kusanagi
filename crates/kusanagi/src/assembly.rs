@@ -33,6 +33,7 @@ use kusanagi_site::{Channel, Egress, Site};
 use crate::membership::{forget, group, invite, join, revoke};
 use crate::port::serve;
 use crate::request::Request;
+use crate::settings::{crowd, egress};
 use crate::slot::tick;
 use crate::traffic::{fanout, read, send};
 use crate::world::{SystemClock, fresh_circuit, fresh_seed, fresh_ward};
@@ -72,6 +73,7 @@ pub fn run(site: &Site, request: &Request) -> Result<Outcome, Complaint> {
             read(site, &signer(site)?, name, *after, *whose, now)
         }
         Request::Proxy { require } => egress(site, *require),
+        Request::Sweep { digits } => crowd(site, *digits),
         Request::Revoke { name } => revoke(site, name),
         Request::Forget { name } => forget(site, name),
         Request::Doctor { waypoint } => doctor(site, waypoint, now),
@@ -206,20 +208,6 @@ fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
         })
         .collect();
     Ok(Outcome::Channels { channels, groups })
-}
-
-/// Reads or records whether this site may reach a host without a proxy.
-fn egress(site: &Site, require: Option<bool>) -> Result<Outcome, Complaint> {
-    if let Some(required) = require {
-        site.set_egress(if required {
-            Egress::ProxyRequired
-        } else {
-            Egress::Free
-        })?;
-    }
-    Ok(Outcome::Egress {
-        proxy_required: site.egress()? == Egress::ProxyRequired,
-    })
 }
 
 /// Opens what a locator names, with what the environment supplies to reach it.

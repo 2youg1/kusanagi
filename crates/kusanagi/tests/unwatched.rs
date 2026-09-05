@@ -328,3 +328,42 @@ fn alice_key(site: &Site) -> VerifyingKey {
         .expect("an endpoint that has sent has an identity")
         .verifying_key()
 }
+
+#[test]
+fn a_shorter_width_lists_fewer_digits_and_still_finds_every_segment() {
+    let (ground, _alice, bob) = staged("unwatched-width", None);
+    let host = ground.join("host");
+    bob.run(&Request::Sweep { digits: Some(2) }).unwrap();
+    let site = Site::at(bob.site_root());
+    let lane = peer_lane(&site);
+    let watching = Watching::new(&host);
+
+    let walked = track(
+        &site,
+        "alice",
+        &watching,
+        &lane,
+        Reach::Whole,
+        SystemClock.now(),
+    )
+    .unwrap();
+    assert_eq!(walked.held().len(), HEIGHT);
+    // Two digits of the ward and no separator: the prefix names 256 wards.
+    let two: String = site
+        .ward()
+        .unwrap()
+        .unwrap()
+        .to_string()
+        .chars()
+        .take(2)
+        .collect();
+    for prefix in watching.lists() {
+        assert!(
+            prefix.ends_with(&format!("/{two}")),
+            "a two-digit sweep listed {prefix}"
+        );
+    }
+    only_what_was_listed(&watching, &host);
+
+    std::fs::remove_dir_all(&ground).ok();
+}

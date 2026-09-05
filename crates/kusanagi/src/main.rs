@@ -10,6 +10,7 @@
 //! same program.
 
 mod intake;
+mod translate;
 mod verbs;
 
 use std::process::ExitCode;
@@ -18,7 +19,8 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory as _, Parser as _};
 use kusanagi::{Complaint, Outcome, Site};
 
-use crate::verbs::{Cli, request};
+use crate::translate::request;
+use crate::verbs::Cli;
 
 /// Whether `--json` was asked for, read from the raw arguments.
 ///

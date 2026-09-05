@@ -89,13 +89,7 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
             "the peer of `{name}` is cut off\n  step  {step}\n\
              nothing they write from now on will be accepted here."
         ),
-        Outcome::Egress { proxy_required } => {
-            if *proxy_required {
-                "a proxy is required: without KUSANAGI_PROXY, every verb that would reach a host refuses instead of going direct".to_owned()
-            } else {
-                "a proxy is optional: with KUSANAGI_PROXY unset, requests go straight to the host, and the host learns this machine's address".to_owned()
-            }
-        }
+        Outcome::Sweeping { .. } | Outcome::Egress { .. } => setting(outcome),
         Outcome::Forgotten { name, waypoint } => format!(
             "`{name}` is gone from this endpoint\n  waypoint  {waypoint}\n\
              the drops stay where they are, and the secret that opened them does not. \
@@ -261,6 +255,24 @@ fn listing(channels: &[Summary]) -> String {
 /// **the caller's message did not go out when they asked, and that is the
 /// point.** A person reading either of these has to be told where their words
 /// are and what will move them.
+/// What one of the two site settings says about itself, with its consequence.
+fn setting(outcome: &Outcome) -> String {
+    match outcome {
+        Outcome::Sweeping { digits, wards } => format!(
+            "a read names {digits} of the ward's four digits, so it is one of the readers of \
+             {wards} ward(s) and downloads what all of them received"
+        ),
+        Outcome::Egress {
+            proxy_required: true,
+        } => "a proxy is required: without KUSANAGI_PROXY, every verb that would reach a host \
+             refuses instead of going direct"
+            .to_owned(),
+        _ => "a proxy is optional: with KUSANAGI_PROXY unset, requests go straight to the host, \
+              and the host learns this machine's address"
+            .to_owned(),
+    }
+}
+
 fn scheduled(outcome: &Outcome) -> String {
     match outcome {
         Outcome::Queued {

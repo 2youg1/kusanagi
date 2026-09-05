@@ -42,6 +42,7 @@ answer and exit: `host`, `port`, `export`.
 | `channels` | every channel and group this endpoint has | — |
 | `group --name G` | set which channels a group name stands for (empty list deletes it) | the member names, one per line |
 | `revoke --from N` · `forget --channel N` | cut the peer off · delete the channel | `N` when `-` |
+| `sweep [--digits D]` | how many of the ward's four hex digits a read names; fewer hides among more wards, at bandwidth | — |
 | `tick --from N` | fill this channel's current time slot (only on channels opened with `--every`) | `N` when `-` |
 | `doctor HOST` | measure what a host actually does before relying on it | — |
 | `export` | archive on stdout, recovery key on stderr, once | — |

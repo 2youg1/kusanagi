@@ -72,6 +72,7 @@ checking one before you rely on it.
 | `channels` | List the channels here, what each one still permits, and until when. |
 | `revoke --from N` | Cut a peer off, immediately and permanently. |
 | `forget --channel N` | Drop a channel from this endpoint. |
+| `sweep [--digits 0-4]` | Say how many digits of your ward a read names. `4` is your ward alone; each digit fewer hides your reads among sixteen times as many wards and downloads what all of them received. Without the flag, reports the current width. |
 | `tick --from N` | Fill this channel's current slot and look once. For a channel opened with `--every`; a scheduler outside this program runs it. |
 | `doctor <WAYPOINT>` | Measure what a host actually does, and certify it. `--here` measures this machine instead. |
 | `port` | Answer an agent over the Model Context Protocol, on stdin and stdout. |

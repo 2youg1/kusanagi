@@ -60,6 +60,7 @@ cargo build --release      # 产物是 target/release/kusanagi
 | `channels` | 列出本机的 channel，各自还允许什么，以及到什么时候为止。 |
 | `revoke --from N` | 切断一个对端，立即且永久。 |
 | `forget --channel N` | 在本端点丢弃一条 channel。 |
+| `sweep [--digits 0-4]` | 设定一次读取点名你 ward 的几位数字。`4` 只是你自己的 ward；每少一位，你的读取就藏进十六倍多的 ward 里，代价是下载它们全部收到的东西。不带旗标则报告当前宽度。 |
 | `doctor <WAYPOINT>` | 实测一台主机的真实行为，并出具证书。 |
 | `tick --from N` | 填上这条通道当前的时隙，并读一次。给用 `--every` 开的通道用；排班表在本程序之外。 |
 | `port` | 用 Model Context Protocol 在标准输入输出上答一个 agent。 |

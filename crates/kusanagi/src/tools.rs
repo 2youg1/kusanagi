@@ -149,6 +149,18 @@ const CATALOGUE: &[Tool] = &[
         },
     },
     Tool {
+        name: "kusanagi_sweep",
+        about: "Read, or set, how many hex digits of this endpoint's ward a read names: 4 is \
+                its own ward, each digit fewer hides among sixteen times as many wards at the \
+                cost of downloading what all of them received.",
+        schema: || {
+            object(
+                &json!({ "digits": { "type": "integer", "minimum": 0, "maximum": 4, "description": "record this many digits; omit to read" } }),
+                &[],
+            )
+        },
+    },
+    Tool {
         name: "kusanagi_proxy",
         about: "Read, or set, whether this endpoint may reach a host without a proxy.                 With `require` true, every host-reaching tool refuses when no proxy is set.",
         schema: || {
@@ -291,6 +303,12 @@ pub(crate) fn called(name: &str, arguments: &Value) -> Result<Request, Complaint
         },
         "kusanagi_proxy" => Request::Proxy {
             require: arguments.get("require").and_then(Value::as_bool),
+        },
+        "kusanagi_sweep" => Request::Sweep {
+            digits: arguments
+                .get("digits")
+                .and_then(Value::as_u64)
+                .and_then(|digits| u8::try_from(digits).ok()),
         },
         "kusanagi_revoke" => Request::Revoke {
             name: need(arguments, "name")?.to_owned(),
