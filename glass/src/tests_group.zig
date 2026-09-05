@@ -105,3 +105,47 @@ test "a member whose read fails yields the cursor to the next" {
     );
     try testing.expectEqualStrings("carol\n", lastSpawnStdin(&f, .group_theirs).?);
 }
+
+
+test "a room is one read for everybody, and the next poll names each floor" {
+    var f = Fixture.init();
+    defer f.deinit();
+    answer.apply(f.model, .{
+        .key = verbs.key(.identity),
+        .code = 0,
+        .output =
+        \\{"contract":1,"command":"identity","handle":"me00","site":"s"}
+        ,
+    });
+    answer.apply(f.model, .{
+        .key = verbs.key(.channels),
+        .code = 0,
+        .output =
+        \\{"contract":1,"command":"channels","channels":[],"groups":[],"rooms":[{"name":"team","members":["me00","aa11","bb22"]}]}
+        ,
+    });
+    f.dispatch(.{ .select_group = 0 });
+    try testing.expectEqual(@as(usize, 1), f.fx.pendingSpawnCount());
+    try testing.expectEqualStrings("team\n", lastSpawnStdin(&f, .room_read).?);
+
+    release(&f, .room_read,
+        \\{"contract":1,"command":"room","name":"team","threads":[
+        \\{"author":"me00","height":0,"segments":[{"index":0,"acknowledged":0,"filed":5,"text":"hello room"}]},
+        \\{"author":"aa11","height":1,"segments":[{"index":0,"acknowledged":0,"filed":4,"text":"first"},{"index":1,"acknowledged":0,"filed":6,"text":"reply"}]},
+        \\{"author":"bb22","height":null,"segments":[]}]}
+    );
+    const bubbles = f.model.groupThread(f.arena());
+    try testing.expectEqual(@as(usize, 3), bubbles.len);
+    try testing.expectEqualStrings("first", bubbles[0].text);
+    try testing.expect(bubbles[1].mine);
+    try testing.expectEqualStrings("aa11", bubbles[2].who);
+
+    // The poll resumes each stream from what this window holds, by handle.
+    f.dispatch(.{ .poll = .{ .key = verbs.key(.poll_timer), .outcome = .fired } });
+    try testing.expectEqualStrings("team\nme00=0\naa11=1\n", lastSpawnStdin(&f, .room_read).?);
+
+    // A sentence goes on my own stream, not out to N channels.
+    f.model.draft.set("lunch?");
+    f.dispatch(.broadcast);
+    try testing.expectEqualStrings("team\nlunch?", lastSpawnStdin(&f, .room_send).?);
+}

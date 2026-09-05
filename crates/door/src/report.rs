@@ -58,6 +58,8 @@ pub enum Outcome {
         channels: Vec<Summary>,
         /// One row per group. A group is a list of the channels above it.
         groups: Vec<Grouping>,
+        /// One row per room: its name here, and its members' handles.
+        rooms: Vec<Grouping>,
     },
     /// A group's roster was replaced by this one.
     Grouped {

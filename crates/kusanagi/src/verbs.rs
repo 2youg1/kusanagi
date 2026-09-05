@@ -182,7 +182,8 @@ pub(crate) enum Verb {
         #[arg(long, value_name = "NAME")]
         name: String,
         /// Report only what follows HEIGHT on HANDLE's stream; repeat per
-        /// author. Every stream is verified in full either way.
+        /// author, or give `-` once to read the floors from stdin, one per
+        /// line after the name. Every stream is verified in full either way.
         #[arg(long, value_name = "HANDLE=HEIGHT")]
         after: Vec<String>,
     },

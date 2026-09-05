@@ -16,7 +16,7 @@ use crate::rows::{Thread, called};
 /// Reports a room read: one verified stream per author.
 ///
 /// Each row arrives as `(author, height, segments)`, with segments as
-/// `(index, acknowledged, payload)` rather than as the walks they came from,
+/// `(index, filed period, payload)` rather than as the walks they came from,
 /// because a walk is a thing this crate must not be able to perform. Which of
 /// them to show is the verb's decision and stays with the verb; how to render
 /// them is this crate's and stays here.

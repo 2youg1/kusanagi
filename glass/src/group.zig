@@ -24,11 +24,15 @@ const rows = @import("rows.zig");
 pub const Text = rows.Text;
 /// A member's window is smaller than a channel's: N of them live in the model at once.
 pub const window = 32;
+/// A name line, then one `HANDLE=HEIGHT` line per stream: 64 + 1 + 20 + 1 each.
+pub const stdin_cap = rows.name_cap + 1 + (1 + rows.max_members) * (rows.whole_handle_cap + 22);
 pub const Lane = rows.LaneOf(window);
 
 /// One member of the open group: their channel, what to call them, both lanes.
 pub const Member = struct {
-    name: Text(rows.name_cap) = .{},
+    /// A channel name, or in a room the member's whole handle (the floor a
+    /// `room-read` is told is keyed by it).
+    name: Text(rows.whole_handle_cap) = .{},
     /// What the rail calls them: the alias they signed, or their short handle.
     label: Text(rows.name_cap) = .{},
     has_peer: bool = false,
@@ -40,11 +44,18 @@ pub const Member = struct {
 pub const Thread = struct {
     members: [rows.max_members]Member = @splat(.{}),
     count: usize = 0,
-    /// The stdin of the in-flight group read, owned here instead of the
-    /// model's shared `name_scratch`: each member's read rewrites it in
-    /// place, and every executor that holds the slice rather than a copy
-    /// would otherwise see every request arrive with one name.
-    stdin: Text(rows.name_cap + 1) = .{},
+    /// A room: every member is an author on one ward, `me` is my own stream,
+    /// and one `room-read` refreshes the whole thread. Otherwise a group of
+    /// channels, read one member per poll.
+    room: bool = false,
+    /// My own stream in a room; a group has a copy of mine in every member.
+    me: Lane = .{},
+    /// The stdin of the in-flight read, owned here instead of the model's
+    /// shared `name_scratch`: each member's read rewrites it in place, and
+    /// every executor that holds the slice rather than a copy would otherwise
+    /// see every request arrive with one name. Wide enough for a room's
+    /// name and thirty-two `HANDLE=HEIGHT` floors.
+    stdin: Text(stdin_cap) = .{},
     /// Which member the next poll reads. One member per poll, so a window on
     /// a group of thirty makes the same rhythm as one on a channel (I3).
     cursor: usize = 0,
@@ -56,6 +67,23 @@ pub const Thread = struct {
         thread.count = 0;
         thread.cursor = 0;
         thread.catching_up = 0;
+        thread.room = false;
+        thread.me.clear();
+    }
+    /// The member called `name`, admitted now when unknown: a room's roster
+    /// grows as the founder admits, and a read may name somebody new.
+    pub fn admit(thread: *Thread, name: []const u8) ?*Member {
+        for (thread.members[0..thread.count]) |*member| {
+            if (member.name.eql(name)) return member;
+        }
+        if (thread.count == rows.max_members) return null;
+        const member = &thread.members[thread.count];
+        member.* = .{};
+        member.name.set(name);
+        member.label.set(name[0..@min(name.len, 12)]);
+        member.has_peer = true;
+        thread.count += 1;
+        return member;
     }
     pub fn current(thread: *Thread) *Member {
         return &thread.members[@min(thread.cursor, rows.max_members - 1)];

@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const model_mod = @import("model.zig");
+const room = @import("room.zig");
 const update = @import("update.zig");
 const verbs = @import("verbs.zig");
 
@@ -31,7 +32,14 @@ pub fn open(m: *Model, fx: *Effects, slot: usize) void {
     const thread = &m.group_thread;
     thread.clear();
     const roster = m.currentGroup();
+    thread.room = roster.room;
     for (roster.members[0..roster.count]) |member| {
+        // A room's members are authors by handle, mine among them; a group's
+        // are channels, each lending its label and whether anybody joined.
+        if (thread.room) {
+            if (!m.handle.eql(member.slice())) _ = thread.admit(member.slice());
+            continue;
+        }
         var out: @TypeOf(thread.members[0]) = .{};
         out.name.set(member.slice());
         for (m.channelRows()) |row| {
@@ -42,14 +50,22 @@ pub fn open(m: *Model, fx: *Effects, slot: usize) void {
         thread.members[thread.count] = out;
         thread.count += 1;
     }
-    thread.catching_up = thread.count;
+    thread.catching_up = if (thread.room) 0 else thread.count;
     step(m, fx);
     fx.startTimer(.{ .key = verbs.key(.poll_timer), .interval_ms = update.poll_ms, .mode = .repeating, .on_fire = Effects.timerMsg(.poll) });
 }
 
 /// Reads the member under the cursor: their stream first, mine on its exit.
+/// A room is one read for everybody, floors included.
 pub fn step(m: *Model, fx: *Effects) void {
-    if (!m.onGroup() or m.group_thread.count == 0) return;
+    if (!m.onGroup()) return;
+    const thread = &m.group_thread;
+    if (thread.room) {
+        const fed = room.stdin(&thread.stdin.buf, m.groupTitle(), m.handle.slice(), &thread.me, thread.all());
+        thread.stdin.len = fed.len;
+        return verbs.roomRead(fx, m, fed);
+    }
+    if (thread.count == 0) return;
     const member = m.group_thread.current();
     verbs.read(fx, m, .group_theirs, member.name.slice(), member.theirs.height, &m.group_thread.stdin.buf);
 }
@@ -73,6 +89,9 @@ pub fn round(m: *Model, fx: *Effects) void {
 /// with one dead channel must go on reading the other four.
 pub fn exited(m: *Model, fx: *Effects, key: verbs.Key, failed: bool) bool {
     switch (key) {
+        .room_read => {},
+        // What was just said is on the host; one read shows it in its place.
+        .room_send => if (!failed) step(m, fx),
         .group_theirs => {
             const member = m.group_thread.current();
             // A read that succeeded on a member still marked as waiting has

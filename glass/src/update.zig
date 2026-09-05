@@ -13,6 +13,7 @@
 const std = @import("std");
 const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
+const acting = @import("acting.zig");
 const model_mod = @import("model.zig");
 const polling = @import("polling.zig");
 const verbs = @import("verbs.zig");
@@ -55,12 +56,14 @@ pub const Msg = union(enum) {
     invite_waypoint_edit: canvas.TextInputEvent,
     invite_every_edit: canvas.TextInputEvent,
     toggle_invite_release,
+    toggle_invite_room,
     mint,
     copy_invite,
     copy_check,
     join_name_edit: canvas.TextInputEvent,
     join_text_edit: canvas.TextInputEvent,
     toggle_join_release,
+    toggle_join_room,
     accept,
     export_now,
     copy_recovery,
@@ -137,7 +140,7 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
             verbs.channels(fx, m);
             if (m.onThread()) fetch(m, fx);
         },
-        .show_invite => showInvite(m),
+        .show_invite => acting.showInvite(m),
         .show_join => {
             m.sheet = .join;
             m.check.clear();
@@ -147,32 +150,34 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
             m.sheet = .roster;
             m.roster.prefill(m.channelRows(), if (m.onGroup()) m.currentGroup() else null);
         },
-        .show_doctor => showDoctor(m),
+        .show_doctor => acting.showDoctor(m),
         .show_forget => m.sheet = .forget,
         .close_sheet => m.sheet = .none,
         .dismiss_status => m.status.clear(),
         .search_edit => |edit| m.search.apply(edit),
         .draft_edit => |edit| m.draft.apply(edit),
-        .send => sendDraft(m, fx),
+        .send => acting.sendDraft(m, fx),
         .invite_name_edit => |edit| m.invite.name.apply(edit),
         .invite_waypoint_edit => |edit| m.invite.waypoint.apply(edit),
         .invite_every_edit => |edit| m.invite.every.apply(edit),
         .toggle_invite_release => m.invite.release = !m.invite.release,
-        .mint => mint(m, fx),
+        .toggle_invite_room => m.invite.room = !m.invite.room,
+        .mint => acting.mint(m, fx),
         .copy_invite => copy(m, fx, m.invite.lineText()),
         .copy_check => copy(m, fx, m.check.slice()),
         .join_name_edit => |edit| m.join.name.apply(edit),
         .join_text_edit => |edit| m.join.invitation.apply(edit),
         .toggle_join_release => m.join.release = !m.join.release,
-        .accept => accept(m, fx),
-        .export_now => exportSite(m, fx),
+        .toggle_join_room => m.join.room = !m.join.room,
+        .accept => acting.accept(m, fx),
+        .export_now => acting.exportSite(m, fx),
         .copy_recovery => copy(m, fx, m.backup.recoveryKey()),
         .roster_name_edit => |edit| m.roster.name.apply(edit),
         .toggle_member => |slot| m.roster.toggle(slot, m.channel_count),
-        .save_roster => saveRoster(m, fx),
-        .broadcast => broadcast(m, fx),
+        .save_roster => acting.saveRoster(m, fx),
+        .broadcast => acting.broadcast(m, fx),
         .doctor_edit => |edit| m.doctor.waypoint.apply(edit),
-        .examine => examine(m, fx),
+        .examine => acting.examine(m, fx),
         .confirm_forget => {
             if (!m.onThread()) return;
             m.sheet = .none;
@@ -186,7 +191,7 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
             verbs.revoke(fx, m, m.currentName(), &m.name_scratch);
         },
         .exited => |exit| exited(m, fx, exit),
-        .filed => |result| filed(m, result),
+        .filed => |result| acting.filed(m, result),
         .poll => |timer| {
             if (timer.outcome != .fired) return;
             if (m.onGroup()) return polling.step(m, fx);
@@ -298,77 +303,17 @@ pub fn stopTimers(fx: *Effects) void {
     fx.cancelTimer(verbs.key(.slot_timer));
 }
 
-fn showInvite(m: *Model) void {
-    m.sheet = .invite;
-    m.invite.line.clear();
-    m.check.clear();
-    if (m.invite.waypoint.text().len == 0 and m.onThread()) m.invite.waypoint.set(m.currentWaypoint());
-}
 
-fn showDoctor(m: *Model) void {
-    m.sheet = .doctor;
-    m.doctor.clear();
-    if (m.doctor.waypoint.text().len == 0 and m.onThread()) m.doctor.waypoint.set(m.currentWaypoint());
-}
 
-fn sendDraft(m: *Model, fx: *Effects) void {
-    if (!m.canSend()) return;
-    m.busy = verbs.key(.send);
-    verbs.send(fx, m, m.currentName(), m.draft.text(), &m.scratch);
-}
 
-fn mint(m: *Model, fx: *Effects) void {
-    if (m.isBusy() or !m.invite.ready()) return;
-    m.busy = verbs.key(.invite);
-    verbs.invite(fx, m, m.invite.nameText(), m.invite.waypointText(), .{ .every = m.invite.period(), .release = m.invite.release }, &m.scratch);
-}
 
-fn accept(m: *Model, fx: *Effects) void {
-    if (m.isBusy() or !m.join.ready()) return;
-    m.busy = verbs.key(.join);
-    verbs.join(fx, m, m.join.nameText(), m.join.invitationText(), m.join.release, &m.scratch);
-}
 
-fn exportSite(m: *Model, fx: *Effects) void {
-    if (m.isBusy()) return;
-    m.busy = verbs.key(.export_);
-    verbs.exportSite(fx, m);
-}
-
-fn saveRoster(m: *Model, fx: *Effects) void {
-    if (m.isBusy() or !m.roster.ready()) return;
-    var names: [model_mod.max_channels][]const u8 = undefined;
-    const members = m.roster.ticked(m.channel_count, &names);
-    m.sheet = .none;
-    m.busy = verbs.key(.group);
-    verbs.group(fx, m, m.roster.nameText(), members, &m.scratch);
-}
-
-fn broadcast(m: *Model, fx: *Effects) void {
-    if (m.isBusy() or !m.onGroup() or m.draft.text().len == 0) return;
-    m.busy = verbs.key(.fanout);
-    verbs.fanout(fx, m, m.groupTitle(), m.draft.text(), &m.scratch);
-}
-
-fn examine(m: *Model, fx: *Effects) void {
-    if (m.isBusy() or !m.doctor.ready()) return;
-    m.busy = verbs.key(.doctor);
-    verbs.doctor(fx, m, m.doctor.waypointText());
-}
 
 fn copy(m: *Model, fx: *Effects, text: []const u8) void {
     if (text.len == 0) return;
     fx.writeClipboard(.{ .key = verbs.key(.clipboard), .text = text });
     m.copied.set(text);
     fx.startTimer(.{ .key = verbs.key(.scrub_timer), .interval_ms = scrub_ms, .mode = .one_shot, .on_fire = Effects.timerMsg(.scrub) });
-}
-
-fn filed(m: *Model, result: native_sdk.EffectFileResult) void {
-    m.backup.written = result.outcome == .ok;
-    if (m.backup.written) return;
-    m.status.code.set("glass.backup_unwritten");
-    m.status.error_text.set(m.t.err_backup_unwritten);
-    m.status.recover.set(m.t.rec_backup_unwritten);
 }
 
 fn exited(m: *Model, fx: *Effects, exit: native_sdk.EffectExit) void {
@@ -383,16 +328,17 @@ fn exited(m: *Model, fx: *Effects, exit: native_sdk.EffectExit) void {
         // A read that succeeded on a row still marked as waiting has just met
         // the peer; the row learns that from the channel list.
         .read_theirs => if (m.onThread() and !m.current().hasPeer()) verbs.channels(fx, m),
-        .invite, .join, .forget, .group, .revoke => verbs.channels(fx, m),
+        .invite, .join, .forget, .group, .revoke, .room_invite, .room_join => verbs.channels(fx, m),
+        // A room just founded is invited into at once: that is what the
+        // person pressed the button for.
+        .room => {
+            m.busy = verbs.key(.room_invite);
+            verbs.roomInvite(fx, m, m.invite.nameText(), &m.scratch);
+        },
         .fanout => polling.round(m, fx),
         .tick => verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch),
-        .export_ => writeArchive(m, fx),
+        .export_ => acting.writeArchive(m, fx),
         else => {},
     }
 }
 
-fn writeArchive(m: *Model, fx: *Effects) void {
-    const path = std.fmt.bufPrint(&m.backup.path.buf, "{s}{c}kusanagi-backup-{d}.ksnb", .{ m.home.slice(), std.fs.path.sep, fx.wallMs() }) catch return;
-    m.backup.path.len = path.len;
-    fx.writeFile(.{ .key = verbs.key(.backup_file), .path = path, .bytes = m.backup.bytes(), .on_result = Effects.fileMsg(.filed) });
-}

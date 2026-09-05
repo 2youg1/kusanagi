@@ -118,6 +118,24 @@ fn sending(
 
 /// Reads a room verb into the request it names.
 ///
+/// One `HANDLE=HEIGHT` floor of a room read.
+fn floored(floor: &str) -> Result<(String, u64), Complaint> {
+    floor
+        .split_once('=')
+        .and_then(|(handle, height)| {
+            height
+                .trim()
+                .parse()
+                .ok()
+                .map(|height| (handle.trim().to_owned(), height))
+        })
+        .ok_or_else(|| Complaint::Argument {
+            what: "--after",
+            reason: format!("`{floor}` is not HANDLE=HEIGHT"),
+            instead: "write the author's handle, `=`, then the height you hold",
+        })
+}
+
 /// Apart from `request` because that dispatch is at its line limit: five more
 /// arms would push it past what one function may hold.
 fn room_request(verb: Verb) -> Result<Request, Complaint> {
@@ -138,27 +156,22 @@ fn room_request(verb: Verb) -> Result<Request, Complaint> {
             let (name, payload) = intake::addressed(name, text)?;
             Request::RoomSend { name, payload }
         }
-        Verb::RoomRead { name, after } => Request::RoomRead {
-            name: intake::channel(name)?,
-            after: after
-                .iter()
-                .map(|floor| {
-                    floor
-                        .split_once('=')
-                        .and_then(|(handle, height)| {
-                            height
-                                .parse()
-                                .ok()
-                                .map(|height| (handle.to_owned(), height))
-                        })
-                        .ok_or_else(|| Complaint::Argument {
-                            what: "--after",
-                            reason: format!("`{floor}` is not HANDLE=HEIGHT"),
-                            instead: "write the author's handle, `=`, then the height you hold",
-                        })
-                })
-                .collect::<Result<_, _>>()?,
-        },
+        Verb::RoomRead { name, after } => {
+            // `--after -` reads the floors from stdin, one per line after the
+            // name: thirty-two of them do not belong on a command line.
+            let (name, floors) = if after.as_slice() == [intake::ON_STDIN] {
+                intake::enrolled(name)?
+            } else {
+                (intake::channel(name)?, after)
+            };
+            Request::RoomRead {
+                name,
+                after: floors
+                    .iter()
+                    .map(|floor| floored(floor))
+                    .collect::<Result<_, _>>()?,
+            }
+        }
         _ => {
             return Err(Complaint::Argument {
                 what: "verb",

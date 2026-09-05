@@ -23,6 +23,8 @@ pub const draft_cap = 3584;
 pub const max_channels = 64;
 pub const max_groups = 16;
 pub const max_members = 32;
+/// A handle renders as 64 hexadecimal characters; a room's members are handles.
+pub const whole_handle_cap = 64;
 pub const max_messages = 128;
 pub const max_rows = 32;
 
@@ -99,12 +101,14 @@ pub const ChannelRow = struct {
     }
 };
 
-/// One group as `channels` reports it: a name over a list of channel names.
+/// One group as `channels` reports it: a name over a list of channel names —
+/// or a room, whose members are handles and whose thread is one read.
 pub const GroupRow = struct {
     slot: usize = 0,
     name: Text(name_cap) = .{},
-    members: [max_members]Text(name_cap) = @splat(.{}),
+    members: [max_members]Text(whole_handle_cap) = @splat(.{}),
     count: usize = 0,
+    room: bool = false,
 
     pub fn title(row: *const GroupRow) []const u8 {
         return row.name.slice();
@@ -126,6 +130,9 @@ pub const GroupRow = struct {
 pub const Message = struct {
     index: u64 = 0,
     acknowledged: u64 = 0,
+    /// The period it was filed in, on a room's rows only: the one order that
+    /// holds across N authors.
+    filed: u64 = 0,
     text: Text(text_cap) = .{},
     is_hex: bool = false,
 };

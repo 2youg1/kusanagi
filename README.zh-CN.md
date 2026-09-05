@@ -192,7 +192,7 @@ kusanagi proxy --require     # 从此没有 KUSANAGI_PROXY 就一个请求也不
 
 | 缺什么 | 为什么 |
 |---|---|
-| 一条 channel 容纳三方以上 | 一条 channel 就是一对端点。小群组走扇出：`kusanagi group --name team` 写下名单，`kusanagi send --to-group team` 对每条 channel 各写一个 drop，报告逐人说明送到了没有。那份名单只存在本端点上，别人一份都没有，所以既没有群密钥，也没有关于成员资格的共识，而踢人就是重写一份不包含他的名单。**共享**名册买到的是一千人，那是另一个问题。 |
+| 一条 channel 容纳三方以上 | 一条 channel 就是一对端点。往上有两种形状，各付各的价。**群组**是扇出：`kusanagi group --name team` 写下名单，`kusanagi send --to-group team` 对每条 channel 各写一个 drop，成员之间互不知情。**房间**是共享的：`kusanagi room --name team --waypoint …` 建房，`room-invite` 发出邀请行，`room-join` 接受，`room-send` 在你自己的流上写一次，`room-read` 一次 sweep 取回整个房间，人数多少都一样。**房间的代价，明说：**每个成员都知道其他成员的 handle；只有建房者能邀请与准入，建房者走了，房间就再收不了人；主机看到每个成员一条流、每张邀请一个介绍对象，两者都数得出；没有踢人；房间里暂时没有自报的名字；上限 32 人。一千人是另一个问题。 |
 | 隐藏你什么时候在线 | 用 `--every` 打开的 channel 每个周期写一个 drop，有话没话都一样，主机分不出说话与沉默；这台机器关机时留下的空档仍是空档。调度器里的随机延迟模糊的是时刻，不是缺席。 |
 | 对哑对象存储隐藏对象数量 | 需要长轮询，而普通桶不提供。 |
 | 长轮询 | 顺带能堵住上面说的活动边缘泄露。 |

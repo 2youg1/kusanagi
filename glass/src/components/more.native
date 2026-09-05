@@ -75,7 +75,8 @@
         <text size="sm" foreground="text_muted" overflow="ellipsis">{groupSize} {plural(groupSize, t.member, t.members)} · {groupMembers}</text>
       </column>
       <if test="{isBusy}"><spinner/></if>
-      <button size="sm" variant="ghost" icon="edit" on-press="show_roster" disabled="{isBusy}">{t.edit_members}</button>
+      <if test="{groupIsRoom}"><badge variant="outline">{t.room_badge}</badge></if>
+      <else><button size="sm" variant="ghost" icon="edit" on-press="show_roster" disabled="{isBusy}">{t.edit_members}</button></else>
     </row>
     <separator/>
     <column grow="1" padding="24" gap="12">
@@ -88,7 +89,7 @@
                 <bubble variant="primary" label="{t.you}" padding="12">
                   <column gap="4">
                     <markdown source="{b.text}"/>
-                    <text size="sm">{t.reached} {b.reached}/{b.of}</text>
+                    <if test="{groupIsList}"><text size="sm">{t.reached} {b.reached}/{b.of}</text></if>
                   </column>
                 </bubble>
               </row>
@@ -107,8 +108,14 @@
           </for>
           <else>
             <column main="center" cross="center" grow="1" gap="6" padding="48">
-              <text size="heading" foreground="text_muted">{t.group_is_list}</text>
-              <text foreground="text_muted" wrap="true" text-alignment="center" max-width="480">{t.group_body}</text>
+              <if test="{groupIsRoom}">
+                <text size="heading" foreground="text_muted">{t.room_is_shared}</text>
+                <text foreground="text_muted" wrap="true" text-alignment="center" max-width="480">{t.room_body}</text>
+              </if>
+              <else>
+                <text size="heading" foreground="text_muted">{t.group_is_list}</text>
+                <text foreground="text_muted" wrap="true" text-alignment="center" max-width="480">{t.group_body}</text>
+              </else>
             </column>
           </else>
         </column>

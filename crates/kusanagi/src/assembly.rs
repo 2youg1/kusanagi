@@ -199,7 +199,27 @@ fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
             members: roster.members,
         })
         .collect();
-    Ok(Outcome::Channels { channels, groups })
+    let rooms = site
+        .room_names()?
+        .into_iter()
+        .map(|name| {
+            let room = site.room(&name)?;
+            Ok(Grouping {
+                name,
+                members: room
+                    .roster
+                    .members()
+                    .iter()
+                    .map(|member| member.handle().to_string())
+                    .collect(),
+            })
+        })
+        .collect::<Result<Vec<Grouping>, Complaint>>()?;
+    Ok(Outcome::Channels {
+        channels,
+        groups,
+        rooms,
+    })
 }
 
 /// Opens what a locator names, with what the environment supplies to reach it.

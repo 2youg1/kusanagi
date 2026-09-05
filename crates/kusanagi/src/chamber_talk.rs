@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use kusanagi_kernel::{Bin, Freight, Handle, Instant, Purpose, Roster, VerifyingKey};
 use kusanagi_seal::{Keyring, period, rendezvous};
 use kusanagi_site::{Room, Site};
-use kusanagi_walk::{Lane, Reach, Walked, peek, track, track_all, verified};
+use kusanagi_walk::{Lane, Reach, Walked, peek, track, track_all};
 
 use crate::assembly::{open, signer};
 use crate::traffic::append;
@@ -56,8 +56,10 @@ pub(crate) fn room_send(
     let place = open(site, &chamber.locator, now)?;
     let mine = lane_of(&chamber, &me.verifying_key(), now);
     let walked = track(site, name, &place, &mine, Reach::Head, now)?;
-    let acknowledged = verified(site, name, &me.handle())?;
-    let freight = Freight::message(payload.to_vec())?.acknowledging(acknowledged);
+    // No acknowledgement count: one number cannot say how much of N streams
+    // was read, and a room never releases, so nothing settles on it. Order
+    // across authors is the period each segment was filed in.
+    let freight = Freight::message(payload.to_vec())?;
     let written = append(site, name, &place, &mine, &me, freight, walked)?;
     Ok(Outcome::RoomSent {
         name: name.to_owned(),
@@ -152,7 +154,7 @@ pub(crate) fn room_read(
                         .map(|held| {
                             (
                                 held.segment.index(),
-                                held.segment.acknowledged(),
+                                held.filed.count(),
                                 held.segment.payload(),
                             )
                         })

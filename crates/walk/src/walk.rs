@@ -215,7 +215,7 @@ pub fn track_all(
     let mut listed = None;
     while let Some(mut taken) = sweeping.take()? {
         for (step, _, _) in &mut steps {
-            step.advance(&mut taken.held, name)?;
+            step.advance(taken.seen.through, &mut taken.held, name)?;
         }
         listed = Some(taken.seen);
     }

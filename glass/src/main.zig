@@ -166,6 +166,7 @@ test {
     _ = @import("tests_group.zig");
     _ = @import("order.zig");
     _ = @import("group.zig");
+    _ = @import("room.zig");
     _ = @import("theme.zig");
     _ = @import("plate.zig");
     _ = @import("font.zig");

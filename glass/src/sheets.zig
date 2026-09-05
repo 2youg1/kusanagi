@@ -20,6 +20,8 @@ pub const Invite = struct {
     waypoint: canvas.TextBuffer(rows.line_cap) = .{},
     every: canvas.TextBuffer(8) = .{},
     release: bool = false,
+    /// A room rather than a channel: founded on first mint, invited into after.
+    room: bool = false,
     line: Text(rows.invite_cap) = .{},
 
     pub fn nameText(s: *const Invite) []const u8 {
@@ -50,6 +52,8 @@ pub const Join = struct {
     name: canvas.TextBuffer(rows.name_cap) = .{},
     invitation: canvas.TextBuffer(rows.invite_cap) = .{},
     release: bool = false,
+    /// A room invitation rather than a channel's.
+    room: bool = false,
 
     pub fn nameText(s: *const Join) []const u8 {
         return s.name.text();

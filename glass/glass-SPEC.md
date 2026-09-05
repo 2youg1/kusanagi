@@ -122,6 +122,8 @@
 | `Msg.dropped` | 借切片而非自持 1 KiB:每个控件槽都存一份 `Msg`,大 payload 让 Debug 构建的视图递归爆栈 |
 | 工具 | `shot.sh`(参考渲染截图)、`real.ps1`(真实 D2D 窗口像素)、`stage.sh`(临时 `LOCALAPPDATA` 里搭一场对话);真实像素才是判 UI 的依据 |
 
+**F8 房间(本轮)**:房间是 `GroupRow.room = true` 的一行,与群组同列同页;区别只在数据源与归并——`polling.step` 对房间发一次 `room-read --name - --after -`,stdin 是名字加每条流的 `HANDLE=HEIGHT`(`room.stdin`,写进 `Thread.stdin`,容 32 条),应答按 `threads[].author` 落进 `Thread.me`(我的)与各 `Member.theirs`,名册长了就地 `admit`;线程由 `room.merge` 按 `filed` period 排,不去重、不算「已送达」。邀请 sheet 一个开关「建房间」:名字已是房间即 `room-invite`,否则 `room` 成功后接着 `room-invite`;加入 sheet 一个开关「这是房间邀请」→ `room-join`。**不是第五个 poll**:一成员一 poll 的节律是群组的,房间一次读就是全员。
+
 **SDK 侧缺陷,待上游**:D4 文字先画进 `D2D1_ALPHA_MODE_PREMULTIPLIED` 后备位图(`gpu_surface_renderer.cpp:1227/1762`),ClearType 降为灰度——字偏软;
 D5 折行器不认 CJK 断点;D6 变体字面只有默认字重,markdown 粗体不粗;D7 `native check` 在 Windows 拼错根路径(即 D2)。
 
@@ -158,7 +160,9 @@ model.zig     Model / 有界存储 / 壳与对话的绑定方法（含群组线�
 sheets.zig    五张 sheet 各自的状态结构体与绑定方法（嵌套路径 {invite.nameText}）
 rows.zig      有界记录：Text、ChannelRow、GroupRow、Message、Lane、Bubble、Status、CheckRow；`LaneOf(n)` 让群组成员的窗口小于通道的（`ChannelRow.peer` 放宽到 32 以容 alias）
 group.zig     群组线程的归并纯函数：同文本同顺序的广播去重成一条，回复挂在其所属广播之后；有测试
-polling.zig   群组轮询：开页、一步一成员、追赶轮、退出分派（从 update.zig 拆出以守 400）
+polling.zig   群组轮询：开页、一步一成员、追赶轮、退出分派（从 update.zig 拆出以守 400）；房间走另一条：一次 `room-read` 就是整条线程
+room.zig      房间线程的归并纯函数（按归档 period 排序，同 period 内先对方后自己）与 `room-read --after -` 的 stdin 构造；有测试
+acting.zig    sheet 与撰写框的动作：检查 busy 与就绪、标记、spawn 一个动词（从 update.zig 拆出以守 400）
 theme.zig     调色板与 tokens(appearance) → DesignTokens；纯函数，有测试
 plate.zig     G4 转角、面板几何（复刻分栏公式）、chrome 发射；纯函数，有测试
 update.zig    update：每个 Msg 一臂，副作用只在这里发出

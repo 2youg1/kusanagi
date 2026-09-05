@@ -19,13 +19,20 @@ use crate::report::Outcome;
 use crate::rows::{Delivery, Entry, Grouping, Landed, Measured, Summary, called};
 
 /// The channels, then every group and what it stands for.
-fn grouped_listing(channels: &[Summary], groups: &[Grouping]) -> String {
+fn grouped_listing(channels: &[Summary], groups: &[Grouping], rooms: &[Grouping]) -> String {
+    if channels.is_empty() && groups.is_empty() && rooms.is_empty() {
+        return "no channels yet; `kusanagi invite` starts one".to_owned();
+    }
     let mut said = listing(channels);
-    for group in groups {
-        said.push_str("\n\ngroup `");
-        said.push_str(&group.name);
-        said.push('`');
-        said.push_str(&members(group));
+    for (kind, listed) in [("group", groups), ("room", rooms)] {
+        for row in listed {
+            said.push_str("\n\n");
+            said.push_str(kind);
+            said.push_str(" `");
+            said.push_str(&row.name);
+            said.push('`');
+            said.push_str(&members(row));
+        }
     }
     said
 }
@@ -43,10 +50,11 @@ pub fn render(outcome: &Outcome, fence: Fence) -> String {
                 .as_deref()
                 .unwrap_or("(none; `kusanagi name --as NAME` sets one)")
         ),
-        Outcome::Channels { channels, groups } if channels.is_empty() && groups.is_empty() => {
-            "no channels yet; `kusanagi invite` starts one".to_owned()
-        }
-        Outcome::Channels { channels, groups } => grouped_listing(channels, groups),
+        Outcome::Channels {
+            channels,
+            groups,
+            rooms,
+        } => grouped_listing(channels, groups, rooms),
         Outcome::Grouped { group } => enrolled(group),
         Outcome::FannedOut { group, delivered } => fanned(group, delivered),
         Outcome::RoomFounded {

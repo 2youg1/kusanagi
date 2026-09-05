@@ -58,6 +58,7 @@
           <text>{g.title}</text>
           <text size="sm" foreground="text_muted">{g.count} {plural(g.count, t.member, t.members)}</text>
         </column>
+        <if test="{g.room}"><badge variant="outline">{t.room_badge}</badge></if>
       </row>
     </list-item>
   </for>

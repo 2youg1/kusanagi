@@ -36,6 +36,11 @@ pub const Key = enum(u64) {
     doctor,
     group,
     fanout,
+    room,
+    room_invite,
+    room_join,
+    room_send,
+    room_read,
     forget,
     revoke,
     tick,
@@ -118,6 +123,32 @@ pub fn send(fx: anytype, m: *const Model, name: []const u8, text: []const u8, sc
 pub fn fanout(fx: anytype, m: *const Model, roster: []const u8, text: []const u8, scratch: []u8) void {
     const stdin = std.fmt.bufPrint(scratch, "{s}\n{s}", .{ roster, text }) catch return;
     spawn(fx, m, .fanout, &.{ "send", "--to-group", "-" }, stdin);
+}
+
+/// One read of a whole room. `stdin` is the name and the floors, built by
+/// `room.stdin` into the thread's own buffer.
+pub fn roomRead(fx: anytype, m: *const Model, stdin: []const u8) void {
+    spawn(fx, m, .room_read, &.{ "room-read", "--name", "-", "--after", "-" }, stdin);
+}
+
+pub fn roomSend(fx: anytype, m: *const Model, name: []const u8, text: []const u8, scratch: []u8) void {
+    const stdin = std.fmt.bufPrint(scratch, "{s}\n{s}", .{ name, text }) catch return;
+    spawn(fx, m, .room_send, &.{ "room-send", "--name", "-" }, stdin);
+}
+
+pub fn room(fx: anytype, m: *const Model, name: []const u8, waypoint: []const u8, scratch: []u8) void {
+    const stdin = std.fmt.bufPrint(scratch, "{s}\n", .{name}) catch return;
+    spawn(fx, m, .room, &.{ "room", "--name", "-", "--waypoint", waypoint }, stdin);
+}
+
+pub fn roomInvite(fx: anytype, m: *const Model, name: []const u8, scratch: []u8) void {
+    const stdin = std.fmt.bufPrint(scratch, "{s}\n", .{name}) catch return;
+    spawn(fx, m, .room_invite, &.{ "room-invite", "--name", "-" }, stdin);
+}
+
+pub fn roomJoin(fx: anytype, m: *const Model, name: []const u8, invitation: []const u8, scratch: []u8) void {
+    const stdin = std.fmt.bufPrint(scratch, "{s}\n{s}", .{ name, invitation }) catch return;
+    spawn(fx, m, .room_join, &.{ "room-join", "--name", "-" }, stdin);
 }
 
 pub const Habit = struct { every: ?u32, release: bool };

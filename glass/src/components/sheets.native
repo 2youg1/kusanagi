@@ -129,10 +129,16 @@
     <text-field text="{invite.waypointText}" placeholder="{t.waypoint_placeholder}" on-input="invite_waypoint_edit" on-submit="mint" label="{t.waypoint}"/>
     <text-field text="{invite.everyText}" placeholder="{t.every_placeholder}" on-input="invite_every_edit" on-submit="mint" label="{t.slot_period}"/>
     <text size="sm" foreground="text_muted" wrap="true">{t.period_hint}</text>
-    <switch checked="{invite.release}" on-toggle="toggle_invite_release">{t.release_switch}</switch>
-    <if test="{invite.release}">
-      <text size="sm" foreground="text_muted" wrap="true">{t.release_hint}</text>
+    <switch checked="{invite.room}" on-toggle="toggle_invite_room">{t.room_switch}</switch>
+    <if test="{invite.room}">
+      <text size="sm" foreground="text_muted" wrap="true">{t.room_hint}</text>
     </if>
+    <else>
+      <switch checked="{invite.release}" on-toggle="toggle_invite_release">{t.release_switch}</switch>
+      <if test="{invite.release}">
+        <text size="sm" foreground="text_muted" wrap="true">{t.release_hint}</text>
+      </if>
+    </else>
     <row gap="8" main="end">
       <button variant="ghost" on-press="close_sheet">{t.cancel}</button>
       <button variant="primary" on-press="mint" disabled="{isBusy}">{t.mint}</button>
@@ -180,7 +186,10 @@
           <text-field text="{join.nameText}" placeholder="{t.name_placeholder}" on-input="join_name_edit" on-submit="accept" label="{t.name}" autofocus="true"/>
           <textarea text="{join.invitationText}" placeholder="{t.paste_invitation}" on-input="join_text_edit" label="{t.invitation}" height="120"/>
           <text size="sm" foreground="text_muted" wrap="true">{t.stdin_hint}</text>
-          <switch checked="{join.release}" on-toggle="toggle_join_release">{t.release_switch}</switch>
+          <switch checked="{join.room}" on-toggle="toggle_join_room">{t.join_room_switch}</switch>
+          <if test="{join.room}"><else>
+            <switch checked="{join.release}" on-toggle="toggle_join_release">{t.release_switch}</switch>
+          </else></if>
           <row gap="8" main="end">
             <button variant="ghost" on-press="close_sheet">{t.cancel}</button>
             <button variant="primary" on-press="accept" disabled="{isBusy}">{t.join}</button>

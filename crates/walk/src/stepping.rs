@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use kusanagi_chain::{Cairn, Verifier};
-use kusanagi_kernel::{DropAddr, Segment, SegmentError};
+use kusanagi_kernel::{DropAddr, Period, Segment, SegmentError};
 use kusanagi_seal::{Fit, open};
 
 use crate::lane::Lane;
@@ -28,6 +28,10 @@ use kusanagi_door::Complaint;
 pub struct Held {
     /// Where it was.
     pub address: DropAddr,
+    /// The period of the bin it was found in: when its author filed it, as
+    /// the host already sees it. Streams carry no clock, and this is the one
+    /// coarse order that holds across authors.
+    pub filed: Period,
     /// What it was.
     pub segment: Segment,
 }
@@ -74,6 +78,7 @@ impl<'a> Stepping<'a> {
     /// what a host that revised a drop this endpoint already read comes out as.
     pub(crate) fn advance(
         &mut self,
+        filed: Period,
         bin: &mut HashMap<DropAddr, Vec<u8>>,
         name: &str,
     ) -> Result<(), Complaint> {
@@ -84,7 +89,11 @@ impl<'a> Stepping<'a> {
             };
             let segment = decode(self.lane, name, index, &sealed)?;
             self.verifier.accept(&segment)?;
-            self.held.push(Held { address, segment });
+            self.held.push(Held {
+                address,
+                filed,
+                segment,
+            });
             self.next = index.checked_add(1);
         }
         Ok(())

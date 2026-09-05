@@ -17,6 +17,7 @@ const group = @import("group.zig");
 const order = @import("order.zig");
 const rows = @import("rows.zig");
 const sheets = @import("sheets.zig");
+const room = @import("room.zig");
 const strings = @import("strings.zig");
 const wording = @import("wording.zig");
 
@@ -300,10 +301,26 @@ pub const Model = struct {
     pub fn groupSize(m: *const Model) usize {
         return m.currentGroup().count;
     }
-    /// The group as one thread, laid out by `group.zig`; empty until a read lands.
+    /// The group as one thread, laid out by `group.zig` — or by `room.zig`
+    /// when the row is a room; empty until a read lands.
     pub fn groupThread(m: *const Model, arena: std.mem.Allocator) []const group.Bubble {
-        const out = arena.alloc(group.Bubble, group.window * (1 + m.group_thread.count)) catch return &.{};
-        return out[0..group.merge(m.group_thread.all(), out)];
+        const open = &m.group_thread;
+        const out = arena.alloc(group.Bubble, group.window * (1 + open.count)) catch return &.{};
+        const n = if (open.room) room.merge(&open.me, open.all(), out) else group.merge(open.all(), out);
+        return out[0..n];
+    }
+    /// Whether a room called `name` is already listed here.
+    pub fn holdsRoom(m: *const Model, name: []const u8) bool {
+        for (m.groupRows()) |row| {
+            if (row.room and row.name.eql(name)) return true;
+        }
+        return false;
+    }
+    pub fn groupIsRoom(m: *const Model) bool {
+        return m.currentGroup().room;
+    }
+    pub fn groupIsList(m: *const Model) bool {
+        return !m.currentGroup().room;
     }
     pub fn deliveredRows(m: *const Model) []const CheckRow {
         return m.delivered[0..m.delivered_count];

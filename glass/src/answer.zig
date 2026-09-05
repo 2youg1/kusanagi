@@ -108,6 +108,11 @@ pub fn apply(m: *Model, exit: native_sdk.EffectExit) void {
         .doctor => examined(m, answer),
         .group => m.status.note.set(m.t.note_group_saved),
         .fanout => fannedOut(m, answer),
+        .room => m.status.note.set(m.t.note_room_founded),
+        .room_invite => invited(m, answer),
+        .room_join => joined(m, answer),
+        .room_send => {},
+        .room_read => roomRead(m, answer),
         .forget => m.status.note.set(m.t.note_forgotten),
         .revoke => m.status.note.set(m.t.note_revoked),
         .tick => ticked(m, answer),
@@ -151,18 +156,22 @@ fn channels(m: *Model, answer: std.json.ObjectMap) void {
         m.channel_count += 1;
     }
     m.group_count = 0;
-    for (items(answer, "groups")) |value| {
-        const row = object(value) orelse continue;
-        if (m.group_count == model_mod.max_groups) break;
-        var out: model_mod.GroupRow = .{ .slot = m.group_count };
-        out.name.set(str(row, "name"));
-        for (items(row, "members")) |member| {
-            if (member != .string or out.count == model_mod.max_members) continue;
-            out.members[out.count].set(member.string);
-            out.count += 1;
+    // Rooms are rows of the same list: a name over members. What differs is
+    // how the thread is read, and the row says which it is.
+    for ([_][]const u8{ "groups", "rooms" }) |kind| {
+        for (items(answer, kind)) |value| {
+            const row = object(value) orelse continue;
+            if (m.group_count == model_mod.max_groups) break;
+            var out: model_mod.GroupRow = .{ .slot = m.group_count, .room = kind[0] == 'r' };
+            out.name.set(str(row, "name"));
+            for (items(row, "members")) |member| {
+                if (member != .string or out.count == model_mod.max_members) continue;
+                out.members[out.count].set(member.string);
+                out.count += 1;
+            }
+            m.groups[m.group_count] = out;
+            m.group_count += 1;
         }
-        m.groups[m.group_count] = out;
-        m.group_count += 1;
     }
     if (m.selected >= m.channel_count) m.selected = 0;
     if (m.selected_group >= m.group_count) m.selected_group = 0;
@@ -175,6 +184,7 @@ fn read(m: *Model, lane: anytype, answer: std.json.ObjectMap) void {
         var message: model_mod.Message = .{
             .index = uint(row, "index") orelse 0,
             .acknowledged = uint(row, "acknowledged") orelse 0,
+            .filed = uint(row, "filed") orelse 0,
         };
         const text = str(row, "text");
         if (text.len > 0 or row.get("text") != null) {
@@ -188,6 +198,21 @@ fn read(m: *Model, lane: anytype, answer: std.json.ObjectMap) void {
         lane.push(message);
     }
     if (m.output_cut) m.status.note.set(m.t.note_cut);
+}
+
+/// One row per author: mine into the thread's own lane, every other into
+/// the member it names — admitted on the spot when the roster grew.
+fn roomRead(m: *Model, answer: std.json.ObjectMap) void {
+    const thread = &m.group_thread;
+    for (items(answer, "threads")) |value| {
+        const row = object(value) orelse continue;
+        const author = str(row, "author");
+        if (m.handle.eql(author)) {
+            read(m, &thread.me, row);
+        } else if (thread.admit(author)) |member| {
+            read(m, &member.theirs, row);
+        }
+    }
 }
 
 fn sent(m: *Model, answer: std.json.ObjectMap) void {

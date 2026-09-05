@@ -89,7 +89,12 @@ impl Thread {
             height,
             segments: segments
                 .into_iter()
-                .map(|(index, acknowledged, payload)| Entry::of(index, acknowledged, payload))
+                .map(|(index, filed, payload)| Entry {
+                    index,
+                    acknowledged: 0,
+                    filed: Some(filed),
+                    carried: Carried::of(payload),
+                })
                 .collect(),
         }
     }
@@ -127,6 +132,10 @@ pub struct Entry {
     /// they wrote this one. Two streams carry no clock, and this is the one
     /// fact that orders them: a segment stands after everything it counts.
     pub(crate) acknowledged: u64,
+    /// The period the author filed it in, on a room's row only: one number
+    /// cannot order N streams, and this coarse public one can.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) filed: Option<u64>,
     #[serde(flatten)]
     pub(crate) carried: Carried,
 }
@@ -138,6 +147,7 @@ impl Entry {
         Self {
             index,
             acknowledged,
+            filed: None,
             carried: Carried::of(payload),
         }
     }
