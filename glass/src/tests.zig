@@ -95,6 +95,13 @@ pub fn expectByText(widget: canvas.Widget, kind: canvas.WidgetKind, text: []cons
     };
 }
 
+pub fn expectByLabel(widget: canvas.Widget, label: []const u8) !canvas.Widget {
+    return findByLabel(widget, label) orelse {
+        std.debug.print("no widget with label \"{s}\" in the view\n", .{label});
+        return error.WidgetNotFound;
+    };
+}
+
 fn findByLabel(widget: canvas.Widget, label: []const u8) ?canvas.Widget {
     if (std.mem.eql(u8, widget.semantics.label, label)) return widget;
     for (widget.children) |child| {

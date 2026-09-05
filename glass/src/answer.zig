@@ -99,6 +99,8 @@ pub fn apply(m: *Model, exit: native_sdk.EffectExit) void {
         .channels => channels(m, answer),
         .read_theirs => read(m, &m.theirs, answer),
         .read_mine => read(m, &m.mine, answer),
+        .group_theirs => read(m, &m.group_thread.current().theirs, answer),
+        .group_mine => read(m, &m.group_thread.current().mine, answer),
         .send => sent(m, answer),
         .invite => invited(m, answer),
         .join => joined(m, answer),
@@ -166,7 +168,7 @@ fn channels(m: *Model, answer: std.json.ObjectMap) void {
     if (m.selected_group >= m.group_count) m.selected_group = 0;
 }
 
-fn read(m: *Model, lane: *model_mod.Lane, answer: std.json.ObjectMap) void {
+fn read(m: *Model, lane: anytype, answer: std.json.ObjectMap) void {
     lane.height = uint(answer, "height");
     for (items(answer, "segments")) |value| {
         const row = object(value) orelse continue;

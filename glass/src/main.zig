@@ -163,7 +163,9 @@ pub fn main(init: std.process.Init) !void {
 test {
     _ = @import("tests.zig");
     _ = @import("tests_effects.zig");
+    _ = @import("tests_group.zig");
     _ = @import("order.zig");
+    _ = @import("group.zig");
     _ = @import("theme.zig");
     _ = @import("plate.zig");
     _ = @import("font.zig");

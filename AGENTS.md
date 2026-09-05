@@ -2,7 +2,7 @@
 
 **For any agent or person about to change this code.** Read this file to the end before the first edit. It is short on purpose, and everything it does not cover is one link away. An agent that wants to *use* kusanagi rather than change it reads [`LLM.md`](LLM.md) instead.
 
-kusanagi is a decentralised collaboration network for agents. The substrate is a **dead drop**, not a connection: a sender leaves a segment at an opaque address, a reader collects it later, and the host that holds the bytes is never trusted. Direct delivery is an optimisation of that, not the other way round.
+Kusanagi is a decentralized collaboration network designed for agents, with a focus on privacy and security. The substrate is a **dead drop**, not a connection: a sender leaves a segment at an opaque address, a reader collects it later, and the host that holds the bytes is never trusted. Direct delivery is an optimisation of that, not the other way round.
 
 Every rule below exists for one reason that applies to a person just as much: **a contributor who does not remember yesterday still has to produce work that holds.**
 
@@ -15,21 +15,6 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 **A change is finished when `just check` is green.** "I finished it" is a claim; a green run is the evidence.
 
 **Inner loop, before closing:** `cargo nextest run --workspace -E 'not package(kusanagi-grant)'` (≈30 s; `just test` without the filter is the same runner unfiltered) plus `cargo fmt` and full-workspace clippy `-D warnings` at every step, not at closing. `grant`'s two proptests take ~2 min and run only when `grant` changed or at closing. One tool call lasts 150 s: what fits in one call runs in the foreground; only release builds, the full adversary suite and `grant`'s proptests go to the background.
-
-| Command | What it does |
-|---|---|
-| `just check` | the closing condition for every change |
-| `just fmt` | apply rustfmt |
-| `just lint` | clippy alone |
-| `just test` | tests alone (`cargo nextest run`; the inner loop and the closing run are the same command) |
-| `just deny` | licences, advisories and banned crates, against `deny.toml` |
-| `just demo` | two identities, one host, one verifiable exchange, in a throwaway directory |
-| `just budget` | line counts against the budget in `ARCHITECTURE.md` §5 |
-| `just boxes` | the two rules about where a test may stand: **no Rust test drives the shipped binary** (that is `adversary/`'s job, and it cannot reach inside), and **nothing from a test reaches the artefact** |
-| `just dist` | a stripped release binary, its SHA-256, and the hash the binary reports about itself |
-| `just repro` | builds twice and refuses if the two differ; `docs/VERIFY.md` says what that does and does not establish |
-| `just confine` / `just unconfine` | a Windows Firewall rule letting this binary reach the proxy and nothing else. Needs an administrator; `docs/confine.md` says what it buys |
-| `just adversary` | the Haskell counterexample hunter in `adversary/`. **Not part of `just check`**, needs GHC, and skips itself when GHC is absent |
 
 ## Read before you write
 
@@ -76,10 +61,7 @@ Violating any of these turns the build red.
 | Where | Language |
 |---|---|
 | Identifiers, error codes, rustdoc, comments, commit subjects | English |
-| `README.md`, `AGENTS.md`, `ARCHITECTURE.md` | English |
-| `README.zh-CN.md` | Chinese. **A translation of `README.md`, never a second source.** When the two disagree the English one is right, and a change to one is not finished until the other says the same thing |
-| Crate SPECs and design discussion | Chinese, with concept names kept in their English form |
-| Pull requests, issues, review comments | **your own language.** A parallel translation is welcome, not required |
+| Pull requests, issues, review comments | **your own language.** A parallel translation is very helpful |
 
 Comments are a failure signal by default. Four kinds earn their place: the MPL notice, public interface documentation, a warning about consequences, and a statement of intent the code cannot carry. In rustdoc, write what the signature cannot say — invariants, failure modes, call ordering.
 

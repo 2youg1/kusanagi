@@ -26,6 +26,9 @@ pub const Key = enum(u64) {
     channels,
     read_theirs,
     read_mine,
+    /// The same two reads on the member the group thread's cursor points at.
+    group_theirs,
+    group_mine,
     send,
     invite,
     join,
@@ -84,20 +87,26 @@ pub fn channels(fx: anytype, m: *const Model) void {
     spawn(fx, m, .channels, &.{"channels"}, null);
 }
 
+fn readsMine(k: Key) bool {
+    return k == .read_mine or k == .group_mine;
+}
+
 /// Reads one stream, resuming above `after` when the window already holds it.
-pub fn read(fx: anytype, m: *const Model, k: Key, name: []const u8, after: ?u64, scratch: *[40]u8) void {
+/// `scratch` is the caller's to own: a second read reuses no buffer of
+/// the first, so an executor that keeps the slice sees each request whole.
+pub fn read(fx: anytype, m: *const Model, k: Key, name: []const u8, after: ?u64, scratch: []u8) void {
     const stdin = std.fmt.bufPrint(scratch[0..], "{s}\n", .{name}) catch return;
     if (after) |floor| {
         var number: [20]u8 = undefined;
         const digits = std.fmt.bufPrint(&number, "{d}", .{floor}) catch return;
         const mine: []const []const u8 = &.{ "read", "--from", "-", "--after", digits, "--mine" };
         const theirs: []const []const u8 = &.{ "read", "--from", "-", "--after", digits };
-        spawn(fx, m, k, if (k == .read_mine) mine else theirs, stdin);
+        spawn(fx, m, k, if (readsMine(k)) mine else theirs, stdin);
         return;
     }
     const mine: []const []const u8 = &.{ "read", "--from", "-", "--mine" };
     const theirs: []const []const u8 = &.{ "read", "--from", "-" };
-    spawn(fx, m, k, if (k == .read_mine) mine else theirs, stdin);
+    spawn(fx, m, k, if (readsMine(k)) mine else theirs, stdin);
 }
 
 /// `name` on the first line, the text on the rest: the stdin form of `--to -`.

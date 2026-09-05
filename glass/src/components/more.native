@@ -79,15 +79,43 @@
     </row>
     <separator/>
     <column grow="1" padding="24" gap="12">
-      <if test="{hasDelivery}">
-        <scroll grow="1"><use template="delivery-rows"/></scroll>
-      </if>
-      <else>
-        <column main="center" cross="center" grow="1" gap="6" padding="48">
-          <text size="heading" foreground="text_muted">{t.group_is_list}</text>
-          <text foreground="text_muted" wrap="true" text-alignment="center" max-width="480">{t.group_body}</text>
+      <scroll grow="1" label="{t.messages}">
+        <column gap="8" padding="4" grow="1" main="end">
+          <for each="groupThread" key="key" as="b">
+            <if test="{b.turn}"><spacer height="16"/></if>
+            <if test="{b.mine}">
+              <row main="end">
+                <bubble variant="primary" label="{t.you}" padding="12">
+                  <column gap="4">
+                    <markdown source="{b.text}"/>
+                    <text size="sm">{t.reached} {b.reached}/{b.of}</text>
+                  </column>
+                </bubble>
+              </row>
+            </if>
+            <else>
+              <row main="start">
+                <bubble label="{b.who}" padding="12">
+                  <column gap="4">
+                    <if test="{b.is_hex}"><text><span mono="true">{b.text}</span></text></if>
+                    <else><markdown source="{b.text}"/></else>
+                    <if test="{b.cut}"><text size="sm" foreground="text_muted">{t.cut_to_fit}</text></if>
+                  </column>
+                </bubble>
+              </row>
+            </else>
+          </for>
+          <else>
+            <column main="center" cross="center" grow="1" gap="6" padding="48">
+              <text size="heading" foreground="text_muted">{t.group_is_list}</text>
+              <text foreground="text_muted" wrap="true" text-alignment="center" max-width="480">{t.group_body}</text>
+            </column>
+          </else>
         </column>
-      </else>
+      </scroll>
+      <if test="{hasDelivery}">
+        <use template="delivery-rows"/>
+      </if>
       <input-group label="{t.broadcast}">
         <textarea text="{draftText}" placeholder="{t.write_to_everybody}" on-input="draft_edit" on-submit="broadcast" submit-on-enter="true" autofocus="true" label="{t.broadcast}" height="64"/>
         <input-group-actions gap="6">

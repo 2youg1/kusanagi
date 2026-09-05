@@ -101,4 +101,3 @@ test "a complaint lands in the status line with its code and recovery" {
     const tree = try f.tree();
     _ = try expectByText(tree.root, .text, "the host did not answer");
 }
-

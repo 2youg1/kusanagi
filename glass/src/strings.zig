@@ -161,6 +161,7 @@ const table = [_]Entry{
     .{ "delivered", "delivered", "已送达" },
     .{ "failed", "failed", "失败" },
     .{ "edit_members", "Edit members", "编辑成员" },
+    .{ "reached", "reached", "已送达" },
     .{ "group_is_list", "A group is a list, not a room", "群组是一份名单,不是一个房间" },
     .{ "group_body", "Write to everybody on this list. Each gets their own copy on their own channel, sees nobody else, and replies in their own conversation.", "写给名单上的每个人。各走各的通道,谁也看不见别人;回复会出现在各自的对话里。" },
     .{ "broadcast", "Broadcast", "广播" },

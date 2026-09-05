@@ -66,7 +66,9 @@ pub const ChannelRow = struct {
     slot: usize = 0,
     name: Text(name_cap) = .{},
     waypoint: Text(line_cap) = .{},
-    peer: Text(handle_cap) = .{},
+    /// What to call the peer: the alias they signed, or twelve characters of
+    /// their handle — `kusanagi` decides which through one rule (L1).
+    peer: Text(name_cap) = .{},
     root: bool = false,
     period: u32 = 0,
     releases: bool = false,
@@ -128,28 +130,33 @@ pub const Message = struct {
     is_hex: bool = false,
 };
 
-/// One author's window onto their stream: the newest `max_messages`.
-pub const Lane = struct {
-    items: [max_messages]Message = @splat(.{}),
-    count: usize = 0,
-    height: ?u64 = null,
+/// One author's window onto their stream: the newest `n` segments.
+pub fn LaneOf(comptime n: usize) type {
+    return struct {
+        const Self = @This();
+        items: [n]Message = @splat(.{}),
+        count: usize = 0,
+        height: ?u64 = null,
 
-    pub fn push(lane: *Lane, message: Message) void {
-        if (lane.count == max_messages) {
-            std.mem.copyForwards(Message, lane.items[0 .. max_messages - 1], lane.items[1..max_messages]);
-            lane.count -= 1;
+        pub fn push(lane: *Self, message: Message) void {
+            if (lane.count == n) {
+                std.mem.copyForwards(Message, lane.items[0 .. n - 1], lane.items[1..n]);
+                lane.count -= 1;
+            }
+            lane.items[lane.count] = message;
+            lane.count += 1;
         }
-        lane.items[lane.count] = message;
-        lane.count += 1;
-    }
-    pub fn all(lane: *const Lane) []const Message {
-        return lane.items[0..lane.count];
-    }
-    pub fn clear(lane: *Lane) void {
-        lane.count = 0;
-        lane.height = null;
-    }
-};
+        pub fn all(lane: *const Self) []const Message {
+            return lane.items[0..lane.count];
+        }
+        pub fn clear(lane: *Self) void {
+            lane.count = 0;
+            lane.height = null;
+        }
+    };
+}
+/// A channel's window: the newest `max_messages`.
+pub const Lane = LaneOf(max_messages);
 
 /// One bubble in the thread, built per rebuild from the two lanes.
 pub const Bubble = struct {

@@ -39,6 +39,9 @@
 - 释放通道被选中时出现备份横幅；导出后横幅换成「已写到 <路径>」并展示恢复密钥。
 - 任何 `Complaint` 都以 `code` + `recover` 出现在对话面板底部的状态行，不弹窗、不静默。
 - 名字、邀请、正文**一律走 stdin**(`-` 约定),argv 里只有动词与旗标。
+- F7:群组页是一条线程——我的广播只出现一次并带「已送达 n/m」,每个成员的回复挂在其下并以成员标签署名;
+  打开群组与每次广播后一轮追赶逐个成员读一遍,之后每 20 s 读一个成员(与单通道同节奏);`native test` 里两成员各回一条
+  → 三条气泡、广播文本只出现一次、标签正确。**协议零改动**:成员互不可见仍成立,群组页只是我一人的视角。
 - F5:`strings.zig` 的测试遍历表——每个 key 的英中两栏都非空,且中文栏不含 ASCII 以外的**控制字符**;`native test` 里
   `has_cjk = false` 时设置页的语言行只列 `en`,`has_cjk = true` 时列出 `zh`,切到 `zh` 后 rail 上「This endpoint」变成「这个端点」。
 - F6:投一个 `ttcf` 开头的流 → 判语恰为 SDK 的「font is a TrueType collection (.ttc); extract the single face to register」;
@@ -151,9 +154,11 @@ glass 画的唯一一块面）、**theme**（token 语域）。界面文案英�
 main.zig      场景、字面注册、tokens_fn、chrome、on_drop、create、run —— 只有接线
 font.zig      启动前在本机找正文的中文字面:判定在字节,不在名字;`verdict` 给出 SDK 的原话;有测试
 strings.zig   每条可见文案的英中两栏,一张表 comptime 生成 `Strings`;`detect` 推断系统语言;有测试
-model.zig     Model / 有界存储 / 壳与对话的绑定方法
+model.zig     Model / 有界存储 / 壳与对话的绑定方法（含群组线程 `group_thread` 与 `groupThread` 派生）
 sheets.zig    五张 sheet 各自的状态结构体与绑定方法（嵌套路径 {invite.nameText}）
-rows.zig      有界记录：Text、ChannelRow、GroupRow、Message、Lane、Bubble、Status、CheckRow
+rows.zig      有界记录：Text、ChannelRow、GroupRow、Message、Lane、Bubble、Status、CheckRow；`LaneOf(n)` 让群组成员的窗口小于通道的（`ChannelRow.peer` 放宽到 32 以容 alias）
+group.zig     群组线程的归并纯函数：同文本同顺序的广播去重成一条，回复挂在其所属广播之后；有测试
+polling.zig   群组轮询：开页、一步一成员、追赶轮、退出分派（从 update.zig 拆出以守 400）
 theme.zig     调色板与 tokens(appearance) → DesignTokens；纯函数，有测试
 plate.zig     G4 转角、面板几何（复刻分栏公式）、chrome 发射；纯函数，有测试
 update.zig    update：每个 Msg 一臂，副作用只在这里发出
@@ -163,6 +168,7 @@ order.zig     两条流的因果归并（纯函数，有测试）
 app.native    壳：rail + plate 内容 + sheet
 components/   rail / thread / sheets / more
 tests.zig     假执行器下的派发与 spawn 断言、布局绑定测试
+tests_group.zig 群组页测试：逐成员读取、失败让位、广播去重与署名（`release` helper 先 cancel：parked fake slot 永不交付，同 key 下一读会被拒——生产环境退出即交付，无此事）
 ```
 
 数据只朝一个方向流：视图派发 Msg → update 改模型或 spawn → 退出 Msg 带回 JSON → answer 写模型 → 重建视图。

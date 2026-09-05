@@ -14,6 +14,7 @@ const std = @import("std");
 const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
 const model_mod = @import("model.zig");
+const polling = @import("polling.zig");
 const verbs = @import("verbs.zig");
 const answer = @import("answer.zig");
 const font = @import("font.zig");
@@ -131,7 +132,7 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
         },
         .copy_handle => copy(m, fx, m.handle.slice()),
         .select => |slot| open(m, fx, slot),
-        .select_group => |slot| openGroup(m, fx, slot),
+        .select_group => |slot| polling.open(m, fx, slot),
         .refresh => {
             verbs.channels(fx, m);
             if (m.onThread()) fetch(m, fx);
@@ -187,7 +188,9 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
         .exited => |exit| exited(m, fx, exit),
         .filed => |result| filed(m, result),
         .poll => |timer| {
-            if (timer.outcome != .fired or !m.onThread() or m.current().slotted()) return;
+            if (timer.outcome != .fired) return;
+            if (m.onGroup()) return polling.step(m, fx);
+            if (!m.onThread() or m.current().slotted()) return;
             verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch);
         },
         .scrub => |timer| {
@@ -279,13 +282,6 @@ fn open(m: *Model, fx: *Effects, slot: usize) void {
     }
 }
 
-fn openGroup(m: *Model, fx: *Effects, slot: usize) void {
-    m.selected_group = @min(slot, model_mod.max_groups - 1);
-    m.screen = .group;
-    m.delivered_count = 0;
-    stopTimers(fx);
-}
-
 fn fetch(m: *Model, fx: *Effects) void {
     // Nobody has joined yet, as far as this window knows. The only way to
     // learn otherwise is to read: the first read after they join is what
@@ -297,7 +293,7 @@ fn fetch(m: *Model, fx: *Effects) void {
     verbs.read(fx, m, .read_mine, m.currentName(), m.mine.height, &m.name_scratch);
 }
 
-fn stopTimers(fx: *Effects) void {
+pub fn stopTimers(fx: *Effects) void {
     fx.cancelTimer(verbs.key(.poll_timer));
     fx.cancelTimer(verbs.key(.slot_timer));
 }
@@ -379,13 +375,16 @@ fn exited(m: *Model, fx: *Effects, exit: native_sdk.EffectExit) void {
     if (m.busy == exit.key) m.busy = 0;
     answer.apply(m, exit);
     const key = verbs.keyOf(exit.key) orelse return;
-    if (exit.reason != .exited or exit.code != 0) return;
+    const failed = exit.reason != .exited or exit.code != 0;
+    if (polling.exited(m, fx, key, failed)) return;
+    if (failed) return;
     switch (key) {
         .channels => if (m.screen == .welcome and m.channel_count > 0) open(m, fx, 0),
         // A read that succeeded on a row still marked as waiting has just met
         // the peer; the row learns that from the channel list.
         .read_theirs => if (m.onThread() and !m.current().hasPeer()) verbs.channels(fx, m),
         .invite, .join, .forget, .group, .revoke => verbs.channels(fx, m),
+        .fanout => polling.round(m, fx),
         .tick => verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch),
         .export_ => writeArchive(m, fx),
         else => {},

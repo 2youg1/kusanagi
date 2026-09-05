@@ -13,6 +13,7 @@
 const std = @import("std");
 const native_sdk = @import("native_sdk");
 const canvas = native_sdk.canvas;
+const group = @import("group.zig");
 const order = @import("order.zig");
 const rows = @import("rows.zig");
 const sheets = @import("sheets.zig");
@@ -68,6 +69,8 @@ pub const Model = struct {
 
     mine: Lane = .{},
     theirs: Lane = .{},
+    /// The open group as one thread: N members, two lanes each, one cursor.
+    group_thread: group.Thread = .{},
     draft: canvas.TextBuffer(draft_cap) = .{},
     search: canvas.TextBuffer(name_cap) = .{},
     status: Status = .{},
@@ -102,13 +105,15 @@ pub const Model = struct {
     /// State the view never binds directly: `update`, the effects and the
     /// chrome read it, and the methods below derive what the markup shows.
     pub const view_unbound = .{
-        "bin",         "home",       "appearance",      "screen",
-        "sheet",       "busy",       "channels",        "channel_count", "groups",
-        "group_count", "mine",       "theirs",          "draft",         "search",
-        "status",      "output_cut", "scratch",         "name_scratch",  "site",
-        "at_rest",     "proxy",      "binary",          "handle",        "check",
-        "check_for",   "delivered",  "delivered_count", "channelRows",   "onThread",
-        "canSend",     "currentWaypoint", "myHeight",     "theirHeight",   "copied",
+        "bin",          "home",        "appearance",   "screen",
+        "sheet",        "busy",        "channels",     "channel_count",
+        "groups",       "group_count", "mine",         "theirs",
+        "group_thread", "draft",       "search",       "status",
+        "output_cut",   "scratch",     "name_scratch", "site",
+        "at_rest",      "proxy",       "binary",       "handle",
+        "check",        "check_for",   "delivered",    "delivered_count",
+        "channelRows",  "onThread",    "canSend",      "currentWaypoint",
+        "myHeight",     "theirHeight", "copied",
     };
 
     /// The one rule about language: Chinese needs a face that draws it.
@@ -118,7 +123,7 @@ pub const Model = struct {
     }
     /// The languages the settings sheet offers: Chinese only once it can be drawn.
     pub fn languageRows(m: *const Model) []const strings.LanguageRow {
-        return strings.language_rows[0 .. if (m.has_cjk) 2 else 1];
+        return strings.language_rows[0..if (m.has_cjk) 2 else 1];
     }
     pub fn lookRows(m: *const Model, arena: std.mem.Allocator) []const LookRow {
         const out = arena.alloc(LookRow, 3) catch return &.{};
@@ -294,6 +299,11 @@ pub const Model = struct {
     }
     pub fn groupSize(m: *const Model) usize {
         return m.currentGroup().count;
+    }
+    /// The group as one thread, laid out by `group.zig`; empty until a read lands.
+    pub fn groupThread(m: *const Model, arena: std.mem.Allocator) []const group.Bubble {
+        const out = arena.alloc(group.Bubble, group.window * (1 + m.group_thread.count)) catch return &.{};
+        return out[0..group.merge(m.group_thread.all(), out)];
     }
     pub fn deliveredRows(m: *const Model) []const CheckRow {
         return m.delivered[0..m.delivered_count];
