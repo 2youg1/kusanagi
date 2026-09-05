@@ -362,12 +362,13 @@ Listed so that each absence is a decision rather than an oversight.
 | Missing | Why |
 |---|---|
 | More than two parties in one channel | One channel is one pair. A small group is fan-out: `kusanagi group --name team` names the channels, `kusanagi send --to-group team` writes one drop on each, and the report says per member what arrived. The roster is this endpoint's own list, held by nobody else, so there is no group key, no agreement about membership, and removing somebody is writing the list without them. What a *shared* roster buys is a thousand members, and that is a different problem. |
-| Hiding how much you send and when | Padding and jitter are untestable without a real censor to fail against. |
+| Hiding when you are online | A channel opened with `--every` writes one drop per period, talk or silence, so the host cannot tell the two apart; the gaps when this machine is off are still gaps. A random delay in the scheduler blurs the moment, not the absence. |
 | Hiding the number of objects from a dumb object store | Needs long-polling support that a plain bucket does not have. |
 | Long-polling | Would also close the live-edge leak described above. |
 | Chunked shared workspaces | A separate problem. One message is capped at 126 339 bytes today. |
-| MCP front end | The verb set is one enum, so a second front end is additive work. |
-| Hiding an endpoint IP address | Not this project's to solve. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy and the network built for it does the work. |
+| A host that cannot pair a writer with a reader | Today a poll names one address, and the host sees who wrote it and who asked for it. The next version lists a whole bin and reads all of it, so a read is a function of public data only (Roadmap D-20). |
+| Hiding an endpoint IP address | Not this project's to solve. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy and the network built for it does the work; `kusanagi proxy --require` makes a missing proxy a refusal rather than a direct connection. |
+| Hiding which channels share one bucket credential | An S3 access key travels with every request it signs, so a bucket's log links everything one key wrote. `kusanagi host` asks for no credential and has no such edge. |
 | A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |
 
 ## Working on it
@@ -403,3 +404,6 @@ are derived instead of agreed.
 ## Licence
 
 MPL-2.0. `docs/third-party.md` lists every dependency and its licence.
+
+Questions, bug reports and disagreements are all welcome — open an issue, or
+email me (address on my profile).
