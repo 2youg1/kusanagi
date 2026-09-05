@@ -83,7 +83,7 @@
 ```
 lib.rs        模块索引与再导出
 request.rs    Request / Habit —— 动词集合的唯一权威
-lane.rs       Lane —— 一条道怎么开：地址、钥匙、以及烧到哪（I5）
+lane.rs       Lane —— 一条道怎么开：bin、地址、钥匙、以及烧到哪（I5）。bin 是读者 ward（写者是 peer 的，读者是自己的），period 暂为 0
 walk.rs       peek / walk —— 读一条流并逐段检查
 slot.rs       tick —— 填一个时隙（I3）
 port.rs       MCP 的 stdio 会话循环（D3）

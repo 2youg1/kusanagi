@@ -34,7 +34,7 @@ mod sigv4;
 pub use access::{Access, Circuit, Proxy};
 pub use carrier::{Carrier, CarrierWaypoint};
 pub use certificate::{Capability, Certificate, Finding, Tier, Verdict};
-pub use client::{MAX_OBJECT, PATIENCE};
+pub use client::{MAX_LISTED, MAX_OBJECT, PATIENCE};
 pub use conditional::{Conditional, Fetched, TtlOutcome, Validator};
 pub use dir::DirWaypoint;
 pub use http::{HttpWaypoint, TTL_HEADER};

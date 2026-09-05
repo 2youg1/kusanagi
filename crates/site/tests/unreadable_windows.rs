@@ -37,6 +37,7 @@ use std::process::Command;
 
 use kusanagi_grant::StepId;
 use kusanagi_kernel::Signer;
+use kusanagi_kernel::Ward;
 use kusanagi_seal::Secret;
 use kusanagi_site::{Channel, Site, Standing};
 
@@ -152,7 +153,7 @@ fn written(tag: &str) -> Site {
     let root = std::env::temp_dir().join(format!("kusanagi-acl-{}-{tag}", std::process::id()));
     std::fs::remove_dir_all(&root).ok();
     let site = Site::at(root);
-    site.adopt(&[5; 32]).unwrap();
+    site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
     site.keep(&Channel {
         cadence: kusanagi_site::Cadence::OnDemand,
         retention: kusanagi_site::Retention::Keep,

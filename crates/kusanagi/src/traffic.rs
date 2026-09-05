@@ -17,7 +17,7 @@ use kusanagi_kernel::{Freight, Instant, Purpose, PutOutcome, Segment, Signer, Wa
 use kusanagi_seal::{Fit, seal};
 use kusanagi_site::{Channel, Site};
 
-use crate::assembly::{open, signer};
+use crate::assembly::{open, peer_ward, signer, ward};
 use crate::lane::{Lane, verified};
 use crate::membership::greet;
 use crate::request::Whose;
@@ -153,7 +153,22 @@ pub(crate) fn appended(
     }
 
     let place = open(site, &channel.locator, now)?;
-    let mine = Lane::open(site, name, &channel, &me.verifying_key())?;
+    // Where this segment goes is the peer's ward, so an endpoint that has not
+    // met its peer yet meets them now. This is the same lazy introduction `read`
+    // performs and the same one request; before a bin had to be chosen, a send
+    // could be written for somebody who had not arrived, and now it cannot —
+    // there is nowhere to deliver to until they say where they look.
+    let channel = match channel.peer {
+        Some(_) => channel,
+        None => greet(site, name, channel, &place, now)?,
+    };
+    let mine = Lane::open(
+        site,
+        name,
+        &channel,
+        &me.verifying_key(),
+        peer_ward(&channel, name)?,
+    )?;
     // Only the head is needed, so this walk owes the caller no segment and may
     // resume from the cairn: sending the thousandth segment asks the host for one
     // address rather than announcing the previous nine hundred and ninety-nine.
@@ -188,7 +203,7 @@ pub(crate) fn appended(
         Fit::Veil,
         &segment.to_canonical_bytes(),
     )?;
-    match Waypoint::put_if_absent(&place, &address, &sealed)? {
+    match Waypoint::put_if_absent(&place, &mine.at(address), &sealed)? {
         // The host took it at an address that was empty, so this endpoint knows
         // the segment is there without reading it back. Recording that now is
         // what keeps the next send at one request: a position left one behind
@@ -244,7 +259,7 @@ pub(crate) fn read(
     peer.standing
         .permits(&channel.root, &peer.handle(), Ability::Send, now, &revoked)?;
 
-    let theirs = Lane::open(site, name, &channel, &peer.key)?;
+    let theirs = Lane::open(site, name, &channel, &peer.key, ward(site)?)?;
     let walked = track(site, name, &place, &theirs, reach(after))?;
     let answer = reported(name, &peer.handle().to_string(), &walked, after);
 
@@ -287,9 +302,15 @@ fn settle(
         .unwrap_or(0);
 
     if acknowledged > 0 {
-        let ours = Lane::open(site, name, channel, &me.verifying_key())?;
+        let ours = Lane::open(
+            site,
+            name,
+            channel,
+            &me.verifying_key(),
+            peer_ward(channel, name)?,
+        )?;
         for index in ours.keys.floor()..acknowledged {
-            place.delete(&ours.keys.address(index))?;
+            place.delete(&ours.holding(index))?;
         }
         ours.burn_below(site, name, acknowledged.saturating_sub(1))?;
     }
@@ -356,7 +377,13 @@ fn mine(
     now: Instant,
 ) -> Result<Outcome, Complaint> {
     let place = open(site, &channel.locator, now)?;
-    let ours = Lane::open(site, name, channel, &me.verifying_key())?;
+    let ours = Lane::open(
+        site,
+        name,
+        channel,
+        &me.verifying_key(),
+        peer_ward(channel, name)?,
+    )?;
     let walked = track(site, name, &place, &ours, reach(after))?;
     Ok(reported(name, &me.handle().to_string(), &walked, after))
 }

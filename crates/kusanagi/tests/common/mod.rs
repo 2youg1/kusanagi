@@ -165,29 +165,48 @@ fn collect(dir: &Path, into: &mut Vec<(String, Vec<u8>)>) {
             }
             collect(&path, into);
         } else if let Ok(bytes) = std::fs::read(&path) {
-            let shard = path
-                .parent()
-                .and_then(Path::file_name)
+            // The file is named by the address; the directories above it are the
+            // bin it is filed in, which `object_path` is the one reader of.
+            let address = path
+                .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or_default()
                 .to_owned();
-            let rest = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default();
-            into.push((format!("{shard}{rest}"), bytes));
+            into.push((address, bytes));
         }
     }
 }
 
-/// Flips one bit of the object stored at `address`, the way a hostile host would.
+/// Where the object at `address` sits under `host`, whatever bin it is in.
 ///
-/// A directory waypoint shards by the first two characters of the address, so
-/// the host does not have to search for what it is corrupting — and neither does
-/// this test.
+/// Found by name rather than computed, because the bin an object is filed in is
+/// the endpoint's business and a test that recomputed it would be a second
+/// authority for the key layout — one that goes stale silently.
+///
+/// # Panics
+///
+/// When nothing under `host` is named `address`, which for every caller here
+/// means the write under test never landed.
+pub fn object_path(host: &Path, address: &str) -> std::path::PathBuf {
+    fn look(dir: &Path, address: &str) -> Option<std::path::PathBuf> {
+        for entry in std::fs::read_dir(dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(found) = look(&path, address) {
+                    return Some(found);
+                }
+            } else if path.file_name().and_then(|name| name.to_str()) == Some(address) {
+                return Some(path);
+            }
+        }
+        None
+    }
+    look(host, address).unwrap_or_else(|| panic!("the host holds nothing at {address}"))
+}
+
+/// Flips one bit of the object stored at `address`, the way a hostile host would.
 pub fn flip_one_byte(host: &Path, address: &str) {
-    let (shard, rest) = address.split_at(2);
-    let path = host.join(shard).join(rest);
+    let path = object_path(host, address);
     let mut bytes =
         std::fs::read(&path).unwrap_or_else(|error| panic!("nothing stored at {address}: {error}"));
     let byte = bytes.first_mut().expect("an empty object was stored");

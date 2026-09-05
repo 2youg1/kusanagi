@@ -29,8 +29,7 @@ use kusanagi::{Request, Whose};
 
 /// Deletes whatever the host holds at `address`.
 fn vanish(host: &std::path::Path, address: &str) {
-    let (shard, rest) = address.split_at(2);
-    std::fs::remove_file(host.join(shard).join(rest)).expect("the host held nothing there");
+    std::fs::remove_file(common::object_path(host, address)).expect("the host held nothing there");
 }
 
 #[test]
@@ -122,8 +121,7 @@ fn genuine_bytes_served_at_the_wrong_address_are_not_a_segment() {
         .find(|(address, _)| *address == second)
         .map(|(_, bytes)| bytes.clone())
         .expect("the host is not holding the second segment");
-    let (shard, rest) = first.split_at(2);
-    std::fs::write(host.join(shard).join(rest), body).unwrap();
+    std::fs::write(common::object_path(&host, &first), body).unwrap();
 
     let refused = bob
         .run(&Request::Read {

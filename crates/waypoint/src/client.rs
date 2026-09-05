@@ -28,7 +28,7 @@
 
 use std::time::Duration;
 
-use kusanagi_kernel::WaypointError;
+use kusanagi_kernel::{Object, Sweep, WaypointError};
 
 use crate::access::{Access, Proxy};
 
@@ -39,6 +39,30 @@ use crate::access::{Access, Proxy};
 /// refuses to *accept* more than this for the same reason, and takes the number
 /// from here rather than restating it.
 pub const MAX_OBJECT: u64 = 1_048_576;
+
+/// The most objects one sweep takes from a host's answer.
+///
+/// A cap rather than a promise: a host can put anything it likes in a bin, and
+/// what it gets for that is a reader that stops reading. Sized well above the
+/// thirty-two a reader expects to find, so that reaching it means the host is
+/// stuffing the bin rather than that a busy period overflowed.
+pub const MAX_LISTED: usize = 4_096;
+
+/// The keys of `text`, one per line, that `sweep` actually asked for.
+///
+/// **A listing is a host talking**, so every line is checked twice: it must
+/// parse as a key, and it must lie in the sweep that was sent. A host that
+/// answers with somebody else's bin therefore wastes bandwidth and cannot make a
+/// reader fetch an object it did not ask about. Lines that fail either check are
+/// dropped without a word — a host is not obliged to be tidy, only to be bounded.
+#[must_use]
+pub fn listed(text: &str, sweep: &Sweep) -> Vec<Object> {
+    text.lines()
+        .filter_map(|line| line.trim().parse::<Object>().ok())
+        .filter(|at| sweep.holds(at))
+        .take(MAX_LISTED)
+        .collect()
+}
 
 /// How long a host has, in total, to answer one request.
 ///

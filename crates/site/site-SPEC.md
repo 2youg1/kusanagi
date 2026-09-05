@@ -79,7 +79,9 @@ archive.rs  export / import —— 整个站点封进一串字节，再放回来
 naming.rs   名字能长什么样，以及它的文件叫什么（两条规则，一处）
 revoked.rs  <root>/revoked —— 撤销表，活得比通道记录长
 egress.rs   <root>/egress —— 一行 `proxy-required`：本站点是否允许无代理出网（K12）；缺席即允许，写成别的字即 `site.bad_record`
-channel.rs  Channel / Standing / Peer 与其磁盘格式（版本 4）
+channel.rs  Channel / Peer 与其磁盘格式（版本 5：peer 旁加 ward）
+standing.rs   Standing —— 谁凭什么在这条通道上（从 channel.rs 分出，400 行门）
+identity.rs   Identity —— 种子 + ward（版本 1；32 裸字节的旧身份按名拒绝）
 blocks.rs   长度前缀块：本盘上每一种记录共用的那一层框
 cadence.rs  Cadence —— 这一端多久写一次（I3）
 retention.rs Retention —— 对端读过之后那个 drop 还在不在（C4）
@@ -290,6 +292,16 @@ version 1 byte = 1 | inviter 2592 bytes | grant 其余
 - **失败是拒绝，不是回退。** 加密失败就明文写下去，等于悄悄撤回这个属性本身。
 - 边界照旧写清楚：DPAPI 挡不住这个账户自己、挡不住一台开着且已解锁的机器、挡不住取证级手段。
   全盘加密仍是前提（§8 的裁决不变）。
+
+### 通道记录版本 5 与 offer v3（W1 前半）
+
+`Peer` 加 `ward: Ward`（非 `Option`：知道的对端就是能写的对端，不知道 ward 的对端没有地方可写）。
+`Offer` 升到版本 3，多两字节 `inviter_ward`——受邀者从 offer 得到邀请者的 ward，
+邀请者从问候段得到受邀者的 ward。问候段格式为 `verifying key ‖ ward ‖ grant`。
+
+此前无人加入的通道上 `send` 即是 `NoPeerYet`：写者不能把段落放进一个没有读者的 bin；
+`send` 在写之前做与 `read` 同样的懒问候（同一请求），所以通常流程（邀请→加入→互发）不受影响。
+归档版本升到 2，`Kind::Identity` 条目为种子 32 字节 + ward 2 字节。
 
 ### 群组（E1）
 

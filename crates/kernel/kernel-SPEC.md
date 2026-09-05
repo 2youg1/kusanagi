@@ -88,8 +88,9 @@ segment/      mod.rs 是类型，canonical.rs 是规范字节，freight.rs 是�
               refusal.rs 是失败的分类
 payload.rs    Payload 与三个尺寸常量：一个段能装多少
 address.rs    DropAddr（只声明，不派生）
+filing.rs     Ward / Period / Bin / Object / Sweep —— 宿主被告知什么、读者一次要什么
 clock.rs      Instant / Clock / FixedClock
-waypoint.rs   Waypoint trait、PutOutcome、WaypointError（含 delete）
+waypoint.rs   Waypoint trait、PutOutcome、WaypointError（含 delete）、Listing trait（含 ListingRefused）
 ```
 
 kernel 无内部依赖；外部依赖只有 `blake3`、`fips204`、`subtle`、`zeroize`、`thiserror`。

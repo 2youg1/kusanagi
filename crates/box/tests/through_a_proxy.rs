@@ -28,7 +28,7 @@ mod common;
 use std::net::TcpListener;
 
 use common::host;
-use kusanagi_kernel::{DropAddr, Waypoint as _};
+use kusanagi_kernel::{Bin, DropAddr, Object, Period, Ward, Waypoint as _};
 use kusanagi_waypoint::{Access, Circuit, HttpWaypoint, Proxy};
 
 /// A port nothing is listening on, obtained by listening and then stopping.
@@ -48,7 +48,10 @@ fn closed_port() -> u16 {
 fn a_configured_proxy_is_the_only_way_out() {
     let (address, root) = host("proxy", 1);
     let base = format!("http://{address}");
-    let addr = DropAddr::from_bytes([0x5c; 20]);
+    let addr = Object::new(
+        Bin::new(Period::from_count(7), Ward::from_bits(0x00ab)),
+        DropAddr::from_bytes([0x5c; 20]),
+    );
 
     // Straight at the host: the drop is not there, which is an answer.
     let direct = HttpWaypoint::new(&base, &Access::default());

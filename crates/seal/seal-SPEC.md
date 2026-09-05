@@ -66,6 +66,7 @@ lib.rs        模块索引
 secret.rs     Secret / Stream / derive / address_of / phase —— 隐私主张的全部代码在这里
 envelope.rs   Key / seal / open —— 标准件的装配
 ratchet.rs    Ratchet / Keyring / Burned —— 只往前走的钥匙（I5）
+period.rs     PERIOD_SECONDS / period / rendezvous —— bin 多长、现在是哪个、两个一次性 drop 住哪
 ```
 
 依赖：`kernel`（`DropAddr`、`Handle`）、`blake3`、`chacha20poly1305`。不依赖 `waypoint`、`chain`、`grant`。

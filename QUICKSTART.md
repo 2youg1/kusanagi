@@ -133,6 +133,10 @@ kusanagi send --to bob "got it"
 
 Bob reads with `kusanagi read --from alice`. That is a conversation.
 
+Nothing can be sent before somebody joins: a message is filed where its reader
+looks, and there is nowhere to file one for a reader who never arrived. `send`
+on a channel nobody has joined is refused the way `read` is.
+
 ## 9. Keep a backup (Alice and Bob)
 
 Your identity and channel keys live only on this machine. A lost disk is a lost

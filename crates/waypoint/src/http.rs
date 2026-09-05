@@ -10,9 +10,14 @@
 //! server that answers it is `kusanagi host`.
 //!
 //! ```text
-//! GET /d/<address>     200 + body + ETag | 304 (If-None-Match) | 404
-//! PUT /d/<address>     404, always, whatever happened
+//! GET /d/<period>/<ward>/<address>   200 + body + ETag | 304 (If-None-Match) | 404
+//! PUT /d/<period>/<ward>/<address>   404, always, whatever happened
+//! GET /bin/<period>/<ward prefix>    200 + one key per line
 //! ```
+//!
+//! The third route is what makes a read stop naming an address. It answers with
+//! keys and never with bodies, so a host learns which bin was swept and never
+//! which object of it was wanted.
 //!
 //! An unconditional `PUT` is ignored rather than accepted, so this host cannot
 //! lose write-once semantics by accident: there is no request that overwrites.
@@ -29,7 +34,7 @@
 //! a lifetime. A header named after this product would announce it to every
 //! proxy and log between the two ends, including those inside TLS.
 
-use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
+use kusanagi_kernel::{Listing, Object, PutOutcome, Sweep, Waypoint, WaypointError};
 
 use crate::access::Access;
 use crate::client::Client;
@@ -65,8 +70,8 @@ impl HttpWaypoint {
         }
     }
 
-    fn url(&self, addr: &DropAddr) -> String {
-        format!("{}/d/{addr}", self.base)
+    fn url(&self, at: &Object) -> String {
+        format!("{}/d/{at}", self.base)
     }
 
     /// Sends one conditional write, and reports only that it was sent.
@@ -74,16 +79,11 @@ impl HttpWaypoint {
     /// **What the host answers is not evidence and is not read.** What it did is
     /// found out by looking, which is the caller's job because only the caller
     /// knows whether looking would even be meaningful.
-    fn put_inner(
-        &self,
-        addr: &DropAddr,
-        bytes: &[u8],
-        ttl: Option<u64>,
-    ) -> Result<(), WaypointError> {
+    fn put_inner(&self, at: &Object, bytes: &[u8], ttl: Option<u64>) -> Result<(), WaypointError> {
         let mut request = self
             .client
             .agent()
-            .put(self.url(addr))
+            .put(self.url(at))
             .header(IF_NONE_MATCH, "*")
             .header("Content-Type", "application/octet-stream");
         if let Some(seconds) = ttl {
@@ -108,9 +108,9 @@ impl Waypoint for HttpWaypoint {
     /// The extra request is a protocol constant rather than a function of what is
     /// being said, so it changes what a host counts and not what a host can
     /// distinguish.
-    fn put_if_absent(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
-        self.put_inner(addr, bytes, None)?;
-        match self.get(addr)? {
+    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
+        self.put_inner(at, bytes, None)?;
+        match self.get(at)? {
             Some(found) if found == bytes => Ok(PutOutcome::Stored),
             Some(_) => Ok(PutOutcome::AlreadyPresent),
             None => Err(WaypointError::Unwritten {
@@ -119,8 +119,8 @@ impl Waypoint for HttpWaypoint {
         }
     }
 
-    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
-        match self.get_if_changed(addr, None)? {
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError> {
+        match self.get_if_changed(at, None)? {
             Fetched::Absent | Fetched::Unchanged => Ok(None),
             Fetched::Fresh { bytes, .. } => Ok(Some(bytes)),
         }
@@ -132,11 +132,11 @@ impl Waypoint for HttpWaypoint {
     /// nothing here either. Whoever needs to know the drop is gone reads the
     /// address back — which is what `released` in `kusanagi` does once, for the
     /// whole batch, rather than once per drop.
-    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+    fn delete(&self, at: &Object) -> Result<(), WaypointError> {
         let response = self
             .client
             .agent()
-            .delete(self.url(addr))
+            .delete(self.url(at))
             .call()
             .map_err(|source| self.client.failed("releasing a drop", &source))?;
         Client::actionable("releasing a drop", &response)?;
@@ -144,13 +144,39 @@ impl Waypoint for HttpWaypoint {
     }
 }
 
+impl Listing for HttpWaypoint {
+    /// Asks the box for the keys under one prefix, one per line.
+    ///
+    /// Lines the reader cannot parse are dropped rather than reported. A box
+    /// that pads its answer with rubbish wastes this reader's bandwidth, which
+    /// is the most any host can do to a sweep, and every line that does parse is
+    /// still checked against the sweep that asked for it.
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError> {
+        let url = format!("{}/bin/{}", self.base, sweep.prefix());
+        let mut response = self
+            .client
+            .agent()
+            .get(&url)
+            .call()
+            .map_err(|source| self.client.failed("listing a bin", &source))?;
+        if Client::actionable("listing a bin", &response)? == 404 {
+            return Ok(Vec::new());
+        }
+        let body = Client::body("listing a bin", &mut response)?;
+        Ok(crate::client::listed(
+            &String::from_utf8_lossy(&body),
+            sweep,
+        ))
+    }
+}
+
 impl Conditional for HttpWaypoint {
     fn get_if_changed(
         &self,
-        addr: &DropAddr,
+        at: &Object,
         known: Option<&Validator>,
     ) -> Result<Fetched, WaypointError> {
-        let mut request = self.client.agent().get(self.url(addr));
+        let mut request = self.client.agent().get(self.url(at));
         if let Some(validator) = known {
             request = request.header(IF_NONE_MATCH, validator.as_str());
         }
@@ -185,11 +211,11 @@ impl Conditional for HttpWaypoint {
     /// so this reports what it sent and leaves the finding to the prober.
     fn put_with_ttl(
         &self,
-        addr: &DropAddr,
+        at: &Object,
         bytes: &[u8],
         seconds: u64,
     ) -> Result<TtlOutcome, WaypointError> {
-        self.put_inner(addr, bytes, Some(seconds))?;
+        self.put_inner(at, bytes, Some(seconds))?;
         Ok(TtlOutcome::Accepted)
     }
 }

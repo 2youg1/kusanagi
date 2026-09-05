@@ -5,7 +5,7 @@
 
 //! The two things a network host can do that a directory cannot.
 //!
-//! [`Waypoint`](kusanagi_kernel::Waypoint) has two methods and will keep them,
+//! [`Waypoint`](kusanagi_kernel::Waypoint) has three methods and will keep them,
 //! because it is the seam every place implements and every extra method is a
 //! method somebody's U-stick adapter has to fake. But polling costs money, and
 //! the difference between "fetch it again" and "tell me it has not changed" is
@@ -16,7 +16,7 @@
 //! This trait reports **mechanism**, never health. Whether a host's answers add
 //! up to a usable host is one judgement made in one place, `probe::examine`.
 
-use kusanagi_kernel::{DropAddr, WaypointError};
+use kusanagi_kernel::{Object, WaypointError};
 
 /// A host's own name for a version of some bytes — an HTTP `ETag`.
 ///
@@ -76,7 +76,7 @@ pub trait Conditional {
     /// unchanged one are answers, not failures.
     fn get_if_changed(
         &self,
-        addr: &DropAddr,
+        at: &Object,
         known: Option<&Validator>,
     ) -> Result<Fetched, WaypointError>;
 
@@ -92,7 +92,7 @@ pub trait Conditional {
     /// [`WaypointError`] for a transport failure.
     fn put_with_ttl(
         &self,
-        addr: &DropAddr,
+        at: &Object,
         bytes: &[u8],
         seconds: u64,
     ) -> Result<TtlOutcome, WaypointError>;

@@ -52,7 +52,7 @@ use std::path::{Path, PathBuf};
 
 use kusanagi_chain::Cairn;
 use kusanagi_grant::{Revocations, StepId};
-use kusanagi_kernel::{Handle, Signer};
+use kusanagi_kernel::Handle;
 
 use crate::cairns;
 use crate::channel::Channel;
@@ -80,68 +80,6 @@ impl Site {
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
-    }
-
-    /// This endpoint's identity, if it has one yet.
-    ///
-    /// Expanding the seed into a signing key is the most expensive thing this
-    /// crate does, so anything that needs the seed rather than the signer takes
-    /// [`Site::seed`] and does not pay for it.
-    ///
-    /// # Errors
-    ///
-    /// [`SiteError::Local`] when the file exists and cannot be read, and
-    /// [`SiteError::BadRecord`] when it is not a seed.
-    pub fn identity(&self) -> Result<Option<Signer>, SiteError> {
-        Ok(self.seed()?.as_ref().map(Signer::from_seed))
-    }
-
-    /// The 32 bytes in the identity file, if there are any.
-    ///
-    /// `pub(crate)` and nothing wider. The seed **is** this endpoint, so the one
-    /// caller outside this file is `archive`, which puts it in a sealed backup —
-    /// the one place it is meant to leave the disk.
-    pub(crate) fn seed(&self) -> Result<Option<[u8; 32]>, SiteError> {
-        let Some(bytes) =
-            vault::read(&self.root.join("identity"), "read this endpoint's identity")?
-        else {
-            return Ok(None);
-        };
-        <[u8; 32]>::try_from(&*bytes)
-            .map(Some)
-            .map_err(|_| SiteError::BadRecord {
-                what: "an identity file",
-                reason: format!("an identity is 32 bytes; this one is {}", bytes.len()),
-            })
-    }
-
-    /// What this site files a channel called `name` under.
-    ///
-    /// `None` when there is no identity yet, which is also when there are
-    /// provably no channels: the key comes from the identity seed, so a site
-    /// that has never had one has never written a channel either.
-    ///
-    /// What it is called instead is [`naming::filed`]'s rule, not this one's.
-    fn filed(&self, name: &str) -> Result<Option<String>, SiteError> {
-        naming::check(name)?;
-        Ok(self.seed()?.map(|seed| naming::filed(&seed, name)))
-    }
-
-    /// Writes `seed` as this endpoint's identity and returns the signer.
-    ///
-    /// Refuses to replace an identity that already exists: overwriting one
-    /// abandons every channel it holds, silently and irreversibly.
-    ///
-    /// # Errors
-    ///
-    /// [`SiteError::Local`] when the file cannot be written.
-    pub fn adopt(&self, seed: &[u8; 32]) -> Result<Signer, SiteError> {
-        if let Some(existing) = self.identity()? {
-            return Ok(existing);
-        }
-        self.make_root()?;
-        vault::write_new(&self.root.join("identity"), seed, "write an identity")?;
-        Ok(Signer::from_seed(seed))
     }
 
     /// Reads one channel.
@@ -344,7 +282,7 @@ impl Site {
         revoked::add(&self.root, step)
     }
 
-    fn make_root(&self) -> Result<(), SiteError> {
+    pub(crate) fn make_root(&self) -> Result<(), SiteError> {
         vault::create_dir(&self.root, "create the site directory").map_err(Into::into)
     }
 
@@ -352,6 +290,17 @@ impl Site {
     ///
     /// A site with no identity has no channels, so asking for one by name is
     /// answered the same way as asking for one that was never joined.
+    /// What this site files a channel called `name` under.
+    ///
+    /// `None` when there is no identity yet, which is also when there are
+    /// provably no channels: the key comes from the identity seed, so a site
+    /// that has never had one has never written a channel either.
+    ///
+    /// What it is called instead is [`naming::filed`]'s rule, not this one's.
+    fn filed(&self, name: &str) -> Result<Option<String>, SiteError> {
+        naming::check(name)?;
+        Ok(self.seed()?.map(|seed| naming::filed(&seed, name)))
+    }
     fn channel_path(&self, name: &str) -> Result<PathBuf, SiteError> {
         Ok(self
             .root

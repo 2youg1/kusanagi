@@ -98,4 +98,5 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `waypoint.timeout` | the host did not answer inside the deadline | retry; if it persists the host is down |
 | `waypoint.unusable_address` | the address is not a usable key in this store | run `kusanagi doctor <waypoint>` |
 | `waypoint.deletion_refused` | this kind of host cannot remove anything, so a channel that releases cannot keep its promise on it | open the channel without `--release`, or move it to a host that deletes |
+| `waypoint.unlisted` | this host cannot list a bin, so reads here would have to name addresses | use `kusanagi host`, a bucket, or a directory; `kusanagi doctor <waypoint>` says which hosts can list |
 | `waypoint.unwritten` | a write did not land, and the host said nothing about why | the host is full, or it is not a box; run `kusanagi doctor <waypoint>` |

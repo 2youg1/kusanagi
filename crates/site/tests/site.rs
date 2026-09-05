@@ -21,6 +21,7 @@
 
 use kusanagi_grant::StepId;
 use kusanagi_kernel::Signer;
+use kusanagi_kernel::Ward;
 use kusanagi_seal::Secret;
 use kusanagi_site::{Channel, Site, SiteError, Standing};
 
@@ -50,11 +51,19 @@ fn an_identity_is_written_once_and_read_back() {
     let site = scratch("identity");
     assert!(site.identity().unwrap().is_none());
 
-    let first = site.adopt(&[5; 32]).unwrap().handle();
+    let first = site
+        .adopt(&[5; 32], Ward::from_bits(0x00ab))
+        .unwrap()
+        .handle();
     assert_eq!(site.identity().unwrap().unwrap().handle(), first);
 
     // a second adoption must not silently replace the first
-    assert_eq!(site.adopt(&[6; 32]).unwrap().handle(), first);
+    assert_eq!(
+        site.adopt(&[6; 32], Ward::from_bits(0x00ab))
+            .unwrap()
+            .handle(),
+        first
+    );
     std::fs::remove_dir_all(site.root()).unwrap();
 }
 
@@ -63,7 +72,7 @@ fn channels_are_kept_and_listed() {
     let site = scratch("channels");
     assert!(site.names().unwrap().is_empty());
     assert!(!site.holds("alice").unwrap());
-    site.adopt(&[5; 32]).unwrap();
+    site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
 
     site.keep(&channel("alice")).unwrap();
     site.keep(&channel("bob")).unwrap();
@@ -82,7 +91,7 @@ fn channels_are_kept_and_listed() {
 #[test]
 fn nothing_in_the_directory_is_readable_as_a_peer_name() {
     let site = scratch("filed");
-    site.adopt(&[5; 32]).unwrap();
+    site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
     site.keep(&channel("alice")).unwrap();
     site.keep(&channel("bob")).unwrap();
 
@@ -102,7 +111,7 @@ fn nothing_in_the_directory_is_readable_as_a_peer_name() {
     // A second site with a different identity files the same name elsewhere,
     // so the hash cannot be looked up in a table somebody built once.
     let other = scratch("filed-other");
-    other.adopt(&[6; 32]).unwrap();
+    other.adopt(&[6; 32], Ward::from_bits(0x00ab)).unwrap();
     other.keep(&channel("alice")).unwrap();
     let elsewhere: Vec<String> = std::fs::read_dir(other.root().join("channels"))
         .unwrap()
@@ -162,7 +171,7 @@ fn a_name_that_could_escape_the_directory_is_refused() {
 #[test]
 fn a_forgotten_channel_leaves_no_trace_and_frees_its_name() {
     let site = scratch("forget");
-    site.adopt(&[5; 32]).unwrap();
+    site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
     site.keep(&channel("alice")).unwrap();
     site.forget("alice").unwrap();
 

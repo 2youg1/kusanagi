@@ -24,18 +24,18 @@
 use std::net::TcpListener;
 
 use kusanagi_box::Server;
-use kusanagi_kernel::{Clock as _, Instant, Signer};
+use kusanagi_kernel::{Clock as _, Instant, Signer, Ward};
 use kusanagi_seal::Secret;
 use kusanagi_waypoint::{Access, Carrier, Locator, LocatorError, Place, Proxy, probe};
 
-use kusanagi_site::{Egress, Site};
+use kusanagi_site::{Channel, Egress, Site};
 
 use crate::membership::{forget, group, invite, join, revoke};
 use crate::port::serve;
 use crate::request::Request;
 use crate::slot::tick;
 use crate::traffic::{fanout, read, send};
-use crate::world::{SystemClock, fresh_circuit, fresh_seed};
+use crate::world::{SystemClock, fresh_circuit, fresh_seed, fresh_ward};
 use kusanagi_door::Complaint;
 use kusanagi_door::Grouping;
 use kusanagi_door::Outcome;
@@ -141,9 +141,39 @@ pub(crate) fn signer(site: &Site) -> Result<Signer, Complaint> {
     // of the statement and is never overwritten, which is how an identity seed
     // ends up in a core dump of a process that had finished with it.
     let mut seed = fresh_seed()?;
-    let adopted = site.adopt(&seed);
+    let adopted = site.adopt(&seed, fresh_ward()?);
     seed.zeroize();
     Ok(adopted?)
+}
+
+/// Which bin of a host this endpoint reads, creating the identity if need be.
+///
+/// Beside [`signer`] because the two come out of one record and appear at one
+/// moment: an endpoint that has a key has a ward, and neither is chosen by
+/// anybody.
+pub(crate) fn ward(site: &Site) -> Result<Ward, Complaint> {
+    signer(site)?;
+    site.ward()?.ok_or(Complaint::NoIdentity)
+}
+
+/// Which bin this endpoint's own segments on `name` are filed in.
+///
+/// Beside [`ward`] because the two are one question asked twice: mine is where
+/// I look, the peer's is where I deliver. A channel whose peer has not
+/// introduced themselves has nowhere to deliver to yet, and says so rather than
+/// filing into a ward nobody sweeps.
+///
+/// # Errors
+///
+/// [`Complaint::NoPeerYet`] when nobody has accepted the invitation.
+pub(crate) fn peer_ward(channel: &Channel, name: &str) -> Result<Ward, Complaint> {
+    channel
+        .peer
+        .as_ref()
+        .map(|peer| peer.ward)
+        .ok_or_else(|| Complaint::NoPeerYet {
+            name: name.to_owned(),
+        })
 }
 
 fn identity(site: &Site) -> Result<Outcome, Complaint> {

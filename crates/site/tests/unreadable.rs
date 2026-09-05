@@ -31,6 +31,7 @@ use std::path::Path;
 
 use kusanagi_grant::StepId;
 use kusanagi_kernel::Signer;
+use kusanagi_kernel::Ward;
 use kusanagi_seal::Secret;
 use kusanagi_site::{Channel, Site, Standing};
 
@@ -65,7 +66,7 @@ fn nothing_a_site_writes_is_readable_by_anybody_else() {
     let site = scratch("modes");
     let author = Signer::from_seed(&[3; 32]);
 
-    site.adopt(&[5; 32]).unwrap();
+    site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
     site.keep(&Channel {
         cadence: kusanagi_site::Cadence::OnDemand,
         retention: kusanagi_site::Retention::Keep,
@@ -104,7 +105,7 @@ fn nothing_a_site_writes_is_readable_by_anybody_else() {
 #[test]
 fn a_file_an_older_build_left_open_is_replaced_rather_than_chmodded() {
     let site = scratch("upgrade");
-    site.adopt(&[5; 32]).unwrap();
+    site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
     let revoked = site.root().join("revoked");
     site.revoke(StepId::from_bytes([1; 32])).unwrap();
 
@@ -141,7 +142,7 @@ fn a_symbolic_link_planted_at_a_record_is_replaced_and_never_followed() {
     // target and renames over it instead, and `rename` replaces the name rather
     // than following where it points.
     let site = scratch("symlink");
-    site.adopt(&[5; 32]).unwrap();
+    site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
 
     let bait = site
         .root()

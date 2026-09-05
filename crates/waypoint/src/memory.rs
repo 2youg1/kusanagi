@@ -13,12 +13,12 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
+use kusanagi_kernel::{Listing, Object, PutOutcome, Sweep, Waypoint, WaypointError};
 
 /// An in-process waypoint.
 #[derive(Debug, Default)]
 pub struct MemoryWaypoint {
-    drops: Mutex<BTreeMap<DropAddr, Vec<u8>>>,
+    drops: Mutex<BTreeMap<Object, Vec<u8>>>,
 }
 
 impl MemoryWaypoint {
@@ -35,14 +35,14 @@ impl MemoryWaypoint {
     /// **If a future change performs a multi-step update here, this recovery must
     /// become a propagated error instead** — the justification is the single-step
     /// update, not convenience.
-    fn drops(&self) -> MutexGuard<'_, BTreeMap<DropAddr, Vec<u8>>> {
+    fn drops(&self) -> MutexGuard<'_, BTreeMap<Object, Vec<u8>>> {
         self.drops.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 impl Waypoint for MemoryWaypoint {
-    fn put_if_absent(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
-        match self.drops().entry(*addr) {
+    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
+        match self.drops().entry(*at) {
             Entry::Occupied(_) => Ok(PutOutcome::AlreadyPresent),
             Entry::Vacant(slot) => {
                 slot.insert(bytes.to_vec());
@@ -51,12 +51,28 @@ impl Waypoint for MemoryWaypoint {
         }
     }
 
-    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
-        Ok(self.drops().get(addr).cloned())
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError> {
+        Ok(self.drops().get(at).cloned())
     }
 
-    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
-        self.drops().remove(addr);
+    fn delete(&self, at: &Object) -> Result<(), WaypointError> {
+        self.drops().remove(at);
         Ok(())
+    }
+}
+
+impl Listing for MemoryWaypoint {
+    /// Every object of a covered bin, in key order.
+    ///
+    /// A scan rather than a range query: this adapter exists to be the second
+    /// implementation of a seam, and a second implementation that shares the
+    /// first one's cleverness proves less than a plain one does.
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError> {
+        Ok(self
+            .drops()
+            .keys()
+            .filter(|at| sweep.holds(at))
+            .copied()
+            .collect())
     }
 }

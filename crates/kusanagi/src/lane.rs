@@ -19,7 +19,7 @@
 //! find deleted drops, conclude the stream never started, and report that as
 //! fact.
 
-use kusanagi_kernel::{Handle, VerifyingKey};
+use kusanagi_kernel::{Bin, DropAddr, Handle, Object, Period, VerifyingKey, Ward};
 use kusanagi_seal::{Keyring, Ratchet};
 use kusanagi_site::{Channel, Site};
 
@@ -31,10 +31,42 @@ pub struct Lane {
     pub keys: Keyring,
     /// Whose signature every segment on it must carry.
     pub author: VerifyingKey,
+    /// Which bin of the host this lane's drops are filed in.
+    ///
+    /// **The reader's ward, never the writer's.** A drop exists to be collected,
+    /// and it is collected by whoever sweeps the bin it sits in, so a lane
+    /// authored by this endpoint is filed where the peer looks and a lane
+    /// authored by the peer is filed where this endpoint looks. Deciding it here
+    /// rather than at each call site is what stops a verb from filing a segment
+    /// somewhere nobody sweeps — a message that is neither delivered nor lost.
+    pub bin: Bin,
+}
+
+impl Lane {
+    /// Where a drop of this lane sits on the host.
+    #[must_use]
+    pub const fn at(&self, addr: DropAddr) -> Object {
+        Object::new(self.bin, addr)
+    }
+
+    /// Where the drop at `index` sits on the host.
+    #[must_use]
+    pub fn holding(&self, index: u64) -> Object {
+        self.at(self.keys.address(index))
+    }
 }
 
 impl Lane {
     /// Opens `author`'s lane on `channel`, as this channel's retention says.
+    ///
+    /// `reader` is whose ward the lane's drops are filed in: the peer's for a
+    /// lane this endpoint writes, this endpoint's own for a lane it reads.
+    ///
+    /// **The period is fixed at zero until reads sweep.** The key layout carries
+    /// the column from the first day so that no host has to relearn it, and the
+    /// clock moves into it in the same change that makes a read take a whole bin
+    /// — the two are one idea, because a bin can only be taken whole if it is
+    /// finite.
     ///
     /// # Errors
     ///
@@ -46,13 +78,16 @@ impl Lane {
         name: &str,
         channel: &Channel,
         author: &VerifyingKey,
+        reader: Ward,
     ) -> Result<Self, Complaint> {
         let named = author.handle();
         let stream = channel.secret.stream(&named);
+        let bin = Bin::new(Period::from_count(0), reader);
         if !channel.retention.releases() {
             return Ok(Self {
                 keys: Keyring::Standing(stream),
                 author: *author,
+                bin,
             });
         }
 
@@ -70,6 +105,7 @@ impl Lane {
         Ok(Self {
             keys: Keyring::Ratcheting { stream, floor },
             author: *author,
+            bin,
         })
     }
 

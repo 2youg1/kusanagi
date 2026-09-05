@@ -61,6 +61,7 @@
 lib.rs          模块索引
 conformance.rs  契约：一个函数，不是一组 #[test]
 conditional.rs  Conditional seam：Validator / Fetched / TtlOutcome
+carrier.rs      CarrierWaypoint 增 `list` 动词（D-20 起读的代价：能写而不能列的载体不可读）
 client.rs       Client —— 客户端允许宙主对自己做什么；重定向、超时、正文上限一处定
 dir.rs          目录适配器
 memory.rs       内存适配器
@@ -98,11 +99,22 @@ certificate.rs  Capability / Verdict / Tier / Certificate —— 实测结果的
 ## 8 接口先行
 
 ```rust
-pub fn conformance::run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure>;
+// The nouns live in kernel (`filing.rs`): Ward / Period / Bin / Object / Sweep.
+pub fn conformance::run(place: &(impl Waypoint + Listing), namespace: &Stream) -> Result<(), Failure>;
+
+pub trait Waypoint {
+    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError>;
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError>;
+    fn delete(&self, at: &Object) -> Result<(), WaypointError>;
+}
+
+pub trait Listing {
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError>;   // ListingRefused 是诚实的拒绝
+}
 
 pub trait Conditional {
-    fn get_if_changed(&self, addr: &DropAddr, known: Option<&Validator>) -> Result<Fetched, WaypointError>;
-    fn put_with_ttl(&self, addr: &DropAddr, bytes: &[u8], seconds: u64) -> Result<TtlOutcome, WaypointError>;
+    fn get_if_changed(&self, at: &Object, known: Option<&Validator>) -> Result<Fetched, WaypointError>;
+    fn put_with_ttl(&self, at: &Object, bytes: &[u8], seconds: u64) -> Result<TtlOutcome, WaypointError>;
 }
 
 pub enum Locator { Directory(PathBuf), Box { base: String }, Bucket { .. } }   // FromStr
@@ -112,12 +124,12 @@ impl Place { pub fn open(&Locator, &Access, now: u64) -> Result<Self, LocatorErr
 pub struct Circuit([u8; 16]);                       // from_bytes；十六字节由 kusanagi::world 供给，waypoint 不产熵
 impl Proxy { pub fn parse(text: &str, circuit: Circuit) -> Result<Self, LocatorError>; }   // 唯一构造函数：没有不带电路的代理
 
-pub fn probe::examine<P: Waypoint + Conditional>(place: &P, namespace: &Stream) -> Certificate;
+pub fn probe::examine<P: Waypoint + Conditional + Listing>(place: &P, namespace: &Stream) -> Certificate;
 pub enum Verdict { Held, NotOffered { because: String }, Broken { detail: String } }
 pub enum Tier { WriteOnce, AckFirstSeen }
 ```
 
-**为什么 `Conditional` 是第二个 trait 而不是 `Waypoint` 的两个新方法**：`Waypoint` 是每个地方都要实现的 seam，每多一个方法就多一件某人的 U 盘适配器必须假装会做的事。条件读是**传输能力**，可以如实地被拒绝提供。
+**为什么 `Listing` 与 `Conditional` 是独立的 trait 而不是 `Waypoint` 的新方法**：`Waypoint` 是每个地方都要实现的 seam，每多一个方法就多一件某人的 U 盘适配器必须假装会做的事。条件读与列举都是**传输能力**，可以如实地被拒绝提供。列举的拒绝码是 `waypoint.unlisted`，门上是 `kusanagi.unlisted`。
 
 **为什么 `Verdict` 分三档而不是布尔**：`NotOffered` 与 `Broken` 是两件不同的事——目录没有 ETag 是有名字的缺席，宿主声称支持却做不到是故障。合成一档就等于让「诚实的目录」和「撒谎的宿主」得到同一个待遇。
 
@@ -125,7 +137,7 @@ pub enum Tier { WriteOnce, AckFirstSeen }
 
 ```
 locator 字符串 → Locator::from_str → Place::open(credentials, now) → Waypoint / Conditional
-doctor：Place → probe::examine → Certificate{ 四项 Finding } → Tier → CLI 渲染
+doctor：Place → probe::examine → Certificate{ 五项 Finding（新增 `bin-listing`） } → Tier → CLI 渲染
 盒子的服务端已移出本 crate，流程见 `crates/box/box-SPEC.md` §9
 ```
 

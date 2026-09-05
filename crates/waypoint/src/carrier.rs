@@ -21,10 +21,16 @@
 //! ## The contract a carrier program satisfies
 //!
 //! ```text
-//! PROGRAM get    OBJECT   bytes to stdout   0 = found, 3 = nothing there
-//! PROGRAM put    OBJECT   bytes on stdin    0 = sent
-//! PROGRAM delete OBJECT                     0 = gone, 3 = nothing there
+//! PROGRAM get    OBJECT   bytes to stdout    0 = found, 3 = nothing there
+//! PROGRAM put    OBJECT   bytes on stdin     0 = sent
+//! PROGRAM delete OBJECT                      0 = gone, 3 = nothing there
+//! PROGRAM list   PREFIX   one key per line   0 = listed, 3 = nothing there
 //! ```
+//!
+//! **`list` is what a read costs since D-20.** A reader names a bin and takes all
+//! of it, so a carrier that cannot list is a carrier that can be written to and
+//! never read from. The real clients this borrows all have the verb — `rclone
+//! lsf`, `aws s3 ls`, `git ls-tree` — so the wrapper script grows one line.
 //!
 //! **Three exit codes, not two.** A carrier that reported failure and absence
 //! the same way would turn a broken network into "the stream ends here", and a
@@ -45,9 +51,9 @@
 use std::io::Write as _;
 use std::process::{Command, Stdio};
 
-use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
+use kusanagi_kernel::{Listing, Object, PutOutcome, Sweep, Waypoint, WaypointError};
 
-use crate::client::MAX_OBJECT;
+use crate::client::{MAX_OBJECT, listed};
 
 /// The exit status a carrier uses for "there is nothing at that object".
 const ABSENT: i32 = 3;
@@ -107,15 +113,15 @@ impl CarrierWaypoint {
         }
     }
 
-    /// What the carrier is asked to move: the prefix and the drop address.
+    /// What the carrier is asked to move: this endpoint's prefix and a key.
     ///
     /// A single token so that the carrier can be a one-line script: a path
     /// under a mount, a key under a bucket, a name under a remote.
-    fn object(&self, addr: &DropAddr) -> String {
+    fn object(&self, key: &str) -> String {
         if self.prefix.is_empty() {
-            addr.to_string()
+            key.to_owned()
         } else {
-            format!("{}/{addr}", self.prefix)
+            format!("{}/{key}", self.prefix)
         }
     }
 
@@ -124,7 +130,7 @@ impl CarrierWaypoint {
     /// The child's stdout is capped at [`MAX_OBJECT`] for the reason every
     /// response body is: what comes back is allocated before it is checked, so
     /// the cap is what stops a carrier from choosing this endpoint's memory.
-    fn run(&self, verb: &str, addr: &DropAddr, input: &[u8]) -> Result<Ran, WaypointError> {
+    fn run(&self, verb: &str, key: &str, input: &[u8]) -> Result<Ran, WaypointError> {
         let failed = |source: std::io::Error| WaypointError::Io {
             action: "running the carrier",
             source,
@@ -132,7 +138,7 @@ impl CarrierWaypoint {
         let mut child = Command::new(&self.carrier.program)
             .args(&self.carrier.leading)
             .arg(verb)
-            .arg(self.object(addr))
+            .arg(self.object(key))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -174,6 +180,22 @@ impl CarrierWaypoint {
     }
 }
 
+impl Listing for CarrierWaypoint {
+    /// Runs `list` and reads the keys it printed.
+    ///
+    /// Absence is an empty listing, not a failure: a bin nobody has written to
+    /// does not exist on most of the stores a carrier fronts, and a reader that
+    /// treated that as broken would stop reading the first quiet period.
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError> {
+        let ran = self.run("list", &sweep.prefix(), &[])?;
+        match ran.status {
+            Some(0) => Ok(listed(&String::from_utf8_lossy(&ran.out), sweep)),
+            Some(ABSENT) => Ok(Vec::new()),
+            _ => Err(self.refused("listing a bin through a carrier", &ran)),
+        }
+    }
+}
+
 impl Waypoint for CarrierWaypoint {
     /// Sends, then looks, exactly as the HTTP adapter does.
     ///
@@ -182,19 +204,19 @@ impl Waypoint for CarrierWaypoint {
     /// answering about its own store rather than about this address. So the
     /// write-once decision is made here, from what is at the address afterwards,
     /// which is the same evidence and needs nothing of the carrier.
-    fn put_if_absent(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
-        if let Some(found) = self.get(addr)? {
+    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
+        if let Some(found) = self.get(at)? {
             return Ok(if found == bytes {
                 PutOutcome::Stored
             } else {
                 PutOutcome::AlreadyPresent
             });
         }
-        let ran = self.run("put", addr, bytes)?;
+        let ran = self.run("put", &at.to_string(), bytes)?;
         if ran.status != Some(0) {
             return Err(self.refused("writing through a carrier", &ran));
         }
-        match self.get(addr)? {
+        match self.get(at)? {
             Some(found) if found == bytes => Ok(PutOutcome::Stored),
             Some(_) => Ok(PutOutcome::AlreadyPresent),
             None => Err(WaypointError::Unwritten {
@@ -203,8 +225,8 @@ impl Waypoint for CarrierWaypoint {
         }
     }
 
-    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
-        let ran = self.run("get", addr, &[])?;
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError> {
+        let ran = self.run("get", &at.to_string(), &[])?;
         match ran.status {
             Some(0) => Ok(Some(ran.out)),
             Some(ABSENT) => Ok(None),
@@ -212,8 +234,8 @@ impl Waypoint for CarrierWaypoint {
         }
     }
 
-    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
-        let ran = self.run("delete", addr, &[])?;
+    fn delete(&self, at: &Object) -> Result<(), WaypointError> {
+        let ran = self.run("delete", &at.to_string(), &[])?;
         match ran.status {
             Some(0 | ABSENT) => Ok(()),
             _ => Err(self.refused("releasing through a carrier", &ran)),
@@ -231,7 +253,7 @@ impl Waypoint for CarrierWaypoint {
 )]
 mod tests {
     use super::{Carrier, CarrierWaypoint};
-    use kusanagi_kernel::DropAddr;
+    use kusanagi_kernel::{Bin, DropAddr, Object, Period, Ward};
 
     #[test]
     fn a_carrier_is_a_program_and_the_words_after_it() {
@@ -243,15 +265,16 @@ mod tests {
 
     #[test]
     fn the_object_is_the_prefix_and_the_address() {
-        let addr = DropAddr::from_bytes([0xab; 20]);
+        let at = Object::new(
+            Bin::new(Period::from_count(7), Ward::from_bits(0x00ab)),
+            DropAddr::from_bytes([0xab; 20]),
+        )
+        .to_string();
         let carrier = Carrier::parse("x").unwrap();
         assert_eq!(
-            CarrierWaypoint::new(carrier.clone(), "remote:drops/").object(&addr),
-            format!("remote:drops/{addr}")
+            CarrierWaypoint::new(carrier.clone(), "remote:drops/").object(&at),
+            format!("remote:drops/{at}")
         );
-        assert_eq!(
-            CarrierWaypoint::new(carrier, "").object(&addr),
-            addr.to_string()
-        );
+        assert_eq!(CarrierWaypoint::new(carrier, "").object(&at), at);
     }
 }

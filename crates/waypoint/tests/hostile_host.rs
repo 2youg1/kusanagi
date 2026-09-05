@@ -31,12 +31,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use kusanagi_kernel::{DropAddr, Waypoint as _};
+use kusanagi_kernel::{Bin, Object, Period, Ward, Waypoint as _};
 use kusanagi_waypoint::{Access, Circuit, HttpWaypoint, Proxy};
 
 /// The address every read here asks for. Nothing is ever written to it.
-fn address() -> DropAddr {
-    "0123456789abcdef0123456789abcdef01234567".parse().unwrap()
+fn address() -> Object {
+    Object::new(
+        Bin::new(Period::from_count(7), Ward::from_bits(0x00ab)),
+        "0123456789abcdef0123456789abcdef01234567".parse().unwrap(),
+    )
 }
 
 /// A listener bound to a free port, with the port returned before it is served.

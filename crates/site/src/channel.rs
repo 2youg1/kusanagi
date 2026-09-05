@@ -47,114 +47,40 @@
 //! The two key fields are `VerifyingKey::WIDTH` wide, so a change of signature
 //! scheme is a change of record version.
 
-use kusanagi_grant::{Ability, Grant, GrantError, Revocations};
-use kusanagi_kernel::{Handle, Instant, Reader, VerifyingKey};
+use kusanagi_kernel::{Handle, Reader, VerifyingKey, Ward};
 use kusanagi_seal::Secret;
 
-use crate::blocks::{malformed, put_block, take_block, take_text};
+use crate::blocks::{malformed, put_block, take_text};
 use crate::cadence::Cadence;
 use crate::error::SiteError;
 use crate::retention::Retention;
+use crate::standing::Standing;
 
 /// The record this build writes and reads.
 ///
-/// Version 4 carries the two choices that change what this endpoint does on the
+/// Version 5 carries the peer's ward, which is where this endpoint files what it
+/// writes to them: a writer that does not know its reader's bin cannot deliver.
+/// Version 4 carried the two choices that change what this endpoint does on the
 /// network rather than what it knows: a [`Cadence`] and a [`Retention`]. Version
 /// 3 carried the channel's local name, which version 2 kept in the file name
 /// instead. Version 2 named its peer by verifying key where version 1 named it
 /// by handle — the two are the same width and neither decodes as the other,
 /// which is why the version byte moves at all: a silent reinterpretation would
 /// leave an endpoint verifying every segment against 32 bytes that are not a key.
-const VERSION: u8 = 4;
-const STANDING_ROOT: u8 = 0;
-const STANDING_GRANTED: u8 = 1;
-
-/// Why somebody is allowed to be on a channel at all.
-///
-/// An enum rather than an `Option<Grant>` because the two cases are different
-/// facts, not a present and an absent one: the root authority holds no grant
-/// because there is nobody above it to have issued one, and saying that in the
-/// type stops every caller from having to remember what `None` meant.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Standing {
-    /// This handle *is* the authority every grant on the channel descends from.
-    Root,
-    /// This handle holds a grant that descends from that authority.
-    Granted(Grant),
-}
-
-impl Standing {
-    /// Whether `who` may do `ability` here, at `now`.
-    ///
-    /// # Errors
-    ///
-    /// [`GrantError`] naming exactly which link of the chain refused, or
-    /// [`GrantError::NotTheHolder`] when a handle claims to be an authority it
-    /// is not.
-    pub fn permits(
-        &self,
-        root: &Handle,
-        who: &Handle,
-        ability: Ability,
-        now: Instant,
-        revoked: &Revocations,
-    ) -> Result<(), GrantError> {
-        match self {
-            Self::Root => {
-                if who == root {
-                    Ok(())
-                } else {
-                    Err(GrantError::NotTheHolder {
-                        holder: *root,
-                        presenter: *who,
-                    })
-                }
-            }
-            Self::Granted(grant) => grant.permits(root, who, ability, now, revoked),
-        }
-    }
-
-    /// The grant, when there is one.
-    #[must_use]
-    pub const fn grant(&self) -> Option<&Grant> {
-        match self {
-            Self::Root => None,
-            Self::Granted(grant) => Some(grant),
-        }
-    }
-
-    fn write(&self, out: &mut Vec<u8>) {
-        match self {
-            Self::Root => {
-                out.push(STANDING_ROOT);
-                put_block(out, &[]);
-            }
-            Self::Granted(grant) => {
-                out.push(STANDING_GRANTED);
-                put_block(out, &grant.to_canonical_bytes());
-            }
-        }
-    }
-
-    fn read(reader: &mut Reader<'_>) -> Result<Self, SiteError> {
-        let tag = reader.take_byte().map_err(malformed)?;
-        let block = take_block(reader)?;
-        match tag {
-            STANDING_ROOT => Ok(Self::Root),
-            STANDING_GRANTED => Ok(Self::Granted(Grant::from_canonical_bytes(&block)?)),
-            other => Err(SiteError::BadRecord {
-                what: "a standing",
-                reason: format!("a standing is root or granted, not {other}"),
-            }),
-        }
-    }
-}
+const VERSION: u8 = 5;
 
 /// The other end of a conversation, once it has said who it is.
 #[derive(Clone, Debug)]
 pub struct Peer {
     /// The key that checks the peer's segments.
     pub key: VerifyingKey,
+    /// Which bin of the host the peer reads, and so where to write to them.
+    ///
+    /// Not an `Option`. A peer this endpoint knows is a peer it can write to,
+    /// and both ways of learning one — an offer for the newcomer, a greeting for
+    /// the inviter — carry the ward beside the key. A peer without a ward would
+    /// be a peer whose messages go somewhere nobody sweeps.
+    pub ward: Ward,
     /// Why the peer is allowed here.
     pub standing: Standing,
 }
@@ -208,11 +134,13 @@ impl Channel {
             None => {
                 out.push(0);
                 out.extend_from_slice(&[0_u8; VerifyingKey::WIDTH]);
+                out.extend_from_slice(&[0_u8; 2]);
                 Standing::Root.write(&mut out);
             }
             Some(peer) => {
                 out.push(1);
                 out.extend_from_slice(peer.key.as_bytes());
+                out.extend_from_slice(&peer.ward.bits().to_be_bytes());
                 peer.standing.write(&mut out);
             }
         }
@@ -254,11 +182,15 @@ impl Channel {
                 .take_array::<{ VerifyingKey::WIDTH }>()
                 .map_err(malformed)?,
         );
+        let ward = Ward::from_bits(u16::from_be_bytes(
+            reader.take_array::<2>().map_err(malformed)?,
+        ));
         let peer_standing = Standing::read(&mut reader)?;
         let peer = match has_peer {
             0 => None,
             1 => Some(Peer {
                 key,
+                ward,
                 standing: peer_standing,
             }),
             other => {
@@ -297,9 +229,10 @@ impl Channel {
     reason = "test code"
 )]
 mod tests {
-    use super::{Cadence, Channel, Peer, Retention, Standing};
+    use super::{Cadence, Channel, Peer, Retention};
+    use crate::standing::Standing;
     use kusanagi_grant::{Abilities, Ability, Grant, GrantError, Revocations, Scope};
-    use kusanagi_kernel::{Instant, Signer};
+    use kusanagi_kernel::{Instant, Signer, Ward};
     use kusanagi_seal::Secret;
 
     fn channel(with_peer: bool) -> Channel {
@@ -316,6 +249,7 @@ mod tests {
             cadence: Cadence::OnDemand,
             retention: Retention::Keep,
             peer: with_peer.then(|| Peer {
+                ward: Ward::from_bits(0x00ab),
                 key: guest.verifying_key(),
                 standing: Standing::Granted(Grant::issue(&root, &guest.handle(), scope)),
             }),

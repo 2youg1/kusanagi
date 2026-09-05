@@ -8,7 +8,14 @@
 //! A waypoint is not trusted. It sees an opaque address and an opaque byte
 //! string, and it is never asked a question whose answer it could usefully lie
 //! about: what it returns is verified against a hash by the caller. That is why
-//! this trait has two methods and no notion of accounts, sessions, or listing.
+//! this trait has three methods and no notion of accounts or sessions.
+//!
+//! Every one of them takes an [`Object`]: a period, a ward and an address, which
+//! is the whole of what a host is told. A reader that named an address alone
+//! handed the host the pair of writer and reader on its own access log, and
+//! `ARCHITECTURE.md` §9 D-20 replaced that with a read that names a bin. Listing
+//! a bin is a *transport* capability, so it lives in [`Listing`] and a place may
+//! honestly decline to hold it.
 //!
 //! `put_if_absent` is not `put`. A [`Drop`](crate::DropAddr) receives exactly one
 //! segment in its lifetime, so the storage layer — not this code — is what
@@ -22,7 +29,7 @@
 //! which is why the ratchet burns the key as well — deletion is the honest
 //! host's half and the ratchet is the dishonest host's half.
 
-use crate::address::DropAddr;
+use crate::filing::{Object, Sweep};
 
 /// What happened to a write.
 ///
@@ -38,25 +45,25 @@ pub enum PutOutcome {
 
 /// Anything that stores bytes under an opaque key.
 pub trait Waypoint {
-    /// Writes `bytes` at `addr` only if `addr` is empty.
+    /// Writes `bytes` at `at` only if `at` is empty.
     ///
     /// # Errors
     ///
     /// [`WaypointError`] describes what the underlying store refused or failed to
     /// do. An adapter that cannot guarantee write-once semantics must fail with
     /// [`WaypointError::OverwriteNotRefused`] rather than silently overwrite.
-    fn put_if_absent(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, WaypointError>;
+    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError>;
 
-    /// Reads the bytes at `addr`, if any.
+    /// Reads the bytes at `at`, if any.
     ///
     /// # Errors
     ///
     /// [`WaypointError`] describes a transport or storage failure. An empty
     /// address is `Ok(None)`, not an error: nothing has arrived yet is the normal
     /// state of this network.
-    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError>;
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError>;
 
-    /// Removes whatever is at `addr`, if anything is.
+    /// Removes whatever is at `at`, if anything is.
     ///
     /// **Deleting an empty address is success, not a failure.** A caller that
     /// released the same drop twice, or that is releasing a drop a host already
@@ -72,7 +79,31 @@ pub trait Waypoint {
     /// [`WaypointError::DeletionRefused`] when this kind of place cannot remove
     /// anything at all — which a channel that releases must find out before it
     /// relies on it, rather than after.
-    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError>;
+    fn delete(&self, at: &Object) -> Result<(), WaypointError>;
+}
+
+/// A place that can say what it holds under a key prefix.
+///
+/// Apart from [`Waypoint`] for the reason `kusanagi_waypoint::Conditional` is:
+/// the seam every place implements must stay small enough that a U-stick
+/// adapter can implement all of it, and listing is something a place can be
+/// unable to do without being broken. What a reader does when a place declines
+/// is not this crate's business — it is a verb's, and `kusanagi.unlisted` is the
+/// code the door gives it.
+pub trait Listing {
+    /// Every object the host holds under `sweep`.
+    ///
+    /// **Order is not part of this contract** and neither is completeness beyond
+    /// a cap the adapter documents: a reader takes what it is given, matches it
+    /// against addresses only it can derive, and drops the rest. A host that
+    /// adds objects to a bin can waste a reader's bandwidth and can never learn
+    /// which of them the reader wanted.
+    ///
+    /// # Errors
+    ///
+    /// [`WaypointError::ListingRefused`] when this kind of place cannot list at
+    /// all, and [`WaypointError`] for a transport failure.
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError>;
 }
 
 /// Why a waypoint could not do what was asked.
@@ -94,6 +125,14 @@ pub enum WaypointError {
     /// The store will not remove anything, so nothing can be released on it.
     #[error("this waypoint does not delete, so a channel cannot release on it")]
     DeletionRefused,
+    /// The store cannot say what it holds, so a read here would have to name an
+    /// address.
+    ///
+    /// A refusal rather than a fallback to naming addresses: falling back would
+    /// withdraw the property the bin exists for, quietly, on exactly the hosts
+    /// that cannot support it.
+    #[error("this waypoint does not list, so a read here would have to name an address")]
+    ListingRefused,
     /// The address is not usable as a key in this store.
     #[error("address is not a usable key here: {reason}")]
     UnusableAddress {
@@ -142,6 +181,7 @@ impl WaypointError {
             Self::Io { .. } => "waypoint.io",
             Self::OverwriteNotRefused => "waypoint.overwrite_not_refused",
             Self::DeletionRefused => "waypoint.deletion_refused",
+            Self::ListingRefused => "waypoint.unlisted",
             Self::UnusableAddress { .. } => "waypoint.unusable_address",
             Self::Redirected { .. } => "waypoint.redirected",
             Self::Unwritten { .. } => "waypoint.unwritten",

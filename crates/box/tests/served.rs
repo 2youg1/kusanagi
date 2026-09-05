@@ -16,7 +16,16 @@
 )]
 
 use kusanagi_box::Server;
-use kusanagi_kernel::{FixedClock, Instant, PutOutcome, Signer, Waypoint as _};
+use kusanagi_kernel::{
+    Bin, FixedClock, Instant, Listing as _, Object, Period, PutOutcome, Signer, Sweep, Ward,
+    Waypoint as _,
+};
+
+/// The bin these tests file in. Which bin is not what any of them is about,
+/// except the one that sweeps it.
+fn bin() -> Bin {
+    Bin::new(Period::from_count(7), Ward::from_bits(0x00ab))
+}
 use kusanagi_seal::{Fit, Secret, Stream, derive, seal};
 use kusanagi_waypoint::{Access, Conditional as _, Fetched, HttpWaypoint, TtlOutcome};
 use std::net::TcpListener;
@@ -61,7 +70,7 @@ fn a_segment_crosses_a_tcp_connection_and_comes_back_whole() {
         "roundtrip",
         FixedClock::at(Instant::from_unix_seconds(1_000)),
     );
-    let (addr, _) = derive(&namespace(1), 0);
+    let addr = Object::new(bin(), derive(&namespace(1), 0).0);
     let body = sealed(&namespace(1), 0, b"a segment");
 
     assert_eq!(client.get(&addr).unwrap(), None);
@@ -80,7 +89,7 @@ fn a_claimed_drop_is_refused_a_second_time() {
         "write-once",
         FixedClock::at(Instant::from_unix_seconds(1_000)),
     );
-    let (addr, _) = derive(&namespace(2), 0);
+    let addr = Object::new(bin(), derive(&namespace(2), 0).0);
     let first = sealed(&namespace(2), 0, b"first");
     let second = sealed(&namespace(2), 0, b"second");
     assert_ne!(first, second);
@@ -107,7 +116,7 @@ fn a_reader_that_is_current_is_told_so_without_the_bytes() {
         "conditional",
         FixedClock::at(Instant::from_unix_seconds(1_000)),
     );
-    let (addr, _) = derive(&namespace(3), 0);
+    let addr = Object::new(bin(), derive(&namespace(3), 0).0);
     client
         .put_if_absent(&addr, &sealed(&namespace(3), 0, b"a segment"))
         .unwrap();
@@ -127,7 +136,7 @@ fn a_reader_that_is_current_is_told_so_without_the_bytes() {
 #[test]
 fn an_object_written_already_expired_is_never_served() {
     let (client, root) = box_on("expiry", FixedClock::at(Instant::from_unix_seconds(1_000)));
-    let (addr, _) = derive(&namespace(4), 0);
+    let addr = Object::new(bin(), derive(&namespace(4), 0).0);
 
     assert_eq!(
         client
@@ -148,5 +157,42 @@ fn the_whole_contract_holds_over_tcp() {
     );
     kusanagi_waypoint::conformance::run(&client, &namespace(5))
         .expect("the box broke the contract");
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn a_bin_names_what_is_in_it_and_nothing_of_a_neighbour() {
+    let (client, root) = box_on("sweep", FixedClock::at(Instant::from_unix_seconds(1_000)));
+    let mine = Object::new(bin(), derive(&namespace(5), 0).0);
+    let neighbour = Object::new(
+        Bin::new(Period::from_count(7), Ward::from_bits(0x00ac)),
+        derive(&namespace(5), 1).0,
+    );
+    client
+        .put_if_absent(&mine, &sealed(&namespace(5), 0, b"mine"))
+        .unwrap();
+    client
+        .put_if_absent(&neighbour, &sealed(&namespace(5), 1, b"theirs"))
+        .unwrap();
+
+    // A whole ward: one of the two, named without anybody naming an address.
+    let swept = client.list(&Sweep::of(bin(), Ward::DIGITS)).unwrap();
+    assert_eq!(swept, vec![mine]);
+
+    // Three digits of the ward: `00a` holds both, which is the bandwidth a
+    // reader pays for a larger crowd.
+    let wider = client.list(&Sweep::of(bin(), 3)).unwrap();
+    assert!(wider.contains(&mine) && wider.contains(&neighbour));
+
+    // An empty bin is an empty answer rather than a failure, because a quiet
+    // period is the normal state of this network.
+    let quiet = Bin::new(Period::from_count(8), Ward::from_bits(0x00ab));
+    assert!(
+        client
+            .list(&Sweep::of(quiet, Ward::DIGITS))
+            .unwrap()
+            .is_empty()
+    );
+
     std::fs::remove_dir_all(&root).ok();
 }

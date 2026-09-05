@@ -4,7 +4,7 @@ What `kusanagi host` answers, and what `HttpWaypoint` sends. Anybody can impleme
 either half; both halves in this repository are written against this page, and
 `waypoint::conformance::run` is what decides whether an implementation is correct.
 
-The protocol is HTTP/1.1 and has two requests. It is deliberately smaller than
+The protocol is HTTP/1.1 and has three requests. It is deliberately smaller than
 S3, because everything this network asks of a host is small.
 
 **Every header in it is one that ordinary web traffic already carries.** A header
@@ -16,9 +16,10 @@ TLS. No amount of sealing further down takes that back, so there are none.
 
 - **It is never asked to overwrite.** There is no unconditional write in the
   protocol, so a host cannot lose write-once semantics by accident.
-- **It is never asked to list.** A caller who does not already know an address
-  learns nothing from the host, which is what makes unlinkable addressing worth
-  anything.
+- **It is never asked who anybody is.** There are no accounts and no
+  authentication, so a host has nothing to disclose and nothing to leak. (Listing
+  used to be on this list; D-20 moved it off, because a read that names a bin
+  instead of an address is what stops the host pairing a writer with a reader.)
 - **It is never asked who anybody is.** There are no accounts and no
   authentication, so a host has nothing to disclose and nothing to leak.
 - **It is never asked to describe itself.** There is no banner, no version and no
@@ -30,15 +31,25 @@ Access control, if a deployment wants it, belongs in front of the host — a
 reverse proxy, an allowlist, a VPN. It is not in this protocol because a host that
 knew who its callers were would know something the design promises it cannot.
 
-## `GET /d/<address>`
+## `GET /d/<period>/<ward>/<address>`
 
-`<address>` is exactly 40 lowercase hexadecimal characters.
+The key is three components: a sixteen-digit period, a four-digit ward, and the
+40-character drop address. A reader never names the third alone anymore — it
+sweeps a ward and takes all of it — so the host learns which bin was swept and
+never which object of it was wanted (`ARCHITECTURE.md` §9 D-20).
 
 | Response | When |
 |---|---|
 | `200` + body + `ETag` | the drop holds bytes |
 | `304`, no body | `If-None-Match` matched the current `ETag` |
 | `404`, no body | nothing is there, or what was there has expired |
+
+## `GET /bin/<prefix>`
+
+Answers with the keys under `<prefix>`, one per line, where `<prefix>` is a
+period plus zero to four hex digits of a ward. Names and nothing else: a host
+that answered with bodies would learn which object was wanted by watching which
+one was *not* fetched afterwards.
 
 A host answers `404` with an **empty body**, and answers the same `404` to a
 request that is not about a drop at all — a path outside `/d/`, a method it does
@@ -56,7 +67,7 @@ A read must have no side effect. Polling an empty address is the most common
 request in this network, and a read that created something would make watching a
 drop change the world.
 
-## `PUT /d/<address>`
+## `PUT /d/<period>/<ward>/<address>`
 
 | Request header | |
 |---|---|
@@ -69,8 +80,7 @@ drop change the world.
 
 **A write is never confirmed.** Stored, refused as occupied, dropped for want of
 `If-None-Match: *`, dropped because the host is full — one answer, byte for byte
-the answer every other request gets. A status that distinguished them would make
-one `PUT` to `/d/<40 hex>` enough to identify a box, and an internet-wide scan
+the answer every other request gets. A status that distinguished them would make one `PUT` to a `/d/` key enough to identify a box, and an internet-wide scan
 enough to enumerate this network's hosts.
 
 **A caller finds out by looking.** `GET` the same address: bytes equal to what was
@@ -95,7 +105,7 @@ hands the bytes back. `kusanagi doctor` uses exactly that — and it is the one
 case where reading back cannot confirm a write, because a lifetime that has
 already elapsed and a write that never happened are the same empty address.
 
-## There is no third request
+## There is no fourth request
 
 There is no banner, no version and no status path. A well-known path that
 answers with a product name turns an internet-wide scan into a list of this

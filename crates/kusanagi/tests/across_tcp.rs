@@ -104,10 +104,10 @@ fn doctor_measures_a_running_host_and_certifies_it() {
     assert_eq!(report["kind"], "http box");
     assert_eq!(report["tier"], "write-once");
 
-    // A box holds all four; a report that shows anything broken is a host this
+    // A box holds all five; a report that shows anything broken is a host this
     // endpoint should not be using.
     let capabilities = report["capabilities"].as_array().unwrap();
-    assert_eq!(capabilities.len(), 4);
+    assert_eq!(capabilities.len(), 5);
     for measured in capabilities {
         assert_eq!(
             measured["verdict"], "held",

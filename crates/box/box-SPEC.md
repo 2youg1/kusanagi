@@ -58,11 +58,11 @@
 
 ```
 lib.rs       模块索引
-serve.rs     Server —— 监听、路由、读写、过期信封
+serve.rs     Server —— 监听、路由、读写、列举、过期信封
 exchange.rs  Request / Response —— 一次交换，读进来就有界
 ```
 
-依赖 `kernel`（Clock/DropAddr/Instant/PutOutcome/Waypoint）、`waypoint`（`DirWaypoint` 存盘）、
+依赖 `kernel`（Clock/Instant/Object/PutOutcome/Sweep/Waypoint/Listing）、`waypoint`（`DirWaypoint` 存盘）、
 `blake3`（ETag）。开发期额外依赖 `seal`，因为测试要派生真实地址。
 
 **不依赖 `kusanagi`。** 盒子不知道段、链、grant 或通道；它只知道地址与字节。

@@ -236,7 +236,7 @@ pub fn peek(
     lane: &Lane,
     index: u64,
 ) -> Result<Option<Segment>, Complaint> {
-    let Some(sealed) = waypoint.get(&lane.keys.address(index))? else {
+    let Some(sealed) = waypoint.get(&lane.holding(index))? else {
         return Ok(None);
     };
     let plain = open(&lane.keys.key(index)?, Fit::Veil, &sealed)?;

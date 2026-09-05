@@ -30,7 +30,12 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 
 use kusanagi_box::Server;
-use kusanagi_kernel::{FixedClock, Instant, PutOutcome, Waypoint as _};
+use kusanagi_kernel::{Bin, FixedClock, Instant, Object, Period, PutOutcome, Ward, Waypoint as _};
+
+/// The one bin this test files everything in; which bin is not what it is about.
+fn bin() -> Bin {
+    Bin::new(Period::from_count(7), Ward::from_bits(0x00ab))
+}
 use kusanagi_seal::{Fit, Secret, derive, seal};
 use kusanagi_waypoint::{Access, HttpWaypoint};
 
@@ -74,7 +79,8 @@ fn a_host_that_is_full_keeps_nothing_more_and_says_nothing_about_it() {
     let (client, root) = box_holding("capacity", capacity, 8);
 
     for index in 0..3 {
-        let (addr, _) = derive(&namespace, index);
+        let (drop, _) = derive(&namespace, index);
+        let addr = Object::new(bin(), drop);
         assert_eq!(
             client.put_if_absent(&addr, &said(index)).unwrap(),
             PutOutcome::Stored,
@@ -82,7 +88,8 @@ fn a_host_that_is_full_keeps_nothing_more_and_says_nothing_about_it() {
         );
     }
 
-    let (addr, _) = derive(&namespace, 3);
+    let (drop, _) = derive(&namespace, 3);
+    let addr = Object::new(bin(), drop);
     let error = client
         .put_if_absent(&addr, &said(3))
         .expect_err("a full host kept a fourth drop");

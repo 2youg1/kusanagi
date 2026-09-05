@@ -12,7 +12,7 @@
 //! `clippy.toml` denies the clock everywhere so that a second sampling point
 //! cannot appear without somebody noticing.
 
-use kusanagi_kernel::{Clock, Instant};
+use kusanagi_kernel::{Clock, Instant, Ward};
 
 use kusanagi_door::{Complaint, Fence};
 use kusanagi_waypoint::Circuit;
@@ -100,6 +100,26 @@ pub fn fresh_circuit() -> Result<Circuit, Complaint> {
         source: std::io::Error::other(source.to_string()),
     })?;
     Ok(Circuit::from_bytes(bytes))
+}
+
+/// Two bytes nobody can predict, for the ward this endpoint will read in.
+///
+/// Random rather than derived, and that is the property: a ward computed from a
+/// handle would let a host work out whose corner of it a bin is, which is the
+/// whole of what a bin hides. Drawn once, when an identity is made, and then
+/// written down — a ward that changed would strand every writer that already
+/// has it.
+///
+/// # Errors
+///
+/// [`Complaint::Local`] when the operating system has no entropy to give.
+pub fn fresh_ward() -> Result<Ward, Complaint> {
+    let mut bytes = [0_u8; 2];
+    getrandom::fill(&mut bytes).map_err(|source| Complaint::Local {
+        action: "ask the operating system for randomness",
+        source: std::io::Error::other(source.to_string()),
+    })?;
+    Ok(Ward::from_bits(u16::from_be_bytes(bytes)))
 }
 
 #[cfg(test)]

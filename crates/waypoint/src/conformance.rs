@@ -16,7 +16,9 @@
 
 use core::fmt;
 
-use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
+use kusanagi_kernel::{
+    Bin, Listing, Object, Period, PutOutcome, Sweep, Ward, Waypoint, WaypointError,
+};
 use kusanagi_seal::{Fit, Stream, derive, seal};
 
 /// A clause the waypoint under test did not satisfy.
@@ -56,30 +58,40 @@ impl Failure {
 struct Clause<'a> {
     name: &'static str,
     waypoint: &'a dyn Waypoint,
+    listing: &'a dyn Listing,
 }
 
 impl Clause<'_> {
-    fn put(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, Failure> {
+    fn put(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, Failure> {
         self.waypoint
-            .put_if_absent(addr, bytes)
+            .put_if_absent(at, bytes)
             .map_err(|source| Failure::Unavailable {
                 clause: self.name,
                 source,
             })
     }
 
-    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, Failure> {
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, Failure> {
         self.waypoint
-            .get(addr)
+            .get(at)
             .map_err(|source| Failure::Unavailable {
                 clause: self.name,
                 source,
             })
     }
 
-    fn delete(&self, addr: &DropAddr) -> Result<(), Failure> {
+    fn delete(&self, at: &Object) -> Result<(), Failure> {
         self.waypoint
-            .delete(addr)
+            .delete(at)
+            .map_err(|source| Failure::Unavailable {
+                clause: self.name,
+                source,
+            })
+    }
+
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, Failure> {
+        self.listing
+            .list(sweep)
             .map_err(|source| Failure::Unavailable {
                 clause: self.name,
                 source,
@@ -106,9 +118,21 @@ impl Clause<'_> {
 /// # Errors
 ///
 /// The first [`Failure`], naming the clause that broke.
-pub fn run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure> {
-    let addr = |step: u64| derive(namespace, step).0;
-    let clause = |name| Clause { name, waypoint };
+pub fn run(place: &(impl Waypoint + Listing), namespace: &Stream) -> Result<(), Failure> {
+    // Period zero, which no clock reading since 1970 produces, and a ward taken
+    // from the caller's own namespace: a contract run on a live host therefore
+    // sits outside every real bin and outside every other caller's contract run.
+    let ward = Ward::from_bits(u16::from_be_bytes([
+        derive(namespace, 0).0.as_bytes()[0],
+        derive(namespace, 0).0.as_bytes()[1],
+    ]));
+    let bin = Bin::new(Period::from_count(0), ward);
+    let addr = |step: u64| Object::new(bin, derive(namespace, step).0);
+    let clause = |name| Clause {
+        name,
+        waypoint: place,
+        listing: place,
+    };
     let first = body(namespace, 1, b"first")?;
     let second = body(namespace, 1, b"second")?;
     let other = body(namespace, 2, b"other")?;
@@ -168,6 +192,32 @@ pub fn run(waypoint: &impl Waypoint, namespace: &Stream) -> Result<(), Failure> 
     removal.require(
         removal.get(&addr(4))?.is_none(),
         "releasing an address twice did not leave it empty",
+    )?;
+
+    // Since D-20 a reader names a bin and takes all of it, so a host that cannot
+    // report what a bin holds cannot be read from at all. The clause is here
+    // rather than beside the others in kusanagi because it is a property of the
+    // storage and not of the protocol above it.
+    let swept = clause("a-bin-reports-what-is-in-it");
+    let listed = swept.list(&Sweep::of(bin, Ward::DIGITS))?;
+    swept.require(
+        listed.contains(&addr(1)) && listed.contains(&addr(2)),
+        "a bin did not report objects written into it",
+    )?;
+    swept.require(
+        !listed.contains(&addr(4)),
+        "a bin reported a released object",
+    )?;
+    let elsewhere = Bin::new(
+        Period::from_count(0),
+        Ward::from_bits(ward.bits().wrapping_add(1)),
+    );
+    swept.require(
+        swept
+            .list(&Sweep::of(elsewhere, Ward::DIGITS))?
+            .iter()
+            .all(|at| at.bin() == elsewhere),
+        "a sweep of one ward reported objects filed in another",
     )?;
 
     Ok(())

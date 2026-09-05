@@ -53,12 +53,13 @@ fn an_endpoint_cannot_accept_its_own_invitation() {
         .unwrap_err();
     assert_eq!(refused2.code(), "kusanagi.own_invitation");
 
-    alice
+    let refused3 = alice
         .run(&Request::Send {
             name: "one".to_owned(),
             payload: b"beta".to_vec(),
         })
-        .expect("the segment was refused");
+        .unwrap_err();
+    assert_eq!(refused3.code(), "kusanagi.no_peer_yet");
 
     let refused4 = alice
         .run(&Request::Read {

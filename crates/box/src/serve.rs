@@ -46,11 +46,11 @@ use std::io::{self, BufReader};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 
-use kusanagi_kernel::{Clock, DropAddr, Instant, PutOutcome, Waypoint as _};
+use kusanagi_kernel::{Clock, Instant, Listing as _, Object, PutOutcome, Sweep, Waypoint as _};
 use kusanagi_seal::DROP;
 
 use crate::capacity::{CAPACITY, held};
-use crate::exchange::{IDLE, Request, Response, address_of, etag, max_age};
+use crate::exchange::{IDLE, Request, Response, address_of, etag, max_age, prefix_of};
 use kusanagi_waypoint::DirWaypoint;
 
 /// A host: a directory, an HTTP door, and no opinions.
@@ -138,11 +138,46 @@ impl<C: Clock> Server<C> {
     /// recover the address grammar, and the grammar is enough to tell this host
     /// apart from any other server on the same port.
     fn route(&self, request: &Request) -> Response {
+        if let Some(prefix) = prefix_of(&request.target)
+            && request.method == "GET"
+        {
+            return self.sweep(prefix);
+        }
         match (request.method.as_str(), address_of(&request.target)) {
-            ("GET", Some(addr)) => self.read(&addr, request),
-            ("PUT", Some(addr)) => self.write(&addr, request),
-            ("DELETE", Some(addr)) => self.release(&addr),
+            ("GET", Some(at)) => self.read(&at, request),
+            ("PUT", Some(at)) => self.write(&at, request),
+            ("DELETE", Some(at)) => self.release(&at),
             _ => Response::empty(404),
+        }
+    }
+
+    /// Says which objects a bin holds, one key per line.
+    ///
+    /// **This is the route that lets a read stop naming an address.** What it
+    /// gives away is what a host already knew — that somebody swept a bin — and
+    /// what it withholds is which object of that bin was wanted, because the
+    /// reader takes all of them.
+    ///
+    /// Names are reported without opening anything, so a drop whose lifetime has
+    /// run out can still be named here until it is swept off the disk. The
+    /// reader that fetches it gets the same empty `404` as for any address that
+    /// holds nothing, which is the answer it is already built to expect.
+    fn sweep(&self, prefix: &str) -> Response {
+        let Some(sweep) = Sweep::from_prefix(prefix) else {
+            return Response::empty(404);
+        };
+        let Ok(found) = self.drops.list(&sweep) else {
+            return Response::empty(500);
+        };
+        let mut body = String::new();
+        for at in found {
+            body.push_str(&at.to_string());
+            body.push('\n');
+        }
+        Response {
+            status: 200,
+            etag: None,
+            body: body.into_bytes(),
         }
     }
 
@@ -154,15 +189,15 @@ impl<C: Clock> Server<C> {
     /// an answer that distinguished "deleted" from "there was nothing" would
     /// hand a scanner an address oracle — the exact thing every other refusal
     /// here exists to deny.
-    fn release(&self, addr: &DropAddr) -> Response {
-        self.drops.delete(addr).ok();
+    fn release(&self, at: &Object) -> Response {
+        self.drops.delete(at).ok();
         Response::empty(404)
     }
 
-    fn read(&self, addr: &DropAddr, request: &Request) -> Response {
+    fn read(&self, at: &Object, request: &Request) -> Response {
         // The reason stays on this machine. A message describing what failed on
         // the host's own disk is a description of the host's software.
-        let Ok(stored) = self.drops.get(addr) else {
+        let Ok(stored) = self.drops.get(at) else {
             return Response::empty(500);
         };
         let Some(bytes) = stored.and_then(|envelope| self.unwrap_envelope(&envelope)) else {
@@ -204,7 +239,7 @@ impl<C: Clock> Server<C> {
     /// Nothing is written once the directory is full, and that is also a `404`.
     /// A host that reported fullness would be telling a stranger how much of it
     /// they had used.
-    fn write(&self, addr: &DropAddr, request: &Request) -> Response {
+    fn write(&self, at: &Object, request: &Request) -> Response {
         let refused = Response::empty(404);
         if request.header("if-none-match") != Some("*") {
             return refused;
@@ -227,7 +262,7 @@ impl<C: Clock> Server<C> {
         if held(&self.root).saturating_add(wanted) > self.capacity {
             return refused;
         }
-        match self.drops.put_if_absent(addr, &envelope) {
+        match self.drops.put_if_absent(at, &envelope) {
             Ok(PutOutcome::Stored | PutOutcome::AlreadyPresent) | Err(_) => refused,
         }
     }

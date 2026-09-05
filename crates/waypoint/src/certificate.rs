@@ -28,15 +28,21 @@ pub enum Capability {
     StableValidator,
     /// The host can be asked to forget an object after a while.
     Expiry,
+    /// The host can say what a bin holds, so a read need not name an address.
+    ///
+    /// Since D-20 this is what makes a host readable at all, which is why
+    /// `doctor` reports it beside the others rather than assuming it.
+    BinListing,
 }
 
 impl Capability {
     /// Every capability, in the order `doctor` reports them.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::WriteOnce,
         Self::ConditionalRead,
         Self::StableValidator,
         Self::Expiry,
+        Self::BinListing,
     ];
 
     /// The published name.
@@ -47,6 +53,7 @@ impl Capability {
             Self::ConditionalRead => "conditional-read",
             Self::StableValidator => "stable-validator",
             Self::Expiry => "expiry",
+            Self::BinListing => "bin-listing",
         }
     }
 }

@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::{Endpoint, invite_line, scratch};
 use kusanagi::{Lane, Reach, Request, Site, track};
-use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
+use kusanagi_kernel::{Listing, Object, PutOutcome, Sweep, Waypoint, WaypointError};
 use kusanagi_waypoint::DirWaypoint;
 
 /// How many segments the peer has already written before the poll being measured.
@@ -47,7 +47,7 @@ const HEIGHT: usize = 12;
 /// does it: it is called an access log.
 struct Watching {
     inner: DirWaypoint,
-    asked: Mutex<Vec<DropAddr>>,
+    asked: Mutex<Vec<Object>>,
     /// How many reads were open at once, at the busiest moment.
     ///
     /// A serial walk never gets above one. That number is the whole of what a
@@ -74,7 +74,7 @@ impl Watching {
     }
 
     /// Everything asked for since the last [`Self::forget`].
-    fn asked(&self) -> Vec<DropAddr> {
+    fn asked(&self) -> Vec<Object> {
         self.asked.lock().unwrap().clone()
     }
 
@@ -84,25 +84,31 @@ impl Watching {
 }
 
 impl Waypoint for Watching {
-    fn put_if_absent(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
-        self.inner.put_if_absent(addr, bytes)
+    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
+        self.inner.put_if_absent(at, bytes)
     }
 
-    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
-        self.asked.lock().unwrap().push(*addr);
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError> {
+        self.asked.lock().unwrap().push(*at);
         let now = self.open.fetch_add(1, Ordering::SeqCst) + 1;
         self.busiest.fetch_max(now, Ordering::SeqCst);
         // Long enough that a batch issued together is still together when the
         // last of it arrives. Without it this measures how fast a local
         // directory is, which is not what a host looks like.
         std::thread::sleep(std::time::Duration::from_millis(20));
-        let found = self.inner.get(addr);
+        let found = self.inner.get(at);
         self.open.fetch_sub(1, Ordering::SeqCst);
         found
     }
 
-    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
-        self.inner.delete(addr)
+    fn delete(&self, at: &Object) -> Result<(), WaypointError> {
+        self.inner.delete(at)
+    }
+}
+
+impl Listing for Watching {
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError> {
+        self.inner.list(sweep)
     }
 }
 
@@ -128,7 +134,14 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     let site = Site::at(bob.site_root());
     let channel = site.channel("alice").unwrap();
     let peer = channel.peer.as_ref().expect("bob has met alice");
-    let lane = Lane::open(&site, "alice", &channel, &peer.key).expect("a lane");
+    let lane = Lane::open(
+        &site,
+        "alice",
+        &channel,
+        &peer.key,
+        site.ward().unwrap().unwrap(),
+    )
+    .expect("a lane");
 
     let watching = Watching::new(&host);
 
@@ -215,7 +228,14 @@ fn a_poll_names_the_one_address_it_is_waiting_on_and_no_other() {
     let site = Site::at(bob.site_root());
     let channel = site.channel("alice").unwrap();
     let peer = channel.peer.as_ref().expect("bob has met alice");
-    let lane = Lane::open(&site, "alice", &channel, &peer.key).expect("a lane");
+    let lane = Lane::open(
+        &site,
+        "alice",
+        &channel,
+        &peer.key,
+        site.ward().unwrap().unwrap(),
+    )
+    .expect("a lane");
 
     let watching = Watching::new(&host);
     track(&site, "alice", &watching, &lane, Reach::Whole).unwrap();
@@ -226,7 +246,7 @@ fn a_poll_names_the_one_address_it_is_waiting_on_and_no_other() {
     // address it has seen.
     watching.forget();
     track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
-    let expected = lane.keys.address(u64::try_from(HEIGHT).unwrap());
+    let expected = lane.holding(u64::try_from(HEIGHT).unwrap());
     assert_eq!(
         watching.asked(),
         vec![expected],
@@ -260,7 +280,15 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
     // that it resumed is the next one, and this is the assertion that it marked.
     let site = Site::at(alice.site_root());
     let channel = site.channel("bob").unwrap();
-    let lane = Lane::open(&site, "alice", &channel, &alice_key(&site)).expect("a lane");
+    // Alice's own lane is filed where Bob collects it, which is Bob's ward.
+    let lane = Lane::open(
+        &site,
+        "bob",
+        &channel,
+        &alice_key(&site),
+        channel.peer.as_ref().expect("alice has met bob").ward,
+    )
+    .expect("a lane");
     let cairn = site
         .cairn("bob", &alice_key(&site).handle())
         .unwrap()
@@ -273,7 +301,7 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
     // from the shape of a single send.
     let watching = Watching::new(&host);
     track(&site, "bob", &watching, &lane, Reach::Head).unwrap();
-    let expected = lane.keys.address(u64::try_from(HEIGHT).unwrap());
+    let expected = lane.holding(u64::try_from(HEIGHT).unwrap());
     assert_eq!(
         watching.asked(),
         vec![expected],

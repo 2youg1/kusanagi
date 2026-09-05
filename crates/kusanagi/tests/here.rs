@@ -21,7 +21,7 @@
 mod common;
 
 use common::{Endpoint, invite_line, json, scratch};
-use kusanagi::Request;
+use kusanagi::{Habit, Request};
 
 /// Every field agrees with what the rest of the suite asserts separately.
 #[test]
@@ -77,6 +77,17 @@ fn the_report_carries_nothing_that_was_meant_to_stay_on_this_disk() {
     let ground = scratch("here-secrets");
     let endpoint = Endpoint::new(ground.join("who"));
     let invitation = invite_line(&endpoint, "bob", &ground.join("host").display().to_string());
+    // Somebody has to be on the other end before anything can be written to
+    // them: a segment is filed where its reader looks, and there is nowhere to
+    // file one for a reader who never arrived.
+    let guest = Endpoint::new(ground.join("guest"));
+    guest
+        .run(&Request::Join {
+            invite: invitation.clone(),
+            name: "who".to_owned(),
+            habit: Habit::default(),
+        })
+        .unwrap();
     endpoint.send("bob", "something nobody else should read");
 
     let rendered = endpoint

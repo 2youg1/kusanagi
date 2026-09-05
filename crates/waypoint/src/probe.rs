@@ -25,7 +25,7 @@
 //! degradation, which is a different thing from a host that claims a capability
 //! and then does not hold it.
 
-use kusanagi_kernel::{Waypoint, WaypointError};
+use kusanagi_kernel::{Bin, Listing, Object, Period, Sweep, Ward, Waypoint, WaypointError};
 use kusanagi_seal::{Fit, Stream, derive, seal};
 
 use crate::certificate::{Capability, Certificate, Finding, Verdict};
@@ -40,7 +40,7 @@ use crate::conformance;
 /// misbehaviour is the *result*, not an interruption of it.
 pub fn examine<P>(place: &P, namespace: &Stream) -> Certificate
 where
-    P: Waypoint + Conditional,
+    P: Waypoint + Conditional + Listing,
 {
     let mut findings = Vec::with_capacity(Capability::ALL.len());
     findings.push(Finding {
@@ -61,12 +61,16 @@ where
         capability: Capability::Expiry,
         verdict: expiry(place, namespace),
     });
+    findings.push(Finding {
+        capability: Capability::BinListing,
+        verdict: bin_listing(place, namespace),
+    });
 
     Certificate::of(findings)
 }
 
 /// The clause that decides the tier: run the whole contract every adapter signs.
-fn write_once<P: Waypoint>(place: &P, namespace: &Stream) -> Verdict {
+fn write_once<P: Waypoint + Listing>(place: &P, namespace: &Stream) -> Verdict {
     match conformance::run(place, namespace) {
         Ok(()) => Verdict::Held,
         Err(failure) => Verdict::Broken {
@@ -79,15 +83,15 @@ fn conditional_read<P>(place: &P, namespace: &Stream) -> (Verdict, Verdict)
 where
     P: Waypoint + Conditional,
 {
-    let (addr, key) = derive(namespace, 100);
+    let (at, key) = spot(namespace, 100);
     let Ok(probe) = seal(&key, Fit::Veil, b"conditional-read probe") else {
         return (unsealable(), unsealable());
     };
-    if let Err(error) = place.put_if_absent(&addr, &probe) {
+    if let Err(error) = place.put_if_absent(&at, &probe) {
         return (unreachable_host(&error), unreachable_host(&error));
     }
 
-    let first = match place.get_if_changed(&addr, None) {
+    let first = match place.get_if_changed(&at, None) {
         Ok(fetched) => fetched,
         Err(error) => return (unreachable_host(&error), unreachable_host(&error)),
     };
@@ -105,7 +109,7 @@ where
         );
     };
 
-    let conditional = match place.get_if_changed(&addr, Some(&validator)) {
+    let conditional = match place.get_if_changed(&at, Some(&validator)) {
         Ok(Fetched::Unchanged) => Verdict::Held,
         Ok(Fetched::Fresh { .. }) => Verdict::NotOffered {
             because: "this host names versions but re-sends the bytes anyway".to_owned(),
@@ -116,7 +120,7 @@ where
         Err(error) => unreachable_host(&error),
     };
 
-    let stability = match place.get_if_changed(&addr, None) {
+    let stability = match place.get_if_changed(&at, None) {
         Ok(Fetched::Fresh {
             validator: Some(again),
             ..
@@ -143,22 +147,72 @@ fn expiry<P>(place: &P, namespace: &Stream) -> Verdict
 where
     P: Waypoint + Conditional,
 {
-    let (addr, key) = derive(namespace, 101);
+    let (at, key) = spot(namespace, 101);
     let Ok(probe) = seal(&key, Fit::Veil, b"expiry probe") else {
         return unsealable();
     };
-    match place.put_with_ttl(&addr, &probe, 0) {
+    match place.put_with_ttl(&at, &probe, 0) {
         Ok(TtlOutcome::NotOffered) => Verdict::NotOffered {
             because: "this host has no per-object lifetime; sweep with a bucket rule instead"
                 .to_owned(),
         },
-        Ok(TtlOutcome::Accepted) => match place.get(&addr) {
+        Ok(TtlOutcome::Accepted) => match place.get(&at) {
             Ok(None) => Verdict::Held,
             Ok(Some(_)) => Verdict::Broken {
                 detail: "the host accepted a lifetime of zero and served the object anyway"
                     .to_owned(),
             },
             Err(error) => unreachable_host(&error),
+        },
+        Err(error) => unreachable_host(&error),
+    }
+}
+
+/// Where one probe goes: the caller's own ward, in the period no clock produces.
+///
+/// Every probe in this file lands in one bin, so a `doctor` run against a live
+/// host leaves one bin's worth of evidence rather than a scatter, and a second
+/// endpoint probing the same host lands in a different ward because it derives
+/// from a different namespace.
+fn spot(namespace: &Stream, step: u64) -> (Object, kusanagi_seal::Key) {
+    let (addr, key) = derive(namespace, step);
+    let first = derive(namespace, 0).0;
+    let ward = Ward::from_bits(u16::from_be_bytes([
+        first.as_bytes()[0],
+        first.as_bytes()[1],
+    ]));
+    (
+        Object::new(Bin::new(Period::from_count(0), ward), addr),
+        key,
+    )
+}
+
+/// Writes one object and asks the bin it went into what it holds.
+///
+/// Separate from the contract clause of the same shape because this one has to
+/// answer for a **live** host in `doctor`'s words: a place that cannot list is
+/// not broken, it is a place a reader would have to name addresses on, and that
+/// is a decision for the person choosing the host rather than a fault.
+fn bin_listing<P>(place: &P, namespace: &Stream) -> Verdict
+where
+    P: Waypoint + Listing,
+{
+    let (at, key) = spot(namespace, 102);
+    let bin = at.bin();
+    let Ok(probe) = seal(&key, Fit::Veil, b"bin-listing probe") else {
+        return unsealable();
+    };
+    if let Err(error) = place.put_if_absent(&at, &probe) {
+        return unreachable_host(&error);
+    }
+    match place.list(&Sweep::of(bin, Ward::DIGITS)) {
+        Ok(found) if found.contains(&at) => Verdict::Held,
+        Ok(_) => Verdict::Broken {
+            detail: "this host did not report an object it had just accepted".to_owned(),
+        },
+        Err(WaypointError::ListingRefused) => Verdict::NotOffered {
+            because: "this host cannot list a bin, so reads here would have to name addresses"
+                .to_owned(),
         },
         Err(error) => unreachable_host(&error),
     }
@@ -242,43 +296,60 @@ mod tests {
     /// write, ignores the condition, and reports success.
     #[derive(Default)]
     struct Overwriting {
-        drops: std::sync::Mutex<std::collections::BTreeMap<kusanagi_kernel::DropAddr, Vec<u8>>>,
+        drops: std::sync::Mutex<std::collections::BTreeMap<kusanagi_kernel::Object, Vec<u8>>>,
     }
 
     impl kusanagi_kernel::Waypoint for Overwriting {
         fn put_if_absent(
             &self,
-            addr: &kusanagi_kernel::DropAddr,
+            at: &kusanagi_kernel::Object,
             bytes: &[u8],
         ) -> Result<kusanagi_kernel::PutOutcome, kusanagi_kernel::WaypointError> {
-            self.drops.lock().unwrap().insert(*addr, bytes.to_vec());
+            self.drops.lock().unwrap().insert(*at, bytes.to_vec());
             Ok(kusanagi_kernel::PutOutcome::Stored)
         }
 
         fn get(
             &self,
-            addr: &kusanagi_kernel::DropAddr,
+            at: &kusanagi_kernel::Object,
         ) -> Result<Option<Vec<u8>>, kusanagi_kernel::WaypointError> {
-            Ok(self.drops.lock().unwrap().get(addr).cloned())
+            Ok(self.drops.lock().unwrap().get(at).cloned())
         }
 
         fn delete(
             &self,
-            addr: &kusanagi_kernel::DropAddr,
+            at: &kusanagi_kernel::Object,
         ) -> Result<(), kusanagi_kernel::WaypointError> {
-            self.drops.lock().unwrap().remove(addr);
+            self.drops.lock().unwrap().remove(at);
             Ok(())
+        }
+    }
+
+    impl kusanagi_kernel::Listing for Overwriting {
+        /// It lists honestly; what it lies about is the conditional write.
+        fn list(
+            &self,
+            sweep: &kusanagi_kernel::Sweep,
+        ) -> Result<Vec<kusanagi_kernel::Object>, kusanagi_kernel::WaypointError> {
+            Ok(self
+                .drops
+                .lock()
+                .unwrap()
+                .keys()
+                .filter(|at| sweep.holds(at))
+                .copied()
+                .collect())
         }
     }
 
     impl crate::Conditional for Overwriting {
         fn get_if_changed(
             &self,
-            addr: &kusanagi_kernel::DropAddr,
+            at: &kusanagi_kernel::Object,
             _known: Option<&crate::Validator>,
         ) -> Result<crate::Fetched, kusanagi_kernel::WaypointError> {
             Ok(self
-                .get(addr)?
+                .get(at)?
                 .map_or(crate::Fetched::Absent, |bytes| crate::Fetched::Fresh {
                     bytes,
                     validator: None,
@@ -287,11 +358,11 @@ mod tests {
 
         fn put_with_ttl(
             &self,
-            addr: &kusanagi_kernel::DropAddr,
+            at: &kusanagi_kernel::Object,
             bytes: &[u8],
             _seconds: u64,
         ) -> Result<crate::TtlOutcome, kusanagi_kernel::WaypointError> {
-            self.put_if_absent(addr, bytes)?;
+            self.put_if_absent(at, bytes)?;
             Ok(crate::TtlOutcome::NotOffered)
         }
     }

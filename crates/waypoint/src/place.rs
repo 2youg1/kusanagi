@@ -28,7 +28,7 @@
 //! thing — which is why `doctor` can examine a plain directory without either
 //! special-casing it or lying about it.
 
-use kusanagi_kernel::{DropAddr, PutOutcome, Waypoint, WaypointError};
+use kusanagi_kernel::{Listing, Object, PutOutcome, Sweep, Waypoint, WaypointError};
 
 use crate::access::Access;
 use crate::carrier::CarrierWaypoint;
@@ -108,30 +108,48 @@ impl Place {
 }
 
 impl Waypoint for Place {
-    fn put_if_absent(&self, addr: &DropAddr, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
+    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
         match self {
-            Self::Directory(place) => place.put_if_absent(addr, bytes),
-            Self::Box(place) => place.put_if_absent(addr, bytes),
-            Self::Bucket(place) => place.put_if_absent(addr, bytes),
-            Self::Carried(place) => place.put_if_absent(addr, bytes),
+            Self::Directory(place) => place.put_if_absent(at, bytes),
+            Self::Box(place) => place.put_if_absent(at, bytes),
+            Self::Bucket(place) => place.put_if_absent(at, bytes),
+            Self::Carried(place) => place.put_if_absent(at, bytes),
         }
     }
 
-    fn get(&self, addr: &DropAddr) -> Result<Option<Vec<u8>>, WaypointError> {
+    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError> {
         match self {
-            Self::Directory(place) => place.get(addr),
-            Self::Box(place) => place.get(addr),
-            Self::Bucket(place) => place.get(addr),
-            Self::Carried(place) => place.get(addr),
+            Self::Directory(place) => place.get(at),
+            Self::Box(place) => place.get(at),
+            Self::Bucket(place) => place.get(at),
+            Self::Carried(place) => place.get(at),
         }
     }
 
-    fn delete(&self, addr: &DropAddr) -> Result<(), WaypointError> {
+    fn delete(&self, at: &Object) -> Result<(), WaypointError> {
         match self {
-            Self::Directory(place) => place.delete(addr),
-            Self::Box(place) => place.delete(addr),
-            Self::Bucket(place) => place.delete(addr),
-            Self::Carried(place) => place.delete(addr),
+            Self::Directory(place) => place.delete(at),
+            Self::Box(place) => place.delete(at),
+            Self::Bucket(place) => place.delete(at),
+            Self::Carried(place) => place.delete(at),
+        }
+    }
+}
+
+impl Listing for Place {
+    /// Every kind of place lists, because a read that could not would have to
+    /// name an address again.
+    ///
+    /// That is why there is no arm here answering
+    /// [`WaypointError::ListingRefused`]: the refusal exists for an adapter
+    /// written outside this repository, and every adapter inside it pays the
+    /// cost of the property instead of declining it.
+    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError> {
+        match self {
+            Self::Directory(place) => place.list(sweep),
+            Self::Box(place) => place.list(sweep),
+            Self::Bucket(place) => place.list(sweep),
+            Self::Carried(place) => place.list(sweep),
         }
     }
 }
@@ -139,7 +157,7 @@ impl Waypoint for Place {
 impl Conditional for Place {
     fn get_if_changed(
         &self,
-        addr: &DropAddr,
+        at: &Object,
         known: Option<&Validator>,
     ) -> Result<Fetched, WaypointError> {
         match self {
@@ -148,7 +166,7 @@ impl Conditional for Place {
             // plainly is what lets one `doctor` run describe every kind of host.
             Self::Directory(place) => {
                 Ok(place
-                    .get(addr)?
+                    .get(at)?
                     .map_or(Fetched::Absent, |bytes| Fetched::Fresh {
                         bytes,
                         validator: None,
@@ -156,34 +174,34 @@ impl Conditional for Place {
             }
             Self::Carried(place) => {
                 Ok(place
-                    .get(addr)?
+                    .get(at)?
                     .map_or(Fetched::Absent, |bytes| Fetched::Fresh {
                         bytes,
                         validator: None,
                     }))
             }
-            Self::Box(place) => place.get_if_changed(addr, known),
-            Self::Bucket(place) => place.get_if_changed(addr, known),
+            Self::Box(place) => place.get_if_changed(at, known),
+            Self::Bucket(place) => place.get_if_changed(at, known),
         }
     }
 
     fn put_with_ttl(
         &self,
-        addr: &DropAddr,
+        at: &Object,
         bytes: &[u8],
         seconds: u64,
     ) -> Result<TtlOutcome, WaypointError> {
         match self {
             Self::Directory(place) => {
-                place.put_if_absent(addr, bytes)?;
+                place.put_if_absent(at, bytes)?;
                 Ok(TtlOutcome::NotOffered)
             }
             Self::Carried(place) => {
-                place.put_if_absent(addr, bytes)?;
+                place.put_if_absent(at, bytes)?;
                 Ok(TtlOutcome::NotOffered)
             }
-            Self::Box(place) => place.put_with_ttl(addr, bytes, seconds),
-            Self::Bucket(place) => place.put_with_ttl(addr, bytes, seconds),
+            Self::Box(place) => place.put_with_ttl(at, bytes, seconds),
+            Self::Bucket(place) => place.put_with_ttl(at, bytes, seconds),
         }
     }
 }

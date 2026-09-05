@@ -31,8 +31,11 @@ mod common;
 
 use common::{host, probe, status};
 
-/// A well-formed address, in the one spelling the parser accepts.
-const ADDRESS: &str = "0123456789abcdef0123456789abcdef01234567";
+/// A well-formed key, in the one spelling the parser accepts.
+///
+/// Three components since D-20: a host is told the period and the ward a drop is
+/// filed in, and the address inside them.
+const ADDRESS: &str = "0000000000000007/00ab/0123456789abcdef0123456789abcdef01234567";
 
 /// A body the box accepts: the one size, in printable bytes. Hostile tests need
 /// past the size check to reach the rule each of them is actually about.

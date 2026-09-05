@@ -29,7 +29,7 @@
     reason = "test code"
 )]
 
-use kusanagi_kernel::{Signer, Waypoint as _};
+use kusanagi_kernel::{Bin, Object, Period, Signer, Ward, Waypoint as _};
 use kusanagi_seal::{Secret, Stream, derive};
 use kusanagi_waypoint::{
     Access, Capability, Credentials, Locator, Place, Tier, Verdict, conformance, probe,
@@ -81,7 +81,11 @@ fn a_real_bucket_satisfies_the_contract() {
 
     // The clause that matters: a second write to a claimed address must be
     // refused. A host that accepts it has silently stopped being write-once.
-    let (address, _) = derive(&namespace, 7);
+    let (addr, _) = derive(&namespace, 7);
+    let address = Object::new(
+        Bin::new(Period::from_count(0), Ward::from_bits(0x7e57)),
+        addr,
+    );
     assert_eq!(
         place.put_if_absent(&address, b"first").unwrap(),
         kusanagi_kernel::PutOutcome::Stored

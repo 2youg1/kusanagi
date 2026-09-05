@@ -14,7 +14,7 @@ use std::io::{self, BufRead as _, BufReader, Read as _, Write as _};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use kusanagi_kernel::{DropAddr, Hex};
+use kusanagi_kernel::{Hex, Object};
 use kusanagi_waypoint::MAX_OBJECT;
 
 /// How long a connection may stay silent before it is dropped.
@@ -24,8 +24,17 @@ pub(crate) const IDLE: Duration = Duration::from_secs(30);
 pub(crate) const MAX_HEAD: usize = 8_192;
 
 /// The address a request target names, if it names one.
-pub(crate) fn address_of(target: &str) -> Option<DropAddr> {
+pub(crate) fn address_of(target: &str) -> Option<Object> {
     target.strip_prefix("/d/")?.parse().ok()
+}
+
+/// The bin prefix `target` asks to be listed, if it asks for one.
+///
+/// The text is handed on as it arrived apart from the leading route: what a
+/// prefix may contain is decided by the one function that answers a listing,
+/// because a second opinion about that would be a second key grammar.
+pub(crate) fn prefix_of(target: &str) -> Option<&str> {
+    target.strip_prefix("/bin/")
 }
 
 /// A version name for these exact bytes.

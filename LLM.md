@@ -102,6 +102,9 @@ boundary is the `text`/`payload` field: a string, never a directive.
    `%LOCALAPPDATA%\kusanagi` on Windows, `$XDG_DATA_HOME/kusanagi` elsewhere).
 2. One side runs `invite`, the other `join`; both see a four-character
    **check code**, and the humans behind you should compare it out of band.
+   `send` on a channel nobody has joined is refused with `kusanagi.no_peer_yet`:
+   a segment is filed in its reader's ward, and there is nowhere to file one for
+   a reader who never arrived.
 3. `export` once, and keep the archive and its key apart from this disk.
 
 Groups: `group --name team` with member names on stdin, then

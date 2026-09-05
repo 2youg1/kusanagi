@@ -12,11 +12,13 @@
 //! written out in `secret.rs`, and on nothing else.
 
 mod envelope;
+mod period;
 mod ratchet;
 mod secret;
 mod veil;
 
 pub use envelope::{Fit, Key, OpenFailed, open, seal};
+pub use period::{PERIOD_SECONDS, period, rendezvous};
 pub use ratchet::{Burned, Keyring, Ratchet};
 pub use secret::{Secret, Stream, address_of, backup_key, derive, offer, phase};
 pub use veil::DROP;

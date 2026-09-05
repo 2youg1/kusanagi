@@ -31,7 +31,7 @@ use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::TcpListener;
 use std::sync::mpsc;
 
-use kusanagi_kernel::{DropAddr, Waypoint as _};
+use kusanagi_kernel::{Bin, Object, Period, Ward, Waypoint as _};
 use kusanagi_waypoint::{Access, Conditional as _, HttpWaypoint};
 
 /// Words no request may contain, in the case a reader would match on.
@@ -87,10 +87,13 @@ fn overhear(request: impl FnOnce(&str) + Send + 'static) -> Vec<String> {
     head
 }
 
-fn address() -> DropAddr {
-    "0123456789abcdef0123456789abcdef01234567"
-        .parse()
-        .expect("that is an address")
+fn address() -> Object {
+    Object::new(
+        Bin::new(Period::from_count(7), Ward::from_bits(0x00ab)),
+        "0123456789abcdef0123456789abcdef01234567"
+            .parse()
+            .expect("that is an address"),
+    )
 }
 
 #[test]

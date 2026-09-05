@@ -72,6 +72,7 @@ impl Signing<'_> {
         &self,
         method: &str,
         key: &str,
+        query: &str,
         payload: &[u8],
         extra: &[(&str, String)],
     ) -> Result<Vec<(String, String)>, WaypointError> {
@@ -104,7 +105,7 @@ impl Signing<'_> {
         let canonical_request = [
             method,
             key,
-            "",
+            query,
             &canonical_headers,
             &signed_names,
             &payload_hash,
@@ -143,6 +144,27 @@ impl Signing<'_> {
             .ok_or(WaypointError::OverwriteNotRefused)?;
         Ok(Hex(&signed).to_string())
     }
+}
+/// One query parameter value, encoded as a canonical request spells it.
+///
+/// AWS signs the query it sent, so this must agree with what goes on the wire
+/// byte for byte. Unreserved characters pass; everything else — `/` inside a key
+/// prefix, `+ / =` inside a continuation token — becomes `%XX` in upper case.
+/// Written here rather than taken from a crate because it is ten lines, and a
+/// crate is somebody who can write code into this binary.
+pub(crate) fn encoded(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            // `Hex` is this workspace's one spelling of a byte in base sixteen;
+            // AWS wants it in upper case, and that is the whole difference.
+            out.push('%');
+            out.push_str(&Hex(&[byte]).to_string().to_ascii_uppercase());
+        }
+    }
+    out
 }
 
 fn mac(key: &[u8], message: &[u8]) -> Option<[u8; 32]> {

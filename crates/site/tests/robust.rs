@@ -24,22 +24,25 @@
     reason = "test code"
 )]
 
-use kusanagi_kernel::{Handle, Signer};
+use kusanagi_kernel::{Handle, Signer, Ward};
 use kusanagi_seal::Secret;
 use kusanagi_site::{Channel, Invite, Peer, Standing};
 
 /// A standing of `Root` on the wire: a tag and an empty length-prefixed block.
 const ROOT_STANDING: usize = 1 + 2;
 
-/// Where the peer's key sits in `bytes`, present or not.
+/// Where what this endpoint knows about its peer sits in `bytes`, present or not.
 ///
-/// The block is written whether or not there is a peer, so that **the size of a
-/// record does not say whether the invitation was ever taken**. When there is
-/// no peer it is zeroes that nothing reads.
-fn peer_key(bytes: &[u8]) -> std::ops::Range<usize> {
+/// The key and the ward beside it are written whether or not there is a peer, so
+/// that **the size of a record does not say whether the invitation was ever
+/// taken**. When there is no peer both are zeroes that nothing reads.
+fn peer_block(bytes: &[u8]) -> std::ops::Range<usize> {
     let end = bytes.len() - ROOT_STANDING;
-    end - kusanagi_kernel::VerifyingKey::WIDTH..end
+    end - kusanagi_kernel::VerifyingKey::WIDTH - WARD..end
 }
+
+/// A ward on the wire: two bytes, beside the key of whoever reads in it.
+const WARD: usize = 2;
 use proptest::prelude::*;
 
 /// One channel record, made without touching a signature scheme twice.
@@ -115,9 +118,9 @@ fn one_spelling_per_record() {
 #[test]
 fn every_byte_the_decoder_reads_matters() {
     let bytes = channel().to_bytes();
-    // Everything except the peer's key, which is the one block this record
-    // carries and does not read when there is no peer.
-    let placeholder = peer_key(&bytes);
+    // Everything except the peer's key and ward, which are the one block this
+    // record carries and does not read when there is no peer.
+    let placeholder = peer_block(&bytes);
     let looked_at = (0..placeholder.start).chain(placeholder.end..bytes.len());
     for index in looked_at {
         let mut damaged = bytes.clone();
@@ -138,6 +141,7 @@ fn a_record_is_the_same_size_whether_or_not_anybody_has_joined() {
     let alone = channel();
     let met = Channel {
         peer: Some(Peer {
+            ward: Ward::from_bits(0x00ab),
             key: Signer::from_seed(&[8; 32]).verifying_key(),
             standing: Standing::Root,
         }),
@@ -152,7 +156,7 @@ fn a_record_is_the_same_size_whether_or_not_anybody_has_joined() {
     // The other half of that: what fills the space when nobody has joined is
     // never read, so it cannot be made to mean anything either.
     let bytes = alone.to_bytes();
-    for index in peer_key(&bytes) {
+    for index in peer_block(&bytes) {
         let mut different = bytes.clone();
         different[index] ^= 0b0001_0000;
         let read = Channel::from_bytes(&different)

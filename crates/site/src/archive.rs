@@ -27,7 +27,7 @@
 
 use kusanagi_chain::Cairn;
 use kusanagi_grant::StepId;
-use kusanagi_kernel::{Handle, Reader};
+use kusanagi_kernel::{Handle, Reader, Ward};
 use kusanagi_seal::{Fit, Ratchet, backup_key, open, seal};
 use zeroize::Zeroize as _;
 
@@ -40,7 +40,7 @@ use crate::site::Site;
 const MAGIC: &[u8; 4] = b"KSNB";
 
 /// The archive layout this build writes and reads.
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 
 /// What one entry in an archive is.
 ///
@@ -50,7 +50,7 @@ const VERSION: u8 = 1;
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum Kind {
-    /// The identity seed: 32 bytes, and the whole of who this endpoint is.
+    /// The identity: 32 bytes of seed, and the two-byte ward they read in.
     Identity = 1,
     /// One channel record, in the form `channel.rs` writes.
     Channel = 2,
@@ -165,7 +165,15 @@ fn malformed(reason: impl Into<String>) -> SiteError {
 pub fn export(site: &Site, recovery: &[u8; 32], nonce: [u8; 12]) -> Result<Vec<u8>, SiteError> {
     let mut plain = Vec::new();
     let mut seed = site.seed()?.ok_or(SiteError::NoIdentity)?;
-    put(&mut plain, Kind::Identity, &seed)?;
+    let ward = site.ward()?.ok_or(SiteError::NoIdentity)?;
+    // The ward travels with the seed because it is not derivable from it. An
+    // archive that restored the identity and forgot the corner of the host it
+    // reads would produce an endpoint whose writers keep filing where nobody
+    // looks — messages that are neither lost nor delivered.
+    let mut identity = seed.to_vec();
+    identity.extend_from_slice(&ward.bits().to_be_bytes());
+    put(&mut plain, Kind::Identity, &identity)?;
+    identity.zeroize();
     seed.zeroize();
 
     for name in site.names()? {
@@ -283,9 +291,15 @@ fn restore(site: &Site, plain: &[u8]) -> Result<(), SiteError> {
 
         match kind {
             Kind::Identity => {
-                let mut seed = <[u8; 32]>::try_from(bytes.as_slice())
-                    .map_err(|_| malformed("a seed is 32 bytes"))?;
-                let adopted = site.adopt(&seed);
+                let (Some(head), Some(tail)) = (bytes.get(..32), bytes.get(32..34)) else {
+                    return Err(malformed("an identity is a 32-byte seed and a ward"));
+                };
+                let (Ok(mut seed), Ok(ward)) =
+                    (<[u8; 32]>::try_from(head), <[u8; 2]>::try_from(tail))
+                else {
+                    return Err(malformed("an identity is a 32-byte seed and a ward"));
+                };
+                let adopted = site.adopt(&seed, Ward::from_bits(u16::from_be_bytes(ward)));
                 seed.zeroize();
                 adopted?;
             }
