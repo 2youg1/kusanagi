@@ -11,39 +11,37 @@
 //! follow the one before it. A failure at any of them stops the walk — a chain
 //! that has been interfered with is not a chain with a gap in it.
 //!
-//! **Where a walk starts is a privacy decision, not a performance one.** A walk
-//! names every address it visits, out loud, to a host that is keeping an access
-//! log; addresses derived to be unrelated stop being unrelated the moment one
-//! connection asks for them in ascending order, back to back. So a reader that
-//! starts at height zero every time hands the host the grouping that `seal`
-//! exists to deny it, once per poll, for the whole history. A walk that only
-//! owes the caller the head, or the segments above a height the caller already
-//! holds, starts from the cairn this endpoint wrote last time instead — which
-//! makes a poll name one address rather than all of them.
+//! **What a walk asks the host for is a privacy decision, not a performance
+//! one.** A walk that named every address it visited handed a host with an
+//! access log the grouping `seal` exists to deny it. So a walk does not talk to
+//! the host: it asks a [`Source`] for the sealed bytes at a height, and the
+//! production source is a [`Sweeping`](crate::sweep::Sweeping) — the reader's whole
+//! ward for a period, taken with one listing and as many fetches as it has
+//! objects, matched against the lane's addresses here on this machine. A host
+//! sees a bin being read and never which object in it was wanted (D-20).
 //!
-//! What a resumed walk does not close is the first catch-up, which still visits
-//! what it has never seen. **The order it visits them in is closed here.** A
-//! catch-up fetches a bounded window at once instead of one address after the
-//! next, so a host sees several requests in flight together rather than a chain
-//! of request-then-next-request; the window is bounded, so law 2 holds and
-//! memory does not grow with the stream, and **verification stays strictly in
-//! order** — only the fetching is not.
+//! **Where a walk starts still matters, because it decides how many bins are
+//! swept.** A walk that only owes the caller the head, or the segments above a
+//! height the caller already holds, resumes from the cairn this endpoint wrote
+//! last time and sweeps from the period it last swept through, so a poll costs
+//! one or two listings; a walk that owes every segment sweeps from the period
+//! the channel was opened in.
 //!
-//! The window starts at one and doubles to [`WINDOW`], which is what keeps a poll
-//! costing one request: an endpoint that is up to date asks for one address,
-//! finds nothing, and stops. An endpoint a hundred segments behind asks in
-//! eights. The ramp also blurs the live edge by up to a window, because a batch
-//! that runs past the end of the stream has already asked for what is not there
-//! — `ARCHITECTURE.md` §3 records that edge as followable, and this makes
-//! following it approximate rather than exact.
+//! The window from one to [`WINDOW`] heights per request is kept for the one
+//! source that still names addresses — a directory, in tests — and for the
+//! verifier, which accepts strictly in order whatever the fetching did.
 
 use kusanagi_chain::{Cairn, Verifier};
-use kusanagi_kernel::{ChainHead, DropAddr, Segment, SegmentError, Waypoint};
-use kusanagi_seal::{Fit, open};
+use kusanagi_kernel::{ChainHead, DropAddr, Instant, Listing, Segment, SegmentError, Waypoint};
+
+use crate::source::Source;
+use kusanagi_seal::{Fit, open, period};
 use kusanagi_site::Site;
 
 use crate::lane::Lane;
+use crate::sweep::Sweeping;
 use kusanagi_door::Complaint;
+use kusanagi_site::Swept;
 
 /// One segment, and the address it was found at.
 pub struct Held {
@@ -57,6 +55,11 @@ pub struct Held {
 pub struct Walked {
     verifier: Verifier,
     held: Vec<Held>,
+    /// What the last bin swept for it listed, when it was found by sweeping.
+    ///
+    /// Carried out so that a writer, having added to that bin, can record the
+    /// listing as it left it and spare the next sweep a fetch of everything.
+    pub listed: Option<Swept>,
 }
 
 impl Walked {
@@ -135,9 +138,10 @@ pub enum Reach {
 pub fn track(
     site: &Site,
     name: &str,
-    waypoint: &(impl Waypoint + Sync),
+    place: &(impl Waypoint + Listing + Sync),
     lane: &Lane,
     reach: Reach,
+    now: Instant,
 ) -> Result<Walked, Complaint> {
     let named = lane.author.handle();
     let recorded = site.cairn(name, &named)?;
@@ -157,7 +161,24 @@ pub fn track(
         // costs requests; getting this wrong would silently drop segments.
         Reach::Above(floor) => recorded.filter(|cairn| burned || cairn.head().index() <= floor),
     };
-    let walked = walk(waypoint, lane, name, from)?;
+    // A walk that resumes sweeps from the last period it swept through — that
+    // one included, since a bin keeps filling until its period ends — and a
+    // walk from genesis sweeps from the period the channel was opened in. The
+    // one record moves the other's starting point, never its conclusion.
+    let recorded_sweep = site.swept(name, &named)?;
+    let (since, known) = match from {
+        Some(_) => (
+            recorded_sweep
+                .as_ref()
+                .map_or(lane.opened, |swept| swept.through),
+            recorded_sweep.clone(),
+        ),
+        None => (lane.opened, None),
+    };
+    let through = period(now.as_unix_seconds());
+    let sweeping = Sweeping::over(place, lane.bin.ward(), since, through, known);
+    let mut walked = walk(&sweeping, lane, name, from)?;
+    walked.listed = sweeping.listed()?;
 
     // A resumed walk cannot contradict the record it resumed from: it started
     // there. A walk from genesis can, and that is the only shape in which a host
@@ -176,6 +197,14 @@ pub fn track(
         && recorded != Some(cairn)
     {
         site.mark(name, &cairn)?;
+    }
+    // Only when the bin changed: a record rewritten with its own contents is a
+    // flush paid for nothing, and an idle poll is the invocation a scheduler
+    // makes most.
+    if let Some(seen) = &walked.listed
+        && recorded_sweep.as_ref() != Some(seen)
+    {
+        site.sweep_to(name, &named, seen)?;
     }
     Ok(walked)
 }
@@ -234,13 +263,13 @@ fn confirm(walked: &Walked, recorded: &Cairn, name: &str) -> Result<(), Complain
 pub fn peek(
     waypoint: &impl Waypoint,
     lane: &Lane,
+    name: &str,
     index: u64,
 ) -> Result<Option<Segment>, Complaint> {
     let Some(sealed) = waypoint.get(&lane.holding(index))? else {
         return Ok(None);
     };
-    let plain = open(&lane.keys.key(index)?, Fit::Veil, &sealed)?;
-    Ok(Some(Segment::from_canonical_bytes(&plain, &lane.author)?))
+    Ok(Some(decode(lane, name, index, &sealed)?))
 }
 
 /// Walks a stream from `from` until the first empty address.
@@ -256,7 +285,7 @@ pub fn peek(
 /// segments do not form a chain — which, on a resumed walk, is also what a host
 /// that revised a drop this endpoint already read comes out as.
 pub fn walk(
-    waypoint: &(impl Waypoint + Sync),
+    source: &impl Source,
     lane: &Lane,
     name: &str,
     from: Option<Cairn>,
@@ -270,16 +299,35 @@ pub fn walk(
     // A cairn at the last height a `u64` can express has nothing above it, so the
     // walk is already over. That is an answer, not a failure.
     let Some(start) = from.map_or(Some(0), |cairn| cairn.next_index()) else {
-        return Ok(Walked { verifier, held });
+        return Ok(Walked {
+            verifier,
+            held,
+            listed: None,
+        });
     };
 
     let mut index = start;
     let mut width = 1;
     loop {
-        for found in fetch(waypoint, lane, name, index, width)? {
-            let Some(segment) = found else {
-                return Ok(Walked { verifier, held });
+        for (step, found) in source.sealed(lane, index, width)?.into_iter().enumerate() {
+            let Some(sealed) = found else {
+                return Ok(Walked {
+                    verifier,
+                    held,
+                    listed: None,
+                });
             };
+            let Some(at) = u64::try_from(step)
+                .ok()
+                .and_then(|step| index.checked_add(step))
+            else {
+                return Ok(Walked {
+                    verifier,
+                    held,
+                    listed: None,
+                });
+            };
+            let segment = decode(lane, name, at, &sealed)?;
             verifier.accept(&segment)?;
             held.push(Held {
                 address: lane.keys.address(segment.index()),
@@ -290,7 +338,11 @@ pub fn walk(
             .ok()
             .and_then(|step| index.checked_add(step))
         else {
-            return Ok(Walked { verifier, held });
+            return Ok(Walked {
+                verifier,
+                held,
+                listed: None,
+            });
         };
         index = next;
         width = width.saturating_mul(2).min(WINDOW);
@@ -306,58 +358,22 @@ pub fn walk(
 /// rather than a hundred.
 pub const WINDOW: usize = 8;
 
-/// Fetches `width` consecutive addresses at once, and returns them in order.
-///
-/// **In flight together, delivered in order.** The concurrency is what a host
-/// sees; the ordering is what the verifier needs. Doing it the other way round —
-/// verifying whatever arrived first — would be a chain check that depends on
-/// network timing, which is not a chain check.
+/// Opens and decodes what was found at `index`, as a segment by this lane's
+/// author.
 ///
 /// # Errors
 ///
-/// The first failure among the batch, by address order rather than by arrival,
-/// so that two runs against the same host report the same thing.
-fn fetch(
-    waypoint: &(impl Waypoint + Sync),
-    lane: &Lane,
-    name: &str,
-    from: u64,
-    width: usize,
-) -> Result<Vec<Option<Segment>>, Complaint> {
-    let indices: Vec<u64> = (0..width)
-        .filter_map(|step| from.checked_add(u64::try_from(step).ok()?))
-        .collect();
-    let collected: Vec<Result<Option<Segment>, Complaint>> = std::thread::scope(|scope| {
-        let running: Vec<_> = indices
-            .iter()
-            .map(|index| scope.spawn(move || peek(waypoint, lane, *index)))
-            .collect();
-        running
-            .into_iter()
-            .map(|handle| {
-                handle.join().unwrap_or_else(|_| {
-                    Err(Complaint::Local {
-                        action: "read a drop",
-                        source: std::io::Error::other("a reader did not finish"),
-                    })
-                })
-            })
-            .collect()
-    });
-
-    let mut found = Vec::with_capacity(collected.len());
-    for outcome in collected {
-        // A genuine segment by somebody else is the host answering with a drop
-        // from a stream nobody asked for. The decoder catches it, and it is
-        // reported as what it is rather than as a malformed segment.
-        match outcome {
-            Err(Complaint::Segment(SegmentError::NotTheAuthor { .. })) => {
-                return Err(Complaint::NotThePeer {
-                    name: name.to_owned(),
-                });
-            }
-            other => found.push(other?),
-        }
+/// [`Complaint::Sealed`] when the bytes do not open under this height's key,
+/// [`Complaint::NotThePeer`] when what comes out is a genuine segment by
+/// somebody else — the host answering with a drop from a stream nobody asked
+/// for, reported as what it is rather than as a malformed segment — and
+/// [`Complaint::Segment`] for anything else that is not a segment.
+fn decode(lane: &Lane, name: &str, index: u64, sealed: &[u8]) -> Result<Segment, Complaint> {
+    let plain = open(&lane.keys.key(index)?, Fit::Veil, sealed)?;
+    match Segment::from_canonical_bytes(&plain, &lane.author) {
+        Err(SegmentError::NotTheAuthor { .. }) => Err(Complaint::NotThePeer {
+            name: name.to_owned(),
+        }),
+        other => Ok(other?),
     }
-    Ok(found)
 }

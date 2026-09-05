@@ -14,6 +14,7 @@
 //! <root>/identity                   32 bytes: this endpoint's signing seed
 //! <root>/channels/<filed>           one channel record
 //! <root>/cairns/<filed>/<author>    how far that author's stream is verified
+//! <root>/sweeps/<filed>/<author>    the last period swept for it, and what the bin listed
 //! <root>/ratchets/<filed>/<author>  how far that lane's keys are burned
 //! <root>/outbox/<filed>/<ticket>    a payload waiting for its slot
 //! <root>/slots/<filed>              the last slot this endpoint filled
@@ -61,6 +62,7 @@ use crate::naming;
 use crate::records;
 use crate::revoked;
 use crate::roster::{self, Roster};
+use crate::sweeps::{self, Swept};
 use kusanagi_vault as vault;
 
 /// One endpoint's local state.
@@ -166,6 +168,28 @@ impl Site {
         cairns::write(&self.root, &filed, &filed_author, cairn)
     }
 
+    /// The last sweep of `author`'s lane on `name`, if a record survives.
+    /// Missing and unreadable are one answer; `sweeps` says why.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::BadName`] when `name` is not usable as one.
+    pub fn swept(&self, name: &str, author: &Handle) -> Result<Option<Swept>, SiteError> {
+        let (filed, filed_author) = self.filed_lane(name, author)?;
+        Ok(sweeps::read(&self.root, &filed, &filed_author))
+    }
+
+    /// Writes down the last sweep of `author`'s lane on `name`.
+    ///
+    /// # Errors
+    ///
+    /// [`SiteError::BadName`] when `name` is not usable as one, and
+    /// [`SiteError::Local`] when the record cannot be written.
+    pub fn sweep_to(&self, name: &str, author: &Handle, swept: &Swept) -> Result<(), SiteError> {
+        let (filed, filed_author) = self.filed_lane(name, author)?;
+        sweeps::write(&self.root, &filed, &filed_author, swept)
+    }
+
     /// One group's roster.
     ///
     /// # Errors
@@ -234,6 +258,7 @@ impl Site {
                 // a later channel of the same name inherit a stranger's heights.
                 if let Ok(filed) = self.filed_or_unknown(name) {
                     fs::remove_dir_all(cairns::dir(&self.root, &filed)).ok();
+                    fs::remove_dir_all(sweeps::dir(&self.root, &filed)).ok();
                     fs::remove_dir_all(self.root.join("ratchets").join(&filed)).ok();
                     fs::remove_dir_all(self.root.join("outbox").join(&filed)).ok();
                     fs::remove_file(self.root.join("slots").join(&filed)).ok();

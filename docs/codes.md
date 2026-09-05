@@ -47,6 +47,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `grant.wrong_root` | a grant chain is rooted in a handle that is not this channel's | ask whoever invited you for a new invitation |
 | `kusanagi.address_unavailable` | this machine would not hand over the address `kusanagi host` was told to listen on | `--bind 0` takes any free port and prints it; `--bind ADDRESS` names one this machine has |
 | `kusanagi.argument` | an argument is not something this verb can act on | the answer names the flag and what to pass instead |
+| `kusanagi.ward_overfull` | this period of the ward holds more objects than one sweep reads | wait for the period to end and read again; if it persists the ward is crowded: make a fresh identity in a new root and invite your peers there |
 | `kusanagi.needs_cairn` | a channel opened with `--release` was read, and the record of what had already been read is gone; the host no longer holds those drops | run `kusanagi import` with the archive `kusanagi export` made |
 | `kusanagi.not_slotted` | `tick` was run on a channel that writes when it is asked to | send on it with `kusanagi send --to NAME`, or open the channel with `--every SECONDS` |
 | `kusanagi.bad_recovery_key` | an archive did not open under the recovery key that was offered | check the key: it is the 64 hexadecimal digits `kusanagi export` printed once, and it goes in on the first line of stdin |

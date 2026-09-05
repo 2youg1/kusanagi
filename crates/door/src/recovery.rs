@@ -31,6 +31,19 @@ fn locator_trouble(error: &LocatorError) -> String {
     }
 }
 
+/// What to do when the history a read needs is not where a read looks.
+fn history_trouble(complaint: &Complaint) -> String {
+    match complaint {
+        Complaint::WardOverfull { .. } => "wait for the period to end and read again; if it \
+             persists, this ward is crowded: make a fresh identity in a new root and invite \
+             your peers there"
+            .to_owned(),
+        _ => "this channel releases what its peer has read, so the archive is the history: \
+              run `kusanagi import` with the backup `kusanagi export` made"
+            .to_owned(),
+    }
+}
+
 impl Complaint {
     /// The command that would move the caller forward from here.
     pub(crate) fn recover(&self) -> String {
@@ -92,10 +105,8 @@ impl Complaint {
                  `kusanagi export` there, then pipe the archive into \
                  `kusanagi import --root <EMPTY_DIRECTORY>` here"
                 .to_owned(),
-            Self::Burned(_) | Self::NeedsCairn { .. } => {
-                "this channel releases what its peer has read, so the archive is the history: \
-                 run `kusanagi import` with the backup `kusanagi export` made"
-                    .to_owned()
+            Self::Burned(_) | Self::NeedsCairn { .. } | Self::WardOverfull { .. } => {
+                history_trouble(self)
             }
             Self::NotSlotted { name } => {
                 format!(

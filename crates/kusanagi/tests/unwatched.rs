@@ -3,21 +3,18 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 // Copyright (c) 2026 2youg1 and the kusanagi contributors
 
-//! What a host learns by watching *which* addresses are asked for.
+//! What a host learns from *what* it is asked for.
 //!
 //! `unlinkable.rs` takes the host's side and reads what the host is holding. It
-//! is the stronger assertion in one direction and silent in another: a real host
-//! also serves the requests, and a request names an address out loud.
+//! is silent about the other thing a host has, which is an access log: every
+//! request names what it wants, and a reader that named an address handed the
+//! host the pair of that address's writer and its reader.
 //!
-//! A reader that starts at height zero every time asks for every address of one
-//! stream, in ascending order, back to back, on one connection. Those addresses
-//! are unlinkable to each other only until the moment somebody asks for them in
-//! that order — at which point the host has been handed exactly the grouping the
-//! derivation in `seal` exists to deny it.
-//!
-//! So the property asserted here is about cost, and it is a privacy property
-//! rather than a performance one: **the number of addresses one read reveals
-//! must not grow with the length of the stream.**
+//! Under D-20 a read names a **bin** — a period and a ward — and takes all of
+//! it. So the properties asserted here are about the requests themselves:
+//! **no fetch names an object the host did not list first**, **an idle poll is
+//! a listing and nothing more**, and **two readers of one ward ask for the same
+//! things**, whoever their peers are.
 
 #![allow(
     clippy::unwrap_used,
@@ -31,94 +28,26 @@
 
 mod common;
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
+use common::watching::Watching;
 use common::{Endpoint, invite_line, scratch};
-use kusanagi::{Lane, Reach, Request, Site, track};
-use kusanagi_kernel::{Listing, Object, PutOutcome, Sweep, Waypoint, WaypointError};
+use kusanagi::{Lane, Reach, Request, Site, SystemClock, track};
+use kusanagi_kernel::{Clock as _, Listing as _, Object, Sweep, VerifyingKey, Ward};
 use kusanagi_waypoint::DirWaypoint;
 
 /// How many segments the peer has already written before the poll being measured.
 const HEIGHT: usize = 12;
 
-/// A host that writes down every address it is asked for, in the order it was
-/// asked. This is the cheapest thing a real host can do, and every one of them
-/// does it: it is called an access log.
-struct Watching {
-    inner: DirWaypoint,
-    asked: Mutex<Vec<Object>>,
-    /// How many reads were open at once, at the busiest moment.
-    ///
-    /// A serial walk never gets above one. That number is the whole of what a
-    /// window changes from the host's side, so it is the number the test asserts
-    /// on rather than the order the addresses arrived in — which is decided by a
-    /// scheduler and would make this a test about the scheduler.
-    open: AtomicUsize,
-    busiest: AtomicUsize,
-}
-
-impl Watching {
-    fn new(root: &std::path::Path) -> Self {
-        Self {
-            inner: DirWaypoint::new(root),
-            asked: Mutex::new(Vec::new()),
-            open: AtomicUsize::new(0),
-            busiest: AtomicUsize::new(0),
-        }
-    }
-
-    /// The most reads this host had in flight at one time.
-    fn busiest(&self) -> usize {
-        self.busiest.load(Ordering::SeqCst)
-    }
-
-    /// Everything asked for since the last [`Self::forget`].
-    fn asked(&self) -> Vec<Object> {
-        self.asked.lock().unwrap().clone()
-    }
-
-    fn forget(&self) {
-        self.asked.lock().unwrap().clear();
-    }
-}
-
-impl Waypoint for Watching {
-    fn put_if_absent(&self, at: &Object, bytes: &[u8]) -> Result<PutOutcome, WaypointError> {
-        self.inner.put_if_absent(at, bytes)
-    }
-
-    fn get(&self, at: &Object) -> Result<Option<Vec<u8>>, WaypointError> {
-        self.asked.lock().unwrap().push(*at);
-        let now = self.open.fetch_add(1, Ordering::SeqCst) + 1;
-        self.busiest.fetch_max(now, Ordering::SeqCst);
-        // Long enough that a batch issued together is still together when the
-        // last of it arrives. Without it this measures how fast a local
-        // directory is, which is not what a host looks like.
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        let found = self.inner.get(at);
-        self.open.fetch_sub(1, Ordering::SeqCst);
-        found
-    }
-
-    fn delete(&self, at: &Object) -> Result<(), WaypointError> {
-        self.inner.delete(at)
-    }
-}
-
-impl Listing for Watching {
-    fn list(&self, sweep: &Sweep) -> Result<Vec<Object>, WaypointError> {
-        self.inner.list(sweep)
-    }
-}
-
-#[test]
-fn a_read_does_not_replay_the_whole_stream_to_the_host() {
-    let ground = scratch("unwatched");
+/// Alice writes `HEIGHT` segments to a reader, who has joined and not yet read.
+fn staged(tag: &str, reader_ward: Option<Ward>) -> (std::path::PathBuf, Endpoint, Endpoint) {
+    let ground = scratch(tag);
     let host = ground.join("host");
     let alice = Endpoint::new(ground.join("alice"));
     let bob = Endpoint::new(ground.join("bob"));
-
+    if let Some(ward) = reader_ward {
+        Site::at(bob.site_root())
+            .adopt(&kusanagi::fresh_seed().unwrap(), ward)
+            .unwrap();
+    }
     let invitation = invite_line(&alice, "bob", &host.display().to_string());
     bob.run(&Request::Join {
         invite: invitation,
@@ -129,78 +58,161 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
     for round in 0..HEIGHT {
         alice.send("bob", &format!("round {round}"));
     }
+    (ground, alice, bob)
+}
 
-    // Bob's own view of the channel, which is all a reader has.
-    let site = Site::at(bob.site_root());
+/// The peer's lane as the reader opens it: filed in the reader's own ward.
+fn peer_lane(site: &Site) -> Lane {
     let channel = site.channel("alice").unwrap();
-    let peer = channel.peer.as_ref().expect("bob has met alice");
-    let lane = Lane::open(
-        &site,
+    let peer = channel.peer.as_ref().expect("the reader has met alice");
+    Lane::open(
+        site,
         "alice",
         &channel,
         &peer.key,
         site.ward().unwrap().unwrap(),
+        SystemClock.now(),
     )
-    .expect("a lane");
+    .expect("a lane")
+}
 
+/// Every fetch named something a listing had just handed back.
+fn only_what_was_listed(watching: &Watching, host: &std::path::Path) {
+    let listed: Vec<Object> = watching
+        .lists()
+        .iter()
+        .flat_map(|prefix| {
+            DirWaypoint::new(host)
+                .list(&Sweep::from_prefix(prefix).unwrap())
+                .unwrap()
+        })
+        .collect();
+    for got in watching.gets() {
+        assert!(
+            listed.contains(&got),
+            "the reader fetched {got}, which no listing it asked for contained: the host has \
+             been handed an address the reader derived"
+        );
+    }
+}
+
+#[test]
+fn a_read_fetches_nothing_the_host_did_not_list_first() {
+    let (ground, _alice, bob) = staged("unwatched", None);
+    let host = ground.join("host");
+    let site = Site::at(bob.site_root());
+    let lane = peer_lane(&site);
     let watching = Watching::new(&host);
 
-    // The first read shows the whole stream, so it fetches the whole stream. That
-    // cost is what catching up costs, and it is not what this file is about.
-    let caught_up = track(&site, "alice", &watching, &lane, Reach::Whole).unwrap();
+    let caught_up = track(
+        &site,
+        "alice",
+        &watching,
+        &lane,
+        Reach::Whole,
+        SystemClock.now(),
+    )
+    .unwrap();
     assert_eq!(caught_up.held().len(), HEIGHT);
-    let catching_up = watching.asked().len();
-    assert!(
-        (HEIGHT..=HEIGHT + kusanagi::WINDOW).contains(&catching_up),
-        "catching up asked for {catching_up} addresses of a stream of {HEIGHT}"
-    );
-    // **More than the stream holds, on purpose.** A catch-up asks in windows, so
-    // the last window runs past the live edge and the host is shown addresses
-    // above the highest segment there is. That is the difference between knowing
-    // where a stream ends and knowing it to within a window.
-    assert!(
-        catching_up > HEIGHT,
-        "the walk stopped exactly at the live edge, which tells the host where it is"
-    );
-    // And it asked for them together. A host that sees *N*, then *N+1* after it
-    // answered *N*, is being handed the shape of a chain by the reading pattern;
-    // one that sees eight arrive at once is not.
+
+    // Every listing names the reader's own ward and a period, and nothing else.
+    let ward = format!("/{}/", site.ward().unwrap().unwrap());
+    for prefix in watching.lists() {
+        assert!(
+            prefix.ends_with(&ward),
+            "a listing asked for {prefix}, which is not one period of this reader's ward"
+        );
+    }
+    only_what_was_listed(&watching, &host);
+    // And the bin was taken together rather than object after object, so the
+    // access log shows a bin being read and not a sequence being followed.
     assert!(
         watching.busiest() > 1,
-        "a catch-up asked for one address at a time, so the access log still \
-         reads as a chain"
+        "the bin was fetched one object at a time"
     );
 
-    // The poll an agent actually runs in a loop. Nothing has changed, and bob has
-    // already verified all of it.
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+#[test]
+fn a_poll_that_finds_the_bin_as_it_was_makes_one_request_and_grows_with_nothing() {
+    let (ground, alice, bob) = staged("unwatched-poll", None);
+    let host = ground.join("host");
+    let site = Site::at(bob.site_root());
+    let lane = peer_lane(&site);
+    let watching = Watching::new(&host);
+    track(
+        &site,
+        "alice",
+        &watching,
+        &lane,
+        Reach::Whole,
+        SystemClock.now(),
+    )
+    .unwrap();
+
+    // The poll an agent runs in a loop. The bin lists exactly as it did, so
+    // there is nothing new to take and nothing is taken.
     watching.forget();
-    let polled = track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
+    let polled = track(
+        &site,
+        "alice",
+        &watching,
+        &lane,
+        Reach::Head,
+        SystemClock.now(),
+    )
+    .unwrap();
     assert_eq!(
-        polled.head(),
-        caught_up.head(),
-        "the resumed walk lost the stream's height"
+        polled.head().map(|head| head.index()),
+        Some(u64::try_from(HEIGHT).unwrap() - 1)
     );
-
-    let revealed = watching.asked();
     assert!(
-        revealed.len() <= 2,
-        "one poll named {} addresses of a stream of {HEIGHT}; a host with an \
-         access log now holds the grouping that `seal` exists to deny it",
-        revealed.len()
+        watching.gets().is_empty(),
+        "an idle poll fetched {} objects out of a bin it had already taken",
+        watching.gets().len()
     );
+    let idle = watching.lists().len();
+    assert!((1..=2).contains(&idle), "an idle poll made {idle} listings");
 
-    // And the cost is flat rather than merely smaller: a stream twice as long
-    // must cost a poll exactly the same, or this is an optimisation rather than
-    // the closing of a leak.
+    // The stream doubles; the poll that finds the change takes the bin, and the
+    // one after it is idle again at exactly the same cost as before.
     for round in HEIGHT..HEIGHT * 2 {
         alice.send("bob", &format!("round {round}"));
     }
-    track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
     watching.forget();
-    track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
+    let grown = track(
+        &site,
+        "alice",
+        &watching,
+        &lane,
+        Reach::Head,
+        SystemClock.now(),
+    )
+    .unwrap();
     assert_eq!(
-        watching.asked().len(),
-        revealed.len(),
+        grown.head().map(|head| head.index()),
+        Some(2 * u64::try_from(HEIGHT).unwrap() - 1)
+    );
+    assert!(!watching.gets().is_empty(), "a changed bin was not taken");
+    only_what_was_listed(&watching, &host);
+    watching.forget();
+    track(
+        &site,
+        "alice",
+        &watching,
+        &lane,
+        Reach::Head,
+        SystemClock.now(),
+    )
+    .unwrap();
+    assert!(
+        watching.gets().is_empty(),
+        "a poll after the catch-up fetched again"
+    );
+    assert_eq!(
+        watching.lists().len(),
+        idle,
         "a poll got more expensive as the stream grew"
     );
 
@@ -208,85 +220,62 @@ fn a_read_does_not_replay_the_whole_stream_to_the_host() {
 }
 
 #[test]
-fn a_poll_names_the_one_address_it_is_waiting_on_and_no_other() {
-    let ground = scratch("unwatched-exact");
-    let host = ground.join("host");
-    let alice = Endpoint::new(ground.join("alice"));
-    let bob = Endpoint::new(ground.join("bob"));
+fn two_readers_of_one_ward_ask_the_host_for_the_same_things() {
+    // Two readers who chose the same ward and talk to different people. The host
+    // must not be able to tell from their requests which of them is whose.
+    let ward = Ward::from_bits(0x0c0d);
+    let (one, _, bob) = staged("unwatched-twins-a", Some(ward));
+    let (two, _, carol) = staged("unwatched-twins-b", Some(ward));
+    // Both readers' peers wrote into one host, into the same ward.
+    merge(&two.join("host"), &one.join("host"));
+    let host = one.join("host");
 
-    let invitation = invite_line(&alice, "bob", &host.display().to_string());
-    bob.run(&Request::Join {
-        invite: invitation,
-        name: "alice".to_owned(),
-        habit: kusanagi::Habit::default(),
-    })
-    .unwrap();
-    for round in 0..HEIGHT {
-        alice.send("bob", &format!("round {round}"));
-    }
-
-    let site = Site::at(bob.site_root());
-    let channel = site.channel("alice").unwrap();
-    let peer = channel.peer.as_ref().expect("bob has met alice");
-    let lane = Lane::open(
-        &site,
-        "alice",
-        &channel,
-        &peer.key,
-        site.ward().unwrap().unwrap(),
-    )
-    .expect("a lane");
-
-    let watching = Watching::new(&host);
-    track(&site, "alice", &watching, &lane, Reach::Whole).unwrap();
-
-    // "At most two" is a bound; this is the fact. A poll asks for the height
-    // above the one it has verified, and asks for nothing else — so a host sees
-    // one address it has never been shown before, carrying no relation to any
-    // address it has seen.
-    watching.forget();
-    track(&site, "alice", &watching, &lane, Reach::Head).unwrap();
-    let expected = lane.holding(u64::try_from(HEIGHT).unwrap());
+    let asked = |reader: &Endpoint| {
+        let site = Site::at(reader.site_root());
+        let lane = peer_lane(&site);
+        let watching = Watching::new(&host);
+        let walked = track(
+            &site,
+            "alice",
+            &watching,
+            &lane,
+            Reach::Whole,
+            SystemClock.now(),
+        )
+        .unwrap();
+        assert_eq!(
+            walked.held().len(),
+            HEIGHT,
+            "a reader missed its own segments"
+        );
+        let mut requests = watching.asked();
+        requests.sort();
+        requests
+    };
     assert_eq!(
-        watching.asked(),
-        vec![expected],
-        "a poll named something other than exactly the height it waits on"
+        asked(&bob),
+        asked(&carol),
+        "two readers of one ward made different requests, so the host can tell them apart"
     );
 
-    std::fs::remove_dir_all(&ground).ok();
+    std::fs::remove_dir_all(&one).ok();
+    std::fs::remove_dir_all(&two).ok();
 }
 
 #[test]
-fn sending_does_not_replay_your_own_stream_to_the_host() {
-    let ground = scratch("unwatched-send");
+fn sending_asks_for_the_peers_ward_and_names_no_address() {
+    let (ground, alice, _bob) = staged("unwatched-send", None);
     let host = ground.join("host");
-    let alice = Endpoint::new(ground.join("alice"));
-    let bob = Endpoint::new(ground.join("bob"));
-
-    let invitation = invite_line(&alice, "bob", &host.display().to_string());
-    bob.run(&Request::Join {
-        invite: invitation,
-        name: "alice".to_owned(),
-        habit: kusanagi::Habit::default(),
-    })
-    .unwrap();
-    for round in 0..HEIGHT {
-        alice.send("bob", &format!("round {round}"));
-    }
-
-    // Every one of those sends went through the ordinary door. If `send` had
-    // walked from genesis it would have left no cairn, and if it had left one
-    // without resuming from it the height would still be right — so the assertion
-    // that it resumed is the next one, and this is the assertion that it marked.
     let site = Site::at(alice.site_root());
     let channel = site.channel("bob").unwrap();
-    // Alice's own lane is filed where Bob collects it, which is Bob's ward.
+    let peer_ward = channel.peer.as_ref().expect("alice has met bob").ward;
     let lane = Lane::open(
         &site,
         "bob",
         &channel,
         &alice_key(&site),
-        channel.peer.as_ref().expect("alice has met bob").ward,
+        peer_ward,
+        SystemClock.now(),
     )
     .expect("a lane");
     let cairn = site
@@ -295,24 +284,45 @@ fn sending_does_not_replay_your_own_stream_to_the_host() {
         .expect("sending left no record of where it got to");
     assert_eq!(cairn.head().index(), u64::try_from(HEIGHT - 1).unwrap());
 
-    // And the walk that `send` performs, from that cairn, names one address: the
-    // height it is about to claim. Writing the thousandth segment must cost what
-    // writing the first cost, or a host learns how long a conversation has run
-    // from the shape of a single send.
+    // The walk that `send` performs finds its head by sweeping the ward it
+    // writes into — the host already saw this endpoint write there — and takes
+    // nothing, because the bin lists as it did after the last send.
     let watching = Watching::new(&host);
-    track(&site, "bob", &watching, &lane, Reach::Head).unwrap();
-    let expected = lane.holding(u64::try_from(HEIGHT).unwrap());
-    assert_eq!(
-        watching.asked(),
-        vec![expected],
-        "a send named more than the height it was about to claim"
+    track(
+        &site,
+        "bob",
+        &watching,
+        &lane,
+        Reach::Head,
+        SystemClock.now(),
+    )
+    .unwrap();
+    let ward = format!("/{peer_ward}/");
+    for prefix in watching.lists() {
+        assert!(prefix.ends_with(&ward), "a send listed {prefix}");
+    }
+    assert!(
+        watching.gets().is_empty(),
+        "a send fetched from a bin it had already taken"
     );
 
     std::fs::remove_dir_all(&ground).ok();
 }
 
-/// This endpoint's own key, which checks the author of its own stream.
-fn alice_key(site: &Site) -> kusanagi_kernel::VerifyingKey {
+/// Copies every object of one host into another, key for key.
+fn merge(from: &std::path::Path, into: &std::path::Path) {
+    for entry in std::fs::read_dir(from).unwrap().flatten() {
+        let target = into.join(entry.file_name());
+        if entry.path().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+            merge(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+fn alice_key(site: &Site) -> VerifyingKey {
     site.identity()
         .unwrap()
         .expect("an endpoint that has sent has an identity")

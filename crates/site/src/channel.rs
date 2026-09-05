@@ -33,6 +33,7 @@
 //! standing        1 byte    0 = root, 1 = granted, then a length-prefixed grant
 //! cadence       1|5 bytes   0 = on demand; 1 = slotted, then a u32 of seconds
 //! retention       1 byte    0 = keep, 1 = release once acknowledged
+//! opened          8 bytes   big endian; the period this record was made in
 //! has_peer        1 byte
 //! peer         2592 bytes   the peer's verifying key; zeroes when absent
 //! peer_standing   1 byte    as above
@@ -47,7 +48,7 @@
 //! The two key fields are `VerifyingKey::WIDTH` wide, so a change of signature
 //! scheme is a change of record version.
 
-use kusanagi_kernel::{Handle, Reader, VerifyingKey, Ward};
+use kusanagi_kernel::{Handle, Period, Reader, VerifyingKey, Ward};
 use kusanagi_seal::Secret;
 
 use crate::blocks::{malformed, put_block, take_text};
@@ -58,16 +59,17 @@ use crate::standing::Standing;
 
 /// The record this build writes and reads.
 ///
-/// Version 5 carries the peer's ward, which is where this endpoint files what it
-/// writes to them: a writer that does not know its reader's bin cannot deliver.
-/// Version 4 carried the two choices that change what this endpoint does on the
+/// Version 6 carries the period the channel was opened in: the earliest bin a
+/// sweep for it can have anything in, and so where a reader with no record of
+/// what it swept starts. Version 5 carried the peer's ward, which is where this
+/// endpoint files what it writes to them. Version 4 carried the two choices that change what this endpoint does on the
 /// network rather than what it knows: a [`Cadence`] and a [`Retention`]. Version
 /// 3 carried the channel's local name, which version 2 kept in the file name
 /// instead. Version 2 named its peer by verifying key where version 1 named it
 /// by handle — the two are the same width and neither decodes as the other,
 /// which is why the version byte moves at all: a silent reinterpretation would
 /// leave an endpoint verifying every segment against 32 bytes that are not a key.
-const VERSION: u8 = 5;
+const VERSION: u8 = 6;
 
 /// The other end of a conversation, once it has said who it is.
 #[derive(Clone, Debug)]
@@ -113,6 +115,10 @@ pub struct Channel {
     pub cadence: Cadence,
     /// What becomes of a drop once the peer has read it.
     pub retention: Retention,
+    /// The period this record was made in, before which no drop of this
+    /// channel can be filed. A sweep that has no record of how far it got
+    /// starts here, so losing every record costs bins and never messages.
+    pub opened: Period,
     /// The other end, once it has introduced itself.
     pub peer: Option<Peer>,
 }
@@ -130,6 +136,7 @@ impl Channel {
         self.standing.write(&mut out);
         self.cadence.write(&mut out);
         self.retention.write(&mut out);
+        out.extend_from_slice(&self.opened.count().to_be_bytes());
         match &self.peer {
             None => {
                 out.push(0);
@@ -175,6 +182,9 @@ impl Channel {
         let standing = Standing::read(&mut reader)?;
         let cadence = Cadence::read(&mut reader)?;
         let retention = Retention::read(&mut reader)?;
+        let opened = Period::from_count(u64::from_be_bytes(
+            reader.take_array::<8>().map_err(malformed)?,
+        ));
 
         let has_peer = reader.take_byte().map_err(malformed)?;
         let key = VerifyingKey::from_bytes(
@@ -216,6 +226,7 @@ impl Channel {
             standing,
             cadence,
             retention,
+            opened,
             peer,
         })
     }
@@ -232,7 +243,7 @@ mod tests {
     use super::{Cadence, Channel, Peer, Retention};
     use crate::standing::Standing;
     use kusanagi_grant::{Abilities, Ability, Grant, GrantError, Revocations, Scope};
-    use kusanagi_kernel::{Instant, Signer, Ward};
+    use kusanagi_kernel::{Instant, Period, Signer, Ward};
     use kusanagi_seal::Secret;
 
     fn channel(with_peer: bool) -> Channel {
@@ -248,6 +259,7 @@ mod tests {
             standing: Standing::Root,
             cadence: Cadence::OnDemand,
             retention: Retention::Keep,
+            opened: Period::from_count(2_945_376),
             peer: with_peer.then(|| Peer {
                 ward: Ward::from_bits(0x00ab),
                 key: guest.verifying_key(),

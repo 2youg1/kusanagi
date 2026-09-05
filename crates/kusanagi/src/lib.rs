@@ -18,6 +18,8 @@ mod port;
 mod request;
 mod roots;
 mod slot;
+mod source;
+mod sweep;
 mod tools;
 mod traffic;
 mod walk;
@@ -28,6 +30,8 @@ pub use lane::Lane;
 pub use port::serve;
 pub use request::{Habit, Request, Whose};
 pub use roots::{default_host_dir, default_root};
+pub use source::Source;
+pub use sweep::{CAP, DIGITS, Sweeping};
 pub use walk::{Held, Reach, WINDOW, Walked, peek, track, walk};
 pub use world::{SystemClock, fresh_fence, fresh_seed};
 

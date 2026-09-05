@@ -17,6 +17,8 @@
     reason = "test code"
 )]
 
+pub mod watching;
+
 use std::path::{Path, PathBuf};
 
 use kusanagi::{Complaint, Fence, Outcome, Request, Site};

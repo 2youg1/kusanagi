@@ -208,17 +208,6 @@ fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
     Ok(Outcome::Channels { channels, groups })
 }
 
-/// Opens what a locator names, with what the environment supplies to reach it.
-///
-/// The environment is read here and nowhere else, for the same reason the clock
-/// is: a program that picks up configuration in the middle of a call graph is a
-/// program whose behaviour cannot be reproduced from its arguments.
-///
-/// `KUSANAGI_PROXY` sends every request through a SOCKS5 or HTTP CONNECT proxy.
-/// kusanagi does not hide an endpoint's IP address and does not claim to
-/// (`ARCHITECTURE.md` §3); this is the plug for a network that does, and a
-/// mistyped one is refused here rather than silently ignored — a privacy setting
-/// that fails open is worse than one that was never offered.
 /// Reads or records whether this site may reach a host without a proxy.
 fn egress(site: &Site, require: Option<bool>) -> Result<Outcome, Complaint> {
     if let Some(required) = require {
@@ -233,6 +222,17 @@ fn egress(site: &Site, require: Option<bool>) -> Result<Outcome, Complaint> {
     })
 }
 
+/// Opens what a locator names, with what the environment supplies to reach it.
+///
+/// The environment is read here and nowhere else, for the same reason the clock
+/// is: a program that picks up configuration in the middle of a call graph is a
+/// program whose behaviour cannot be reproduced from its arguments.
+///
+/// `KUSANAGI_PROXY` sends every request through a SOCKS5 or HTTP CONNECT proxy.
+/// kusanagi does not hide an endpoint's IP address and does not claim to
+/// (`ARCHITECTURE.md` §3); this is the plug for a network that does, and a
+/// mistyped one is refused here rather than silently ignored — a privacy setting
+/// that fails open is worse than one that was never offered.
 pub(crate) fn open(site: &Site, locator: &str, now: Instant) -> Result<Place, Complaint> {
     let locator: Locator = locator.parse()?;
     let credentials = match (

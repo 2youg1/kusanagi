@@ -16,7 +16,7 @@ use kusanagi_kernel::{
     Freight, Instant, Object, PutOutcome, Reader, Segment, Signer, VerifyingKey, Ward,
     Waypoint as _,
 };
-use kusanagi_seal::{Fit, Secret, derive, offer, open as open_sealed, rendezvous, seal};
+use kusanagi_seal::{Fit, Secret, derive, offer, open as open_sealed, period, rendezvous, seal};
 use kusanagi_site::{Channel, Invite, Offer, Peer, Roster, Site, Standing};
 use kusanagi_waypoint::{Conditional as _, Locator, Place, TtlOutcome};
 
@@ -151,6 +151,7 @@ pub(crate) fn invite(
         standing: Standing::Root,
         cadence: habit.cadence,
         retention: habit.retention,
+        opened: period(now.as_unix_seconds()),
         peer: None,
     })?;
 
@@ -235,6 +236,7 @@ pub(crate) fn join(
         // The inviter's choice, not this end's: retention decides the key
         // schedule, and a channel is one schedule.
         retention: announcement.retention,
+        opened: period(now.as_unix_seconds()),
         peer: Some(Peer {
             key: announcement.inviter,
             ward: announcement.ward,
@@ -277,8 +279,9 @@ pub(crate) fn greet(
         // written by somebody this endpoint has not met, so there is no ward for
         // either end to agree on except the one the channel secret produces.
         bin: rendezvous(&channel.secret),
+        opened: channel.opened,
     };
-    let Some(said) = peek(place, &introduction, INTRODUCTION)? else {
+    let Some(said) = peek(place, &introduction, name, INTRODUCTION)? else {
         return Err(Complaint::NoPeerYet {
             name: name.to_owned(),
         });
@@ -337,13 +340,6 @@ pub(crate) fn revoke(site: &Site, name: &str) -> Result<Outcome, Complaint> {
     })
 }
 
-/// Removes one channel from this endpoint and tells nobody.
-///
-/// Revoking and forgetting are not two spellings of one act. Revoking is a
-/// statement about the world that survives here and is enforced on every later
-/// read; forgetting is this machine dropping a key, which the peer cannot
-/// observe and the host cannot be asked to help with. Doing both from one verb
-/// would mean a caller who wanted one always got the other.
 /// Replaces one group's roster, after checking every member is a channel here.
 ///
 /// **Checked now rather than at fan-out time**, because a roster naming a
@@ -372,6 +368,13 @@ pub(crate) fn group(site: &Site, name: &str, members: &[String]) -> Result<Outco
     })
 }
 
+/// Removes one channel from this endpoint and tells nobody.
+///
+/// Revoking and forgetting are not two spellings of one act. Revoking is a
+/// statement about the world that survives here and is enforced on every later
+/// read; forgetting is this machine dropping a key, which the peer cannot
+/// observe and the host cannot be asked to help with. Doing both from one verb
+/// would mean a caller who wanted one always got the other.
 pub(crate) fn forget(site: &Site, name: &str) -> Result<Outcome, Complaint> {
     let channel = site.channel(name)?;
     site.forget(name)?;

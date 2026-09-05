@@ -125,6 +125,7 @@ fn what_a_site_keeps_is_a_closed_list() {
                 "identity" => "identity".to_owned(),
                 "channels" => "channels".to_owned(),
                 "cairns" => "cairns".to_owned(),
+                "sweeps" => "sweeps".to_owned(),
                 "revoked" => "revoked".to_owned(),
                 other => format!("unexpected: {other}"),
             })

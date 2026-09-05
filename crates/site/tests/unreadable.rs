@@ -70,6 +70,7 @@ fn nothing_a_site_writes_is_readable_by_anybody_else() {
     site.keep(&Channel {
         cadence: kusanagi_site::Cadence::OnDemand,
         retention: kusanagi_site::Retention::Keep,
+        opened: kusanagi_kernel::Period::from_count(0),
         name: "peer".to_owned(),
         secret: Secret::from_bytes([7; 32]),
         root: author.handle(),

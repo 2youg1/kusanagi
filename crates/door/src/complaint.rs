@@ -174,6 +174,20 @@ pub enum Complaint {
         /// Which channel.
         name: String,
     },
+    /// One period of a ward holds more objects than one sweep reads.
+    ///
+    /// A denial rather than a leak: the reader still asked for the whole bin
+    /// and named nothing in it. A crowded ward, or a host filling it on purpose,
+    /// costs the reader this refusal and never an address.
+    #[error("period {period} of ward {ward} holds {objects} objects, more than one sweep reads")]
+    WardOverfull {
+        /// Which ward, as its four hex digits.
+        ward: String,
+        /// Which period, as its sixteen hex digits.
+        period: String,
+        /// How many objects the host listed there.
+        objects: usize,
+    },
     /// A slot verb was run on a channel that has no slots.
     #[error("`{name}` writes when it is asked to, so it has no slot to fill")]
     NotSlotted {
@@ -338,6 +352,7 @@ impl Complaint {
             Self::NoInvitation => "kusanagi.no_invitation",
             Self::Burned(burned) => burned.code(),
             Self::NeedsCairn { .. } => "kusanagi.needs_cairn",
+            Self::WardOverfull { .. } => "kusanagi.ward_overfull",
             Self::NotSlotted { .. } => "kusanagi.not_slotted",
             Self::BadRecovery => "kusanagi.bad_recovery_key",
             Self::ForeignRecord { .. } => "site.foreign_record",

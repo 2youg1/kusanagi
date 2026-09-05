@@ -69,7 +69,7 @@ fn a_keeping_channel_leaves_every_drop_where_it_was() {
 }
 
 #[test]
-fn what_the_peer_has_acknowledged_stops_being_on_the_host() {
+fn what_the_peer_has_acknowledged_stays_on_the_host_and_opens_for_nobody() {
     let (alice, bob, host) = common::pair_with("release-drops", releasing());
     for round in 0..3 {
         alice.send("bob", &format!("round {round}"));
@@ -82,14 +82,19 @@ fn what_the_peer_has_acknowledged_stops_being_on_the_host() {
     assert_eq!(heard["segments"].as_array().unwrap().len(), 3);
     bob.send("alice", "got all three");
 
-    // Alice reads bob and learns it. That is when the release happens, because
-    // that is the moment she has the fact — no extra request pays for it.
+    // Alice reads bob and learns it. That is when the release happens: the keys
+    // that opened those three drops are destroyed here. **The bytes stay where
+    // they are.** A reader no longer names an address to the host, and a
+    // `DELETE` would (D-20); removing them is the host's lifetime on the bin.
+    // What a release guarantees is that nobody can open them, which is the next
+    // test, and that this endpoint cannot be made to show them again, which is
+    // the one after it.
     read_all(&alice, "bob");
 
     assert_eq!(
         drops(&host),
-        before - 3 + 1,
-        "the three drops bob acknowledged should be gone, and bob's own should be there"
+        before + 1,
+        "a release must not delete: the three drops and bob's own should all be there"
     );
 }
 

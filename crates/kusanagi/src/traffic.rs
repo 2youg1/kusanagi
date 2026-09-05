@@ -168,11 +168,13 @@ pub(crate) fn appended(
         &channel,
         &me.verifying_key(),
         peer_ward(&channel, name)?,
+        now,
     )?;
     // Only the head is needed, so this walk owes the caller no segment and may
-    // resume from the cairn: sending the thousandth segment asks the host for one
-    // address rather than announcing the previous nine hundred and ninety-nine.
-    let walked = track(site, name, &place, &mine, Reach::Head)?;
+    // resume from the cairn: sending the thousandth segment sweeps the bins
+    // since the last send rather than the whole history. The ward it sweeps is
+    // the peer's, which the host already saw this endpoint write into.
+    let walked = track(site, name, &place, &mine, Reach::Head, now)?;
 
     // The height still comes from the waypoint rather than from a local count:
     // the cairn moves the walk's starting point and proves the join to it, so a
@@ -203,14 +205,20 @@ pub(crate) fn appended(
         Fit::Veil,
         &segment.to_canonical_bytes(),
     )?;
-    match Waypoint::put_if_absent(&place, &mine.at(address), &sealed)? {
+    let object = mine.at(address);
+    match Waypoint::put_if_absent(&place, &object, &sealed)? {
         // The host took it at an address that was empty, so this endpoint knows
         // the segment is there without reading it back. Recording that now is
         // what keeps the next send at one request: a position left one behind
-        // the stream would make every send rediscover what it had just written.
+        // the stream would make every send rediscover what it had just written,
+        // and a bin recorded without the object just added would make the next
+        // sweep take the whole bin to find one drop this endpoint wrote itself.
         PutOutcome::Stored => {
             if let Some(cairn) = walked.extended(&segment)? {
                 site.mark(name, &cairn)?;
+            }
+            if let Some(listed) = walked.listed {
+                site.sweep_to(name, &me.handle(), &listed.including(object))?;
             }
         }
         PutOutcome::AlreadyPresent => {
@@ -259,37 +267,35 @@ pub(crate) fn read(
     peer.standing
         .permits(&channel.root, &peer.handle(), Ability::Send, now, &revoked)?;
 
-    let theirs = Lane::open(site, name, &channel, &peer.key, ward(site)?)?;
-    let walked = track(site, name, &place, &theirs, reach(after))?;
+    let theirs = Lane::open(site, name, &channel, &peer.key, ward(site)?, now)?;
+    let walked = track(site, name, &place, &theirs, reach(after), now)?;
     let answer = reported(name, &peer.handle().to_string(), &walked, after);
 
     // Only now, once the caller holds what was read: settling is the step that
     // destroys it.
     if channel.retention.releases() {
-        settle(site, name, &channel, &place, &walked, &theirs, me)?;
+        settle(site, name, &channel, &walked, &theirs, me, now)?;
     }
     Ok(answer)
 }
 
 /// Acts on what a read just learned, on a channel that releases.
 ///
-/// Two halves of one promise, and they are here together because doing either
-/// alone would be a claim this endpoint could not keep. **Deletion is the honest
-/// host's half**: the peer said how much of this endpoint's stream they had
-/// verified, so those drops are removed and an honest host now holds no history.
-/// **The ratchet is the dishonest host's half**: the keys that opened them are
-/// destroyed, so a host that quietly kept a copy holds bytes nobody can open.
-///
-/// A failure to delete is reported, because an endpoint that believes its
-/// history is gone and is wrong is an endpoint making a false promise.
+/// **The ratchet is the whole of it.** The peer said how much of this endpoint's
+/// stream they had verified, so the keys that opened those drops are destroyed
+/// here, and a host that kept a copy holds bytes nobody can open. This endpoint
+/// no longer deletes them: a `DELETE` names an address, which is the one thing
+/// a read stopped doing (D-20), and a drop is filed in the period it was
+/// written, which its author does not keep. Removing the bytes is the host's
+/// hygiene — a lifetime on a bin — and `ARCHITECTURE.md` §3 says so.
 fn settle(
     site: &Site,
     name: &str,
     channel: &Channel,
-    place: &impl Waypoint,
     walked: &Walked,
     theirs: &Lane,
     me: &Signer,
+    now: Instant,
 ) -> Result<(), Complaint> {
     // The peer repeats their acknowledgement in every segment, so the highest
     // one in this walk is the current answer and an older segment cannot undo a
@@ -308,10 +314,8 @@ fn settle(
             channel,
             &me.verifying_key(),
             peer_ward(channel, name)?,
+            now,
         )?;
-        for index in ours.keys.floor()..acknowledged {
-            place.delete(&ours.holding(index))?;
-        }
         ours.burn_below(site, name, acknowledged.saturating_sub(1))?;
     }
 
@@ -359,6 +363,10 @@ fn reported(name: &str, author: &str, walked: &Walked, after: Option<u64>) -> Ou
 
 /// Reports this endpoint's own stream, verified the same way a peer's is.
 ///
+/// It sweeps the peer's ward, because that is where this endpoint's segments are
+/// filed; the host already saw this endpoint write there, so it learns nothing
+/// new from seeing it read there.
+///
 /// No standing is checked, and that is a statement about where enforcement can
 /// live rather than a relaxation. These segments sit at addresses derived from a
 /// secret this endpoint holds and carry signatures this endpoint made; refusing
@@ -383,7 +391,8 @@ fn mine(
         channel,
         &me.verifying_key(),
         peer_ward(channel, name)?,
+        now,
     )?;
-    let walked = track(site, name, &place, &ours, reach(after))?;
+    let walked = track(site, name, &place, &ours, reach(after), now)?;
     Ok(reported(name, &me.handle().to_string(), &walked, after))
 }
