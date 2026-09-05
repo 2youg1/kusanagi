@@ -14,12 +14,14 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 
 **A change is finished when `just check` is green.** "I finished it" is a claim; a green run is the evidence.
 
+**Inner loop, before closing:** `cargo nextest run --workspace -E 'not package(kusanagi-grant)'` (≈30 s, the same assertions as `cargo test` — there are no doctests anywhere to miss) plus `cargo fmt` and full-workspace clippy `-D warnings` at every step, not at closing. `grant`'s two proptests take ~2 min and run only when `grant` changed or at closing. One tool call lasts 150 s: what fits in one call runs in the foreground; only release builds, the full adversary suite and `grant`'s proptests go to the background.
+
 | Command | What it does |
 |---|---|
 | `just check` | the closing condition for every change |
 | `just fmt` | apply rustfmt |
 | `just lint` | clippy alone |
-| `just test` | tests alone |
+| `just test` | tests alone (`cargo test`; the closing run, not the inner loop) |
 | `just deny` | licences, advisories and banned crates, against `deny.toml` |
 | `just demo` | two identities, one host, one verifiable exchange, in a throwaway directory |
 | `just budget` | line counts against the budget in `ARCHITECTURE.md` §5 |
@@ -80,6 +82,12 @@ Violating any of these turns the build red.
 | Pull requests, issues, review comments | **your own language.** A parallel translation is welcome, not required |
 
 Comments are a failure signal by default. Four kinds earn their place: the MPL notice, public interface documentation, a warning about consequences, and a statement of intent the code cannot carry. In rustdoc, write what the signature cannot say — invariants, failure modes, call ordering.
+
+| Implementation language | Where it may go |
+|---|---|
+| Rust | all domain logic, every crate |
+| Haskell | black-box claims in `adversary/` only — no linking, no FFI, one subprocess and two streams; `-Werror` is on |
+| Zig | the `glass/` UI state machine only — zero domain rules; every action is one `fx.spawn` of a CLI verb |
 
 ## Where the authorities are
 
