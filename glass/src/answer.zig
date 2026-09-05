@@ -83,6 +83,9 @@ pub fn apply(m: *Model, exit: native_sdk.EffectExit) void {
     const answer = object(parsed) orelse return failed(m, "glass.unreadable", m.t.err_not_object, m.t.rec_terminal);
     if (exit.code != 0) {
         m.status.clear();
+        // The banner on the thread already says nobody has joined; a poll
+        // that confirms it is not news.
+        if (std.mem.eql(u8, str(answer, "code"), "kusanagi.no_peer_yet")) return;
         m.status.code.set(str(answer, "code"));
         m.status.error_text.set(str(answer, "error"));
         m.status.recover.set(str(answer, "recover"));

@@ -125,6 +125,7 @@ const table = [_]Entry{
     .{ "mint", "Mint", "生成" },
     .{ "invitation_hint", "The invitation. One line, one use, a bearer credential: it carries the channel secret, so hand it over the way you would a key.", "邀请。一行、一次性、持有即有效:它携带通道密钥,交出去时要像交钥匙一样。" },
     .{ "copy_invitation", "Copy the invitation", "复制邀请" },
+    .{ "clipboard_note", "Copied. The clipboard is a log — Windows keeps a history of it and may sync it — so this window clears it again a minute from now, unless you have copied something else by then.", "已复制。剪贴板是一本日志——系统会记下历史,还可能同步到别处——所以一分钟后这里会替你清掉它,除非你已经复制了别的东西。" },
     .{ "done", "Done", "完成" },
     .{ "accept_invitation", "Accept an invitation", "接受邀请" },
     .{ "invitation", "Invitation", "邀请" },

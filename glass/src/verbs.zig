@@ -43,6 +43,9 @@ pub const Key = enum(u64) {
     language_file,
     poll_timer,
     slot_timer,
+    scrub_timer,
+    clipboard_read,
+    clipboard_scrub,
 };
 
 pub fn key(k: Key) u64 {

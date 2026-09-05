@@ -86,6 +86,9 @@ pub const Model = struct {
     check: Text(8) = .{},
     check_for: Text(name_cap) = .{},
 
+    // what this window last put on the clipboard, until it takes it back
+    copied: Text(rows.line_cap) = .{},
+
     invite: sheets.Invite = .{},
     join: sheets.Join = .{},
     backup: sheets.Backup = .{},
@@ -105,7 +108,7 @@ pub const Model = struct {
         "status",      "output_cut", "scratch",         "name_scratch",  "site",
         "at_rest",     "proxy",      "binary",          "handle",        "check",
         "check_for",   "delivered",  "delivered_count", "channelRows",   "onThread",
-        "canSend",     "currentWaypoint", "myHeight",     "theirHeight",
+        "canSend",     "currentWaypoint", "myHeight",     "theirHeight",   "copied",
     };
 
     /// The one rule about language: Chinese needs a face that draws it.
@@ -355,6 +358,11 @@ pub const Model = struct {
     pub fn findingRows(m: *const Model) []const CheckRow {
         return m.doctor.findings[0..m.doctor.finding_count];
     }
+    /// Whether something this window copied is still on the clipboard.
+    pub fn clipboardHeld(m: *const Model) bool {
+        return !m.copied.isEmpty();
+    }
+
     pub fn sheetInvite(m: *const Model) bool {
         return m.sheet == .invite;
     }

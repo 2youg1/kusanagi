@@ -72,6 +72,18 @@
 | M3 | 64 KiB 与 100 KiB 正文：要么带码拒，要么逐字节回读——**永不静默截断** | 某层截断 | ? |
 | M4 | 整条轨迹所有输出里，邀请秘密只在 `invited` 出现一次 | 某个报告回显了秘密 | ? |
 
+### 对端，对着窗口（H8，D-18）— `Glass.hs`
+
+窗口把对端字节渲染成 markdown；D-18 裁定渲染永不引发 I/O。这里不信「按构造如此」：本机监听端口数连接、automation server 报告画了什么、会话后读回磁盘与剪贴板。窗口未构建（`native build -Dautomation=true -Dtrace=off`）或 `native` 不在 PATH 时整组答「skipped」——CI 从不构建 GUI（Roadmap 事实 21），这是出货机器的门，不是合并机器的门。
+
+| # | 性质 | 会让它红的改动 | 今日 |
+|---|---|---|---|
+| W1 | 正文含对端命名的远程图片与链接 → 监听端口**零连接**，图片只画 alt 文本 | `<markdown>` 给了 `images` | 绿 |
+| W2 | `http:`/`javascript:`/`file:` 三种链接的控件都**没有 `press` 动作**；按下也零连接、无 `error event` | 绑了 `on-link` | 绿 |
+| W3 | OSC 52 / CSI 2J / 裸 CR → 控件树里无 ESC、无 CR，正文以十六进制显示 | glass 自己解析 payload 或 CLI 的 `Carried::of` 放宽 | 绿 |
+| W4 | 会话（含在窗口里铸一张邀请）后，站点之外的盘上只有清单里的文件（两个偏好、`windows.zon`、有 trace 时的 `native-sdk.jsonl`），且 grep 不到正文、`kusanagi2:`、宿主路径 | 窗口或 SDK 多写一个文件 | 绿；查出 SDK 默认写每帧事件日志（使用时间线），发布构建改 `-Dtrace=off` |
+| W5 | 铸出邀请后剪贴板仍是哨兵；按下「复制邀请」后才是 `kusanagi2:…`，且窗口说明剪贴板是日志 | 自动复制，或复制不说明 | 绿；查出复制后**无 B4 警告**，已加说明 + 60 s 回收（`scrub`） |
+
 ### 群组内鬼与前对端 — `Insider.hs`
 
 | # | 性质 | 会让它红的改动 | 今日 |

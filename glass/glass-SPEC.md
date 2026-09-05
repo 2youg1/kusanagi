@@ -27,7 +27,8 @@
 
 ## 2 验收标准
 
-- `native markup check src/app.native --strict` 零告警；`native test` 绿；`native build -Dautomation=true` 绿。
+- `native markup check src/app.native --strict` 零告警；`native test` 绿；`native build -Dautomation=true -Dtrace=off` 绿。
+- H8（`adversary/src/Kusanagi/Glass.hs`，驱动 automation server）五格全绿：对端命名的图片零连接；三种链接（`http:`/`javascript:`/`file:`）的控件都没有 `press`；终端字节以十六进制显示且控件树里没有 ESC/CR；会话后站点之外的盘上只有清单里的文件且 grep 不到对端内容；剪贴板只在按下复制后才变，且窗口说明剪贴板是什么。
 - 主题测试：调色板里没有任何一个通道落在 `< 8` 或 `> 250`（纯黑纯白被禁），明暗两套各自通过。
 - G4 测试：单位转角总转向角 `= π/2 ± 1e-4`；两端曲率为零；关于 45° 线对称；伸出量等于调用方给的值。
 - 布局测试：把整棵视图排一遍，右格的 x 与宽等于 `plate.paneFrame` 所说，`plate.frame` 落在右格之内，
@@ -270,6 +271,9 @@ streamed: EffectFileResult, preferred: EffectFileResult
 - 应答被截断（`output_truncated`）：状态行提示「history too long to show whole」，已解析部分照常。
 - 通道 `peer == null`：对话页显示「waiting for them to join」，撰写框禁用。
 - `refused` / `peer_refused` 非空：rail 行带 void 标记，对话页说明码。
+- 剪贴板是一本日志（B4：Windows 有剪贴板历史与云同步，任何进程都能读）：每个复制按钮写入后记下写了什么（`m.copied`），起一枚 60 s 一次性定时器（`scrub`）；到点先**读回**剪贴板（`scrubbing`），仍是本窗口写的那段才写空串清掉——人后来复制的东西一律不碰。复制按钮下方在 `copied` 非空期间显示 `clipboard_note`。
+- 盘上足迹：SDK 默认把每帧事件写进 `%LOCALAPPDATA%\dev.kusanagi.glass\Logs
+ative-sdk.jsonl`（一次会话约 450 KB，无对端内容，但是一份使用时间线）；发布构建带 `-Dtrace=off`，之后站点之外只剩 `State\windows.zon`（窗口几何）与两个偏好文件。H8 的清单断言以此为准，多一个文件即红。
 
 ## 12 错误处理
 
@@ -298,7 +302,7 @@ Native SDK 0.10.1（Zig 0.16）；`std.json` 解析。字面：Geist Mono（SIL 
 | 设置 | `Ctrl+,` 开；身份行同；handle 全文、端点事实、Look、三个维护动作、import 说明都在这一张 sheet | rail 二页制的替代，少一个枚举少两臂消息 |
 | 面板内 | header padding 20 · 正文列 padding 24 · 撰写框高 64 | 文字离面板边至少 24 |
 | 分组 | 组内 8 · 换人 24 | SDK 指南 8/32 的密度版 |
-| 其他 | 轮询 20 s;ring 128 条/流;正文 3 584 字节;备份写到 `<home>/kusanagi-backup-<unix ms>.ksnb` | 同上一版 |
+| 其他 | 轮询 20 s;ring 128 条/流;正文 3 584 字节;备份写到 `<home>/kusanagi-backup-<unix ms>.ksnb`;剪贴板回收 60 s(`scrub_ms`,与密码管理器同量级) | 同上一版 |
 | 字面 | 偏好文件 `<home>/kusanagi-glass.font`;探测缓冲 24 MiB(= `runtime/canvas_limits.zig` 的每枚上限);判定字 U+4E2D「中」 | 与 SDK 同一个数,SDK 改了这里也得改 |
 | 语言 | Windows 主语言 id `0x04` = 中文;其他平台 `LANG`/`LC_ALL` 前缀 `zh` | 只推断中/英两档,没有第三种表 |
 
@@ -315,7 +319,7 @@ Native SDK 0.10.1（Zig 0.16）；`std.json` 解析。字面：Geist Mono（SIL 
 (4) Complaint 落到状态行；(5) 布局：面板矩形在第二格内、内容列在面板内；(6) 群组面板、名册、体检、
 备份四个状态各建一次树(D1 的回归);(7) 身份行开设置 sheet,Look 在其中改写 `appearanceFor`;
 (8) 语言行随 `has_cjk` 增减,切到 `zh` 后 rail 的身份行文案换成中文,`has_cjk = false` 时 `set_language:zh` 仍是 `en`;
-(9) `ttcf` 流的判语是 SDK 的 collection 原话、超限流判体积、可用流写偏好文件且内容是那条路径。`strings.zig`:两栏全非空。
+(9) `ttcf` 流的判语是 SDK 的 collection 原话、超限流判体积、可用流写偏好文件且内容是那条路径;(10) 复制后剪贴板写入 + 一次性定时器 + 说明文案;定时器到点读回仍是原文则写空,不是则不写、文案消失。`strings.zig`:两栏全非空。
 `theme.zig`：明暗两套逐通道 ∈ [8, 250]。`plate.zig`：转向角、
 端点曲率、对称、伸出量、`build` 恰好三条命令。`order.zig`：既有四条。约束：每文件 < 400 行。
 

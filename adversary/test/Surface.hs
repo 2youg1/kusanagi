@@ -8,14 +8,17 @@
 -- Grouped by where the adversary stands, so that a red line says who it is
 -- that learned something. Every test is a relation in one throwaway world; the
 -- names are the sentences a reviewer is meant to be able to disagree with.
-module Surface (surface) where
+{-# LANGUAGE LambdaCase #-}
 
-import Test.Tasty (TestTree, testGroup)
+module Surface (surface, window) where
+
+import Test.Tasty (DependencyType (AllFinish), TestTree, dependentTestGroup, testGroup)
 import Test.Tasty.HUnit (assertBool, testCase)
 
 import Kusanagi.Custody qualified as Custody
 import Kusanagi.Door (Door)
 import Kusanagi.Forging qualified as Forging
+import Kusanagi.Glass qualified as Glass
 import Kusanagi.Ground (withGround)
 import Kusanagi.Insider qualified as Insider
 import Kusanagi.Leakage qualified as Leakage
@@ -105,5 +108,30 @@ surface door =
         , cell "cannot climb out of the directory" Scanner.traversalTouchesNothing
         ]
     ]
+  where
+    cell name act = testCase name (withGround (act door) >>= either (`assertBool` False) pure)
+
+-- | The window against a rogue peer (H8), when the window has been built.
+--
+-- CI never builds the GUI, so this group answers "skipped" rather than red
+-- where there is nothing to drive; on the machine that ships it is a gate.
+window :: Door -> IO TestTree
+window door =
+  Glass.available >>= \case
+    Nothing ->
+      pure (testCase "skipped: the window is not built (`native build -Dautomation=true -Dtrace=off` in glass/)" (pure ()))
+    Just _ ->
+      -- One window at a time: the automation server and the process are
+      -- singletons, so the cells run one after another whatever `-N` says.
+      pure $
+        dependentTestGroup
+          "the window, rendering a peer"
+          AllFinish
+          [ cell "never fetches an image the peer named" Glass.aRemoteImageIsNeverFetched
+          , cell "binds nothing to a link, javascript: and file: included" Glass.aLinkCannotBePressed
+          , cell "shows terminal bytes as hexadecimal" Glass.controlBytesAreShownAsHex
+          , cell "writes nothing of the peer outside the site" Glass.theDiskHoldsNoPeer
+          , cell "writes the clipboard only by hand, and says what the clipboard is" Glass.theClipboardWaitsForAHand
+          ]
   where
     cell name act = testCase name (withGround (act door) >>= either (`assertBool` False) pure)

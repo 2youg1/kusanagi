@@ -68,6 +68,7 @@
               </row>
               <text><span mono="true">{handleBlock}</span></text>
               <text size="sm" foreground="text_muted" wrap="true">{t.handle_hint}</text>
+              <if test="{clipboardHeld}"><text size="sm" foreground="text_muted" wrap="true">{t.clipboard_note}</text></if>
             </column>
           </card>
           <card padding="14">
@@ -146,6 +147,7 @@
         <text size="sm" foreground="text_muted" wrap="true">{t.invitation_hint}</text>
         <text><span mono="true">{invite.lineText}</span></text>
         <button size="sm" variant="secondary" icon="copy" on-press="copy_invite">{t.copy_invitation}</button>
+        <if test="{clipboardHeld}"><text size="sm" foreground="text_muted" wrap="true">{t.clipboard_note}</text></if>
       </column>
     </card>
     <use template="check-card"/>
@@ -200,6 +202,7 @@
               <text size="sm" foreground="text_muted" wrap="true" text-alignment="center">{t.recovery_hint}</text>
               <text size="heading" label="{t.recovery_key}"><span mono="true">{backup.recoveryKey}</span></text>
               <button size="sm" variant="secondary" icon="copy" on-press="copy_recovery">{t.copy_key}</button>
+              <if test="{clipboardHeld}"><text size="sm" foreground="text_muted" wrap="true">{t.clipboard_note}</text></if>
             </column>
           </card>
           <if test="{backup.written}">

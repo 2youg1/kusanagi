@@ -60,7 +60,7 @@ import Kusanagi.Naming qualified as Naming
 import Kusanagi.Overheard qualified as Overheard
 import Kusanagi.Regression (coherent, render, sequenced)
 import Kusanagi.Tempo qualified as Tempo
-import Surface (surface)
+import Surface (surface, window)
 
 main :: IO ()
 main = do
@@ -68,10 +68,12 @@ main = do
   case found of
     Nothing ->
       putStrLn "skipped: no kusanagi binary to drive. Run `just adversary`, or set KUSANAGI_BIN."
-    Just door -> defaultMain (properties door)
+    Just door -> do
+      glass <- window door
+      defaultMain (properties door glass)
 
-properties :: Door -> TestTree
-properties door =
+properties :: Door -> TestTree -> TestTree
+properties door glass =
   testGroup
     "adversary"
     [ testCase "the committed Rust test is what this adversary renders" deliverable
@@ -159,6 +161,7 @@ properties door =
             (measured (Tempo.volumeSaysNothingOnASlottedChannel door))
         ]
     , surface door
+    , glass
     ]
 
 -- | Runs one command-line question against a throwaway world.

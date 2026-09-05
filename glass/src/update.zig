@@ -75,14 +75,25 @@ pub const Msg = union(enum) {
     filed: native_sdk.EffectFileResult,
     poll: native_sdk.EffectTimer,
     slot: native_sdk.EffectTimer,
+    scrub: native_sdk.EffectTimer,
+    scrubbing: native_sdk.EffectClipboardResult,
 
-    pub const view_unbound = .{ "appearance", "exited", "filed", "poll", "slot", "dropped", "streamed", "preferred" };
+    pub const view_unbound = .{ "appearance", "exited", "filed", "poll", "slot", "scrub", "scrubbing", "dropped", "streamed", "preferred" };
 };
 
 pub const Effects = native_sdk.Effects(Msg);
 
 /// How often an open on-demand thread asks the host for one address.
 pub const poll_ms: u64 = 20_000;
+
+/// How long something this window copied may stay on the clipboard.
+///
+/// The clipboard is a log: Windows keeps a history of it and offers to sync
+/// it across devices, and every process on the machine may read it. An
+/// invitation carries a channel key, so it is taken back once the person has
+/// had a minute to paste it — and only if it is still what was copied, so a
+/// later copy of theirs is never touched.
+pub const scrub_ms: u64 = 60_000;
 
 /// Boot: this machine's report, this endpoint's handle, and the channel list.
 pub fn boot(m: *Model, fx: *Effects) void {
@@ -118,7 +129,7 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
             m.face.saved = result.outcome == .ok;
             if (!m.face.saved) m.face.verdict.set(m.t.face_unsaved);
         },
-        .copy_handle => copy(fx, m.handle.slice()),
+        .copy_handle => copy(m, fx, m.handle.slice()),
         .select => |slot| open(m, fx, slot),
         .select_group => |slot| openGroup(m, fx, slot),
         .refresh => {
@@ -147,14 +158,14 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
         .invite_every_edit => |edit| m.invite.every.apply(edit),
         .toggle_invite_release => m.invite.release = !m.invite.release,
         .mint => mint(m, fx),
-        .copy_invite => copy(fx, m.invite.lineText()),
-        .copy_check => copy(fx, m.check.slice()),
+        .copy_invite => copy(m, fx, m.invite.lineText()),
+        .copy_check => copy(m, fx, m.check.slice()),
         .join_name_edit => |edit| m.join.name.apply(edit),
         .join_text_edit => |edit| m.join.invitation.apply(edit),
         .toggle_join_release => m.join.release = !m.join.release,
         .accept => accept(m, fx),
         .export_now => exportSite(m, fx),
-        .copy_recovery => copy(fx, m.backup.recoveryKey()),
+        .copy_recovery => copy(m, fx, m.backup.recoveryKey()),
         .roster_name_edit => |edit| m.roster.name.apply(edit),
         .toggle_member => |slot| m.roster.toggle(slot, m.channel_count),
         .save_roster => saveRoster(m, fx),
@@ -178,6 +189,16 @@ pub fn update(m: *Model, msg: Msg, fx: *Effects) void {
         .poll => |timer| {
             if (timer.outcome != .fired or !m.onThread() or m.current().slotted()) return;
             verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch);
+        },
+        .scrub => |timer| {
+            if (timer.outcome != .fired or m.copied.isEmpty()) return;
+            fx.readClipboard(.{ .key = verbs.key(.clipboard_read), .on_result = Effects.clipboardMsg(.scrubbing) });
+        },
+        .scrubbing => |result| {
+            defer m.copied.clear();
+            if (result.op != .read or result.outcome != .ok) return;
+            if (!std.mem.eql(u8, result.text, m.copied.slice())) return;
+            fx.writeClipboard(.{ .key = verbs.key(.clipboard_scrub), .text = "" });
         },
         .slot => |timer| {
             if (timer.outcome != .fired or !m.onThread() or !m.current().slotted()) return;
@@ -266,10 +287,13 @@ fn openGroup(m: *Model, fx: *Effects, slot: usize) void {
 }
 
 fn fetch(m: *Model, fx: *Effects) void {
-    // Nobody has joined: there is no stream to read, and the banner says so.
-    // Asking would only put `no_peer_yet` in the status line every poll.
-    if (!m.current().hasPeer()) return;
+    // Nobody has joined yet, as far as this window knows. The only way to
+    // learn otherwise is to read: the first read after they join is what
+    // meets them (the CLI greets), so it is asked anyway, and `no_peer_yet`
+    // is the one complaint the status line keeps quiet about — the banner
+    // already says it. There is nothing of ours to read back until then.
     verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch);
+    if (!m.current().hasPeer()) return;
     verbs.read(fx, m, .read_mine, m.currentName(), m.mine.height, &m.name_scratch);
 }
 
@@ -336,9 +360,11 @@ fn examine(m: *Model, fx: *Effects) void {
     verbs.doctor(fx, m, m.doctor.waypointText());
 }
 
-fn copy(fx: *Effects, text: []const u8) void {
+fn copy(m: *Model, fx: *Effects, text: []const u8) void {
     if (text.len == 0) return;
     fx.writeClipboard(.{ .key = verbs.key(.clipboard), .text = text });
+    m.copied.set(text);
+    fx.startTimer(.{ .key = verbs.key(.scrub_timer), .interval_ms = scrub_ms, .mode = .one_shot, .on_fire = Effects.timerMsg(.scrub) });
 }
 
 fn filed(m: *Model, result: native_sdk.EffectFileResult) void {
@@ -356,6 +382,9 @@ fn exited(m: *Model, fx: *Effects, exit: native_sdk.EffectExit) void {
     if (exit.reason != .exited or exit.code != 0) return;
     switch (key) {
         .channels => if (m.screen == .welcome and m.channel_count > 0) open(m, fx, 0),
+        // A read that succeeded on a row still marked as waiting has just met
+        // the peer; the row learns that from the channel list.
+        .read_theirs => if (m.onThread() and !m.current().hasPeer()) verbs.channels(fx, m),
         .invite, .join, .forget, .group, .revoke => verbs.channels(fx, m),
         .tick => verbs.read(fx, m, .read_theirs, m.currentName(), m.theirs.height, &m.name_scratch),
         .export_ => writeArchive(m, fx),

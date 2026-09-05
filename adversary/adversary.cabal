@@ -29,6 +29,7 @@ library
     Kusanagi.Door
     Kusanagi.Doorway
     Kusanagi.Forging
+    Kusanagi.Glass
     Kusanagi.Ground
     Kusanagi.Insider
     Kusanagi.Keyboard
