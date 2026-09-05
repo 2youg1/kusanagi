@@ -82,6 +82,61 @@ host then sees exits, not homes. On a machine where the proxy must not be
 optional, `just confine` (Windows Firewall, see `confine.md`) lets the binary
 reach the proxy and nothing else.
 
+How large a message may be, and the rungs above a proxy, are on
+[hardened.md](hardened.md).
+
+## 4 Any S3-compatible store
+
+The protocol asks a host for four things: a write that refuses to overwrite
+(`PUT` with `If-None-Match: *`), a read (`GET`), a listing by prefix (`LIST`),
+and expiry by lifetime. Any S3-compatible endpoint that does those four is a
+host. There is no adapter to write. MinIO, Garage, SeaweedFS, Ceph RGW, and
+Storj's S3 gateway are in that set. Content-addressed stores are not: IPFS and
+Filecoin name an object by what it contains, so they cannot store a drop at an
+address this protocol derived.
+
+Point `s3://` at the endpoint and run `kusanagi doctor s3://…` before you rely
+on it. The cell that fails most often is the conditional write; when that cell
+is not `held`, the endpoint cannot be a host.
+
+A store you run yourself moves the observer of the credential edge — the access
+key that links every write one key signed — from a cloud vendor to whoever
+operates your nodes. If those nodes belong to more than one party, listing and
+fetch are still functions of public data (a period and a ward), the same as on
+a bucket.
+
+## 5 Where the bytes live
+
+**On this machine** (`--root`; `%LOCALAPPDATA%\kusanagi` on Windows,
+`$XDG_DATA_HOME/kusanagi` elsewhere). File names under the site are keyed hashes
+of names, not the names. A listing of this directory is a count, not a graph.
+On Windows every file is this account and `SYSTEM`, and sealed with DPAPI, so a
+disk without the password is noise.
+
+| File | What it holds | Who reads it | If it is gone |
+|---|---|---|---|
+| `identity` | signing seed and ward | this account | every channel and room this endpoint is in |
+| `channels/<hash>` | one channel: secret, locator, standing, peer | this account | that channel; only an `export` archive restores it |
+| `rooms/<hash>` | one room: secret, founder, roster height | this account | that room, same as a channel |
+| `groups/<hash>` | which channels a local group name fans out to | this account | the name; the channels remain |
+| `cairns/<hash>/<hash>` | how far one author's stream is verified | this account | the next read walks again; it reports the same result and costs more requests |
+| `sweeps/<hash>/<hash>` | the last listing of one bin | this account | the next read lists from the channel's opening; same result, more listings |
+| `ratchets/<hash>/<hash>` | how far keys on a releasing channel are burned | this account | those drops cannot be opened; nobody else holds this |
+| `outbox/<hash>/<ticket>` | a payload waiting for its slot | this account | that message was never sent |
+| `slots/<hash>` | the last slot filled | this account | the next tick may write a slot already filled |
+| `revoked` | step identifiers cut off here | this account | a cut-off peer can be accepted until you revoke again |
+| `alias` | what this endpoint asks to be called | this account | set it again; peers already met do not see a change |
+| `egress` | whether a missing proxy is a refusal | this account | the site reaches hosts directly again |
+| `sweep` | how wide a read is, and the bin cap | this account | width 4 and cap 256, the build's defaults |
+
+**On the host.** Anyone who can speak the waypoint can fetch these: a box has
+no accounts; a bucket needs the credential.
+
+| Object | What it holds | Who can fetch it | If it expires |
+|---|---|---|---|
+| `period/ward/address` | one sealed drop, always 131 072 bytes | anyone who can list that prefix and GET | an unread message is gone |
+| period 0 (rendezvous) | the offer and the greeting an invitation points at | anyone holding that one-time address | the invitation dies |
+
 ## When something goes wrong
 
 Every failure prints a stable code and the command that recovers. The ones you are

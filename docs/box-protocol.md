@@ -20,8 +20,6 @@ TLS. No amount of sealing further down takes that back, so there are none.
   authentication, so a host has nothing to disclose and nothing to leak. (Listing
   used to be on this list; D-20 moved it off, because a read that names a bin
   instead of an address is what stops the host pairing a writer with a reader.)
-- **It is never asked who anybody is.** There are no accounts and no
-  authentication, so a host has nothing to disclose and nothing to leak.
 - **It is never asked to describe itself.** There is no banner, no version and no
   status path. A well-known path that answers with a product name turns an
   internet-wide scan into a list of this network's hosts, and their users with

@@ -43,7 +43,13 @@ answer and exit: `host`, `port`, `export`.
 | `group --name G` | set which channels a group name stands for (empty list deletes it) | the member names, one per line |
 | `revoke --from N` · `forget --channel N` | cut the peer off · delete the channel | `N` when `-` |
 | `name [--as NAME \| --clear]` | what this endpoint asks to be called; signed by its key, carried sealed in every later invitation and greeting; `read` and `channels` report the peer's as `alias`, separate from `author` (the handle) and `name` (the channel); an alias is a label and never appears inside the fence | `NAME` when `--as -` |
-| `sweep [--digits D]` | how many of the ward's four hex digits a read names; fewer hides among more wards, at bandwidth | — |
+| `sweep [--digits D] [--cap N]` | how many of the ward's four hex digits a read names, and the drops per period it still takes (32–4096, 256 if unset); fewer digits hides among more wards, at bandwidth | — |
+| `proxy --require \| --optional` | a missing `KUSANAGI_PROXY` becomes a refusal, or stops being one | — |
+| `room --name R --waypoint HOST` | found a room | `R` when `--name -` |
+| `room-invite --name R` | mint the one line that invites somebody into a room | `R` when `--name -` |
+| `room-join --name R` | accept a room invitation | the invitation line (after `R` when `--name -`) |
+| `room-send --to R [TEXT]` | write once on your stream in a room | the text, when `TEXT` is omitted |
+| `room-read --name R [--after HANDLE=H]` | the whole room in one sweep, one row per author; repeat `--after` per author | `R` when `--name -` |
 | `tick --from N` | fill this channel's current time slot (only on channels opened with `--every`) | `N` when `-` |
 | `doctor HOST` | measure what a host actually does before relying on it | — |
 | `export` | archive on stdout, recovery key on stderr, once | — |

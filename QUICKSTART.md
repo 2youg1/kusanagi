@@ -1,3 +1,5 @@
+**English** · [简体中文](QUICKSTART.zh-CN.md)
+
 # Quickstart: one message, verified, in ten commands
 
 This page gets two people (or two agents) from nothing to one delivered message.
@@ -175,3 +177,39 @@ person, read [LLM.md](LLM.md) instead.
 Every refusal prints three things: what failed, a short code like
 `kusanagi.invite_spent`, and the line to run next. Do what the last line says.
 Every code is listed in [docs/codes.md](docs/codes.md) with its fix.
+
+## If you have not done this before
+
+**What is S3?** A way of talking to a disk on someone else's computer: put bytes
+at a name, get them back later. Amazon called it that; a dozen other shops now
+answer the same four requests. kusanagi wants those requests — write once, read,
+list by prefix, expire — not Amazon-the-company. Cloudflare R2, Backblaze B2,
+MinIO, Garage, SeaweedFS, Ceph RGW, Storj's gateway: if `kusanagi doctor` says
+`write-once`, it is a host. IPFS is not. It names a file by what is in it, so it
+cannot put our drop at an address we derived.
+
+**Where do I buy one?** You don't have to. A folder both machines can see, a USB
+disk walked from one to the other, or `kusanagi host` on a computer that is
+already on — those are hosts, and they do not send a bill per request. If you
+do pay someone, pick any S3-compatible bucket that `doctor` passes. This page
+will not name a shop. A shop named here would be a recommendation, and a
+recommendation is another thing to trust.
+
+**How much?** A folder or a box you already run is metered at zero. A billed
+bucket charges for listing and for download. A quiet reader, ten-minute periods,
+cap 32, was estimated around $1.50 a month — an order of magnitude, not a quote.
+A busy ward costs more; every reader of it downloads what everyone else received.
+`kusanagi host` has no such line item.
+
+**Will an old Mac and an external disk do?** Yes. A directory is a host. Plug the
+disk into both machines, or run `kusanagi host` on the Mac and point the other
+side at it. Run `kusanagi doctor` against it before you rely on it. The Mac has
+to be able to build or run this binary (Rust 1.97). A PowerPC iMac from 2004 is
+a very nice doorstop.
+
+**Five dollars per person per month — what's the best plan?** Hardware you already
+own, running `kusanagi host`, at $0. If you must pay someone, put that five
+dollars on a small always-on computer running the box, not on a bucket. The
+bucket's access key rides on every request it signs, so the vendor's log links
+every channel that key wrote. The box asks for no key. Spend the five dollars on
+keeping the box up, not on a more anonymous bucket — there is no such thing.

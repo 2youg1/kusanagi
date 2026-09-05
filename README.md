@@ -19,10 +19,11 @@ pbpaste | kusanagi join --name alice
 kusanagi send --to alice "the build is green"
 ```
 
-That is the whole setup. No account, no config file, no server of your own.
+That is the whole setup. No account, no config file, and the server you were about to stand up can stay in the box.
 
 **New here?** [QUICKSTART.md](QUICKSTART.md) walks a person through it in ten
-commands. **Are you a program?** [LLM.md](LLM.md) is the whole interface on one page.
+commands ([简体中文](QUICKSTART.zh-CN.md)). **Are you a program?**
+[LLM.md](LLM.md) is the whole interface on one page.
 
 **Version 0.0.1, pre-alpha. Nobody has audited the cryptography. The wire format
 will change without a migration path.**
@@ -30,10 +31,10 @@ will change without a migration path.**
 ## Contents
 
 - [Install](#install)
+- [What you get](#what-you-get)
 - [Try it in five minutes](#try-it-in-five-minutes)
 - [Commands](#commands)
-- [Using it from a program](#using-it-from-a-program)
-- [Where messages are stored](#where-messages-are-stored)
+- [Where messages wait](#where-messages-wait)
 - [What the host can see](#what-the-host-can-see)
 - [How it works](#how-it-works)
 - [What is not built](#what-is-not-built)
@@ -41,10 +42,20 @@ will change without a migration path.**
 
 ## Install
 
+There is no `curl | sh`. The machine that handed you the binary would be another
+host to trust, which rather misses the point. When a signed tag exists, the
+command belongs here. Until then, build it:
+
 ```bash
 git clone https://github.com/2youg1/kusanagi
 cd kusanagi
 cargo build --release      # produces target/release/kusanagi
+```
+
+```powershell
+git clone https://github.com/2youg1/kusanagi
+cd kusanagi
+cargo build --release      # produces target/release/kusanagi.exe
 ```
 
 You need Rust 1.97 or later and whatever C compiler your Rust toolchain already
@@ -52,13 +63,32 @@ requires — `ring`, which is what supplies TLS, builds a little C during the
 build. On Windows that is the Build Tools the MSVC toolchain needs anyway. There
 is no runtime and nothing to install beside the binary.
 
+## What you get
+
+A **name** you choose, signed by your key. The other side sees it beside your
+handle. Compare the handle and the four-character check code in person; the name is a
+nametag, not a passport. People you met before you set it see no change.
+
+**Several people at once, two ways.** A group is you sending the same text down
+several private conversations — members never learn of each other. A room is one
+conversation they share: you write once, everyone reads it in one sweep. Members learn each other's handles; only the founder can invite; there is no
+kicking people — that is a problem we have not pretended to solve; the ceiling
+is 32.
+
+A **rhythm**, if you ask for one: talking and silence look the same, one object
+every period. A **required proxy**, so a missing Tor setting is a refusal rather
+than a leak. A **message of several pieces**, up to 4 042 720 bytes on a channel
+and 8 085 440 in a room (one piece is still 126 339 bytes). Larger than that
+leaves this bus — [docs/hardened.md](docs/hardened.md).
+
 ## Try it in five minutes
 
 `just demo` runs the whole exchange in a temporary directory: two identities, one
 host, one message verified back to its first byte. To do it by hand,
 [QUICKSTART.md](QUICKSTART.md) is ten commands, each ending in the line you
-should see; [docs/joining.md](docs/joining.md) is the host's side — running one,
-checking one before you rely on it.
+should see. [docs/joining.md](docs/joining.md) is the host's side — running one,
+checking one, what every file is. [docs/hardened.md](docs/hardened.md) is how
+large a message may be, and the rungs above a proxy.
 
 ## Commands
 
@@ -66,161 +96,92 @@ checking one before you rely on it.
 |---|---|
 | `id` | Show this endpoint's handle. Creates an identity on first use. |
 | `invite --name N --waypoint W [--for SECS] [--can send,read] [--every SECS] [--release]` | Open a channel and mint one invitation. |
-| `join --name N [--every SECS] [--release]` | Accept an invitation, read from stdin. It is never an argument: see step 2. |
+| `join --name N [--every SECS] [--release]` | Accept an invitation, read from stdin. It is never an argument. |
 | `send --to N ["text"]` | Append one message. Without the text, the payload is read from stdin. |
-| `read --from N [--after H] [--mine]` | Read the peer's messages, verified from wherever this endpoint last got to. `--after H` returns only what follows height `H`. `--mine` reads your own. |
+| `read --from N [--after H] [--mine]` | Read the peer's messages, verified from wherever this endpoint last got to. |
 | `channels` | List the channels here, what each one still permits, and until when. |
-| `revoke --from N` | Cut a peer off, immediately and permanently. |
-| `forget --channel N` | Drop a channel from this endpoint. |
-| `name [--as NAME \| --clear]` | Say what you want to be called. The name is signed by your key and rides, sealed, inside every invitation and greeting you make from now on; the peer sees it beside your handle and can check it is yours. It is a label, not a proof: the handle and the check code are what you compare in person. Peers met before you set it see no change. |
-| `sweep [--digits 0-4]` | Say how many digits of your ward a read names. `4` is your ward alone; each digit fewer hides your reads among sixteen times as many wards and downloads what all of them received. Without the flag, reports the current width. |
-| `tick --from N` | Fill this channel's current slot and look once. For a channel opened with `--every`; a scheduler outside this program runs it. |
-| `doctor <WAYPOINT>` | Measure what a host actually does, and certify it. `--here` measures this machine instead. |
+| `revoke --from N` · `forget --channel N` | Cut a peer off · drop a channel from this endpoint. |
+| `name [--as NAME \| --clear]` | Say what you want to be called. Signed by your key; a label, not a proof. |
+| `group --name G` | Which channels a local name fans out to. Empty list deletes it. |
+| `send --to-group G` | The same text on each of those channels, one result per member. |
+| `room --name N --waypoint W` | Found a room. |
+| `room-invite` · `room-join` · `room-send` · `room-read` | Invite, join, write once, read the whole room. |
+| `sweep [--digits 0-4] [--cap N]` | How many digits of your ward a read names, and how full a bin it will still take. `4` is your ward alone; each digit fewer hides among sixteen times as many wards. `--cap` is 32–4096 (256 if unset). Without flags, reports both. |
+| `tick --from N` | Fill this channel's current slot. For `--every`; a scheduler outside this program runs it. |
+| `doctor <WAYPOINT>` | Measure what a host actually does. `--here` measures this machine. |
+| `proxy --require \| --optional` | Missing `KUSANAGI_PROXY` becomes a refusal, or stops being one. |
 | `port` | Answer an agent over the Model Context Protocol, on stdin and stdout. |
-| `host --bind ADDR --dir PATH --cap BYTES` | Act as a host for other people's messages, holding at most `--cap` (1 GiB by default). |
-| `export` | Seal this endpoint into one archive on stdout. The key that opens it goes to stderr, **once**. |
-| `import` | Restore an archive into an empty `--root`. The key is the first line of stdin and the archive is the rest. |
+| `host --bind ADDR --dir PATH --cap BYTES` | Act as a host, holding at most `--cap` (1 GiB by default). |
+| `export` · `import` | Seal this endpoint to stdout · restore into an empty `--root`. The key is stderr once, then stdin first line. |
 
-**Two flags change what an endpoint does on the network, and both are per channel.**
-`--every SECS` gives the channel a rhythm: `send` queues the message and `tick` writes
-exactly one drop per period — whatever was queued, or a filler carrying nothing — so
-that an endpoint with everything to say and one with nothing look the same to anybody
-watching. `--release` deletes each drop once the peer says they have read it and burns
-the key that opened it, so an honest host keeps no history and a dishonest one holds
-bytes nobody can open. **`--release` makes this machine the only copy of the
-conversation: run `kusanagi export` and keep the archive.** A scheduler is outside this
-program — `schtasks /create /sc minute /mo 15 /tn kusanagi-bob /tr "kusanagi tick --from bob"`
-on Windows, `cron` or `launchd` elsewhere. **Give the scheduler a random delay inside
-the period** (`/rd 10` on `schtasks`, `RandomizedDelaySec=600` on a systemd timer, a
-`sleep $((RANDOM % 600))` before the command under `cron`): a slot fills at the same
-moment on your link and on the host, and an observer who sees both matches the two
-by that moment. Spread inside the slot, the host still sees one drop per period, and
-the moment says nothing.
+**Two flags change what an endpoint does on the network, both per channel.**
+`--every SECS` gives the channel a rhythm: `send` queues, `tick` writes exactly
+one drop per period — the queued message, or a filler — so talk and silence look
+the same. `--release` deletes each drop once the peer has read it and burns the
+key; **this machine then becomes the only copy: run `export` and keep the
+archive.** A scheduler is outside this program. Give it a random delay inside the
+period (`schtasks /rd`, systemd `RandomizedDelaySec`, cron `sleep $RANDOM`): the
+host still sees one drop per period, and the moment no longer matches your link
+to that drop.
 
 Every command accepts `--json`, and every JSON answer carries `"contract": 1`.
-Every failure carries a stable error code and a command that recovers from it,
-including a mistyped argument. The codes are catalogued in
-[`docs/codes.md`](docs/codes.md), which a test keeps equal to the code.
+Every failure carries a stable error code and a command that recovers from it.
+The codes are in [`docs/codes.md`](docs/codes.md), which a test keeps equal to
+the code.
 
-**`--root` defaults to your own profile directory** — `%LOCALAPPDATA%\kusanagi`
-on Windows, `$XDG_DATA_HOME/kusanagi` elsewhere — rather than to a directory
-relative to wherever the program was started. On Windows every file it writes
-carries an access list naming only you and `SYSTEM`, and is sealed with DPAPI, so
-a copy of the drive without your account's password is noise.
+**`--root` defaults to your profile directory** — `%LOCALAPPDATA%\kusanagi` on
+Windows, `$XDG_DATA_HOME/kusanagi` elsewhere. On Windows every file it writes
+names only you and `SYSTEM`, and is sealed with DPAPI.
 
-**Back it up.** The identity in there is not recoverable from anywhere else, and
-losing it loses every channel this endpoint is in:
+**Back it up.** Lose the disk, lose the conversation. There is no “forgot password”:
 
 ```bash
 kusanagi export > backup.ksnb        # the recovery key is printed to stderr, once
 cat key.txt backup.ksnb | kusanagi --root ~/.restored import
 ```
 
-## Using it from a program
+A command line is public. Any flag that takes a name accepts `-` and reads that
+name from the first line of stdin. Leave the text off `send` and the payload is
+stdin too. [LLM.md](LLM.md) is the rest of the programming interface: `text`
+versus `payload`, `--after`, `--mine`, the fence around peer bytes.
 
-This is the intended way for an agent to use kusanagi. Four things make it
-comfortable.
-
-**Pipe the payload instead of quoting it.** Leave the text off and the payload is
-read from stdin, so quotes, newlines, and non-text data arrive unchanged.
-
-```bash
-jq -c '{task: "review", pull: 42}' < job.json | kusanagi send --to alice
-```
-
-**Keep the channel name off the command line as well.** Any flag that takes a
-name accepts `-`, and then the first line of stdin is the name and the rest is
-what the verb would have read there anyway. A command line is public: any account
-on the machine reads it while the process runs, and the shell keeps a copy. An
-invitation leaks one chance to enter one channel; `--to alice` leaks who is
-talking to whom, on every message.
-
-```bash
-printf 'alice
-' | kusanagi read --from -
-jq -c . < job.json | { printf 'alice
-'; cat; } | kusanagi send --to -
-```
-
-**Read `text`, and fall back to `payload`.** A segment reports exactly one of
-them, and which one is a fact about the bytes: `text` when every byte of the
-payload is text, `payload` in lowercase hex when it is not. Both are lossless,
-because a JSON string carries valid UTF-8 unchanged and nothing else can go in
-one at all. There is no field that quietly substitutes replacement characters.
-
-**Poll with `--after H`.** One request answers both questions: is there anything
-new, and what is it. The reported `height` is the verified head whether or not
-any messages come back.
-
-```bash
-kusanagi --json read --from alice --after 6
-```
-
-**Recover your position with `--mine`.** An agent killed mid-loop learns its own
-height without writing a message to find out.
-
-A poll costs one request to the host, no matter how long the conversation is.
-See [What the host can see](#what-the-host-can-see) for why that is a privacy
-property and not just a speed one.
-
-## Where messages are stored
+## Where messages wait
 
 ```text
 /var/lib/kusanagi                    a directory on this machine
-http://box.example:8963              somebody running `kusanagi host`
+http://box.example:8963              somebody running the host command
 s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 ```
 
 Buckets read credentials from `KUSANAGI_S3_ACCESS_KEY` and
-`KUSANAGI_S3_SECRET_KEY`.
+`KUSANAGI_S3_SECRET_KEY`. Any S3-compatible endpoint that passes `kusanagi
+doctor` is a host — [docs/joining.md](docs/joining.md).
 
-**A bucket belongs to an account, and that account is a relationship edge nobody
-encrypted.** The bucket is billed to somebody, with an email address and a card
-behind it, so a provider watching writes arrive from Bob's address into Alice's
-bucket has "Bob's IP ↔ Alice's account" without doing any cryptanalysis at all.
-And to write there Bob must hold Alice's credentials, which are also the
-credentials to delete the whole bucket. **So prefer a bucket that belongs to
-neither of you, or a third party running `kusanagi host`**, and whichever party
-does not own it should go through a proxy. Splitting permissions by key prefix
-does not help: a prefix is a grouping the host can see, which is the thing
-addresses are derived to deny it.
+**Whoever pays for the bucket left an email address and a card on file.** That is
+a relationship nobody encrypted, and cryptanalysis cannot help you because nobody
+needed any. Prefer a bucket that belongs to neither of you, or a box run
+by a third party. It asks for no key, so it has no such edge. Splitting
+permissions by key prefix does not help — a
+prefix is a grouping the host can see.
 
-**kusanagi does not hide your IP address**, and nothing above claims to: the host
-learns it, and whoever carries your packets reads the DNS query and the TLS server
-name before the connection. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy
-— a Tor client, a VPN, a corporate egress — and every request goes through it. A
-value that is not a proxy is refused rather than ignored.
+**kusanagi does not hide your IP address**, and the paragraph above did not sneak
+in a claim that it does. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy.
+A value that is not a proxy is refused rather than ignored.
 
 ```bash
 export KUSANAGI_PROXY=socks5://127.0.0.1:9050
-```
-
-An environment variable is the easiest thing on a machine to lose — a new shell, a
-scheduler task written in a hurry — and a privacy setting that fails open when it is
-missing is worse than one nobody offered. So the site can record the requirement:
-
-```bash
 kusanagi proxy --require     # from now on, no KUSANAGI_PROXY means no request at all
 ```
 
-Every verb that would reach a host then refuses with `kusanagi.proxy_required`
-instead of going direct; `kusanagi proxy --optional` lifts it.
+Through SOCKS5, every channel leaves on a circuit of its own. Leave the
+credentials out of the value — ones you type pin every channel to one circuit.
 
-Through a SOCKS5 proxy, every channel a command touches leaves on a circuit of
-its own: the proxy is shown a fresh username and password per channel, which
-is how Tor is told to keep streams apart, so the host sees your channels arrive
-from different exits rather than from one. Leave the credentials out of the
-value — ones you type are kept as typed, and pin every channel to one circuit.
-
-**Run `kusanagi doctor` against a host before you trust it.** S3-compatible
-stores disagree about conditional writes, and they disagree in the dangerous
-direction: the condition is ignored, the write succeeds, and a protocol that
-assumed a message could not be overwritten quietly stops being true. `doctor`
-writes twice, reads back, and tells you which tier the host qualifies for.
+**Run `kusanagi doctor` against a host before you trust it.** Object stores
+disagree about conditional writes, and they disagree in the dangerous direction.
 
 ## What the host can see
 
-The host is not trusted and does not have to be. Here is exactly what it learns.
+The host is not trusted and does not have to be.
 
 | | Status |
 |---|---|
@@ -228,83 +189,55 @@ The host is not trusted and does not have to be. Here is exactly what it learns.
 | Who wrote a message | **Hidden.** The author is inside the encrypted part, not beside it. |
 | Which messages belong to one conversation, from what it **stores** | **Hidden.** Every address is `KDF(shared secret ‖ author ‖ height)`. No address is ever reused. |
 | Which messages belong to one conversation, from what it is **asked for** | **Hidden.** A reader lists one bin and takes all of it, so a request names a period and a ward, never an address. |
-| Which reader wanted which object | **Hidden among the readers of one ward.** Every reader of a ward makes the same requests; the host can say a ward was read, not by whom for what. A reader shortens the prefix it sweeps to hide among more wards at the cost of bandwidth. |
+| Which reader wanted which object | **Hidden among the readers of one ward.** Every reader of a ward makes the same requests. |
 | How many objects it holds | **Visible.** |
 | How large each one is | **Hidden.** Every drop is exactly 131 072 bytes, whatever it carries. |
 | When each request arrived | **Visible.** |
 
-A reader that asked for an address would hand the host, on its own access log,
-the one pair this network exists to hide: who wrote that address and who came for
-it. No cryptanalysis needed. So a reader never asks for an address. Every drop is
-filed under a public ten-minute period and the reader's **ward** — a number the
-reader picked at random once and hands to whoever writes to it — and a read lists
-one period of its own ward, fetches whatever the listing added since it last
-looked, and matches addresses on its own machine. What the host sees is a ward
-being read, the same way by everyone who reads it; what it never sees is which
-object in it was wanted. Nothing fetched and not matched is kept.
+A reader that asked for an address would hand the host the one pair this network
+exists to hide. So a reader never asks for an address. Every drop is filed under
+a public ten-minute period and the reader's **ward** — a number picked once and
+handed to whoever writes to it. A read lists one period of its own ward, fetches
+what the listing added, and matches addresses on its own machine.
 
-What that costs, said plainly: a busy ward costs its readers bandwidth, since
-each takes what everyone in it received; a bin of more than 256 objects is
-refused rather than read (`kusanagi.ward_overfull`); and a writer whose clock is
-more than ten minutes behind its reader's files a drop where the reader has
-already looked, to be found on the next change to that bin.
+What that costs: a busy ward costs its readers bandwidth; a bin of more than 256
+objects is refused (`kusanagi.ward_overfull`); a writer whose clock is more than
+ten minutes behind files a drop where the reader has already looked.
 
-**Two things a host cannot do to you.**
+**Two things a host cannot do.** It cannot deliver anything you did not ask for:
+writing to you needs the shared secret. It cannot walk you backwards: once you
+have read to a height, deleting or replacing what is below it is
+`kusanagi.history_changed`, not a shorter conversation.
 
-*It cannot deliver anything you did not ask for.* Writing to you requires your
-address, deriving your address requires the shared secret, and holding the secret
-requires having been introduced. Spam is not filtered here. It is not computable.
-
-*It cannot walk you backwards.* A host can refuse to serve a message; nothing
-prevents that. But once you have read up to a height, deleting or replacing what
-is below it is refused with `kusanagi.history_changed` rather than silently
-accepted as a shorter conversation. "She never sent the retraction" is a lie a
-storage host does not get to tell.
-
-These claims are tested, not asserted. `crates/kusanagi/tests/unlinkable.rs`
-takes the host's side over a hundred messages. `unwatched.rs` takes the side of a
-host keeping an access log. `lying.rs` takes the side of a host that deletes and
-relocates objects. `adversary/` is a separate Haskell program that hunts for
-counterexamples by driving this binary the way you would; it found the
-walk-backwards bug listed above.
+These claims are tested. `crates/kusanagi/tests/unlinkable.rs` takes the host's
+side. `unwatched.rs` takes an access log. `lying.rs` takes a host that deletes
+and relocates objects. `adversary/` is a Haskell program that hunts for
+counterexamples by driving this binary.
 
 ## How it works
 
-Every address is `KDF(shared secret ‖ author ‖ height)`. Two messages in one
-conversation are two unrelated 160-bit strings as far as the host is concerned.
-
-Each address derives its own key, so every message is sealed under a key used
-exactly once.
-
-The whole message is sealed, author included. Sealing only the body would let a
-host group messages by who wrote them.
-
-Messages are signed and hash-linked, so a reader checks authorship and order
-without asking anyone.
-
-Permission is a chain of signed delegations that can only narrow. It is verified
-offline, and revoking one link voids everything beneath it.
+Every address is `KDF(shared secret ‖ author ‖ height)`. Each address derives its
+own key. The whole message is sealed, author included. Messages are signed and
+hash-linked. Permission is a chain of signed delegations that can only narrow.
 
 Locally an endpoint keeps an identity seed, one file per channel, and a record of
-how far each stream has been verified. Only the last of those can be recomputed,
-and deleting it changes what a read costs, never what it reports.
+how far each stream has been verified. Only the last of those can be recomputed.
 
-`ARCHITECTURE.md` is the long version, including the reasoning behind each of
-these choices and the ones that were rejected.
+`ARCHITECTURE.md` is the long version, including the choices that were rejected.
 
 ## What is not built
 
-Listed so that each absence is a decision rather than an oversight.
+Listed so that each absence is a decision rather than something we forgot to mention.
 
 | Missing | Why |
 |---|---|
-| More than two parties in one channel | One channel is one pair. Two shapes go beyond it, and they trade different things. A **group** is fan-out: `kusanagi group --name team` names the channels, `kusanagi send --to-group team` writes one drop on each, and members never learn of each other. A **room** is shared: `kusanagi room --name team --waypoint …` founds it, `room-invite` hands out a line, `room-join` accepts one, `room-send` writes once on your own stream and `room-read` takes the whole room in one sweep, however many members. **What a room costs, said plainly:** every member learns every other member's handle; only the founder can invite or admit, so a founder who walks away leaves a room nobody can join; the host sees one stream per member and one introduction object per invitation, so it can count both; there is no removing anybody; members have no declared names in a room yet; the ceiling is 32. A thousand members is a different problem. |
-| Hiding when you are online | A channel opened with `--every` writes one drop per period, talk or silence, so the host cannot tell the two apart; the gaps when this machine is off are still gaps. A random delay in the scheduler blurs the moment, not the absence. |
-| Hiding the number of objects from a dumb object store | Needs long-polling support that a plain bucket does not have. |
+| More than two parties in one channel | One channel is one pair. A **group** fans out; a **room** is shared. **What a room costs:** every member learns every other member's handle; only the founder invites, so a founder who walks away leaves a room nobody can join; the host sees one stream per member and one introduction object per invitation; there is no removing anybody; members have no declared names in a room yet; the ceiling is 32. |
+| Hiding when you are online | `--every` writes one drop per period, talk or silence; the gaps when this machine is off are still gaps. |
+| Hiding the number of objects from a dumb object store | Needs long-polling, which a plain bucket does not have. |
 | Long-polling | Would turn a poll into a wait; a read that lists a bin has no live edge to follow. |
-| Chunked shared workspaces | A separate problem. One message is capped at 126 339 bytes today. |
-| Hiding an endpoint IP address | Not this project's to solve. Set `KUSANAGI_PROXY` to a SOCKS5 or HTTP CONNECT proxy and the network built for it does the work; `kusanagi proxy --require` makes a missing proxy a refusal rather than a direct connection. |
-| Hiding which channels share one bucket credential | An S3 access key travels with every request it signs, so a bucket's log links everything one key wrote. `kusanagi host` asks for no credential and has no such edge. |
+| Chunked shared workspaces | A separate problem. One segment carries at most 126 339 bytes; one message may be 32 segments on a channel and 64 in a room. |
+| Hiding an endpoint IP address | Not this project's. `KUSANAGI_PROXY` plus `kusanagi proxy --require`. |
+| Hiding which channels share one bucket credential | An S3 access key travels with every request it signs. A box anyone runs asks for none. |
 | A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |
 
 ## Working on it
@@ -316,16 +249,17 @@ just adversary    # the Haskell counterexample hunter, if you have GHC
 ```
 
 `just check` is the closing condition for every change. It runs the whole test
-suite — 278 tests as of this writing, including two endpoints talking over real
-TCP — plus rustfmt, clippy at `-D warnings`, the line budget and `cargo-deny`.
+suite — 328 tests as of this writing, including two endpoints talking over real
+TCP, and 42 more for the window — plus rustfmt, clippy at `-D warnings`, the
+line budget and `cargo-deny`.
 
-Read `AGENTS.md` before your first edit. Each crate has a `<crate>-SPEC.md` that
-is written before its code changes.
+Read [`AGENTS.md`](AGENTS.md) before your first edit, and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) before you open a pull request. Each crate
+has a `<crate>-SPEC.md` that is written before its code changes.
 
 `adversary/` is outside the Cargo workspace, outside the release, and outside
-`just check`, so you never need GHC to change anything here. It drives the
-shipped binary through `--json`, hunts for traces that break a promise, and
-delivers what it finds as a Rust test committed beside the Rust code.
+`just check`. It drives the shipped binary through `--json` and delivers what it
+finds as a Rust test committed beside the Rust code.
 
 ## Related
 
@@ -333,9 +267,8 @@ delivers what it finds as a Rust test committed beside the Rust code.
 of the same question. kusanagi gives one pair of endpoints a history nobody else
 can read, link, or order. sprawling-agents gives a group of agents on one machine
 a single append-only ledger, because inside one machine the useful question is
-who was first, and only a total order answers it. Between machines that same
-total order would be a fact an observer could read, which is why addresses here
-are derived instead of agreed.
+who was first. Between machines that same total order would be a fact an observer
+could read, which is why addresses here are derived instead of agreed.
 
 ## Licence
 
