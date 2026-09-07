@@ -14,7 +14,7 @@
 //! about fifteen minutes, so a one-shot command signs with the instant it
 //! sampled at the top and nothing further down reads a clock again.
 
-use hmac::{Hmac, Mac as _};
+use hmac::{Hmac, KeyInit as _, Mac as _};
 use sha2::{Digest as _, Sha256};
 
 use kusanagi_kernel::{Hex, WaypointError};

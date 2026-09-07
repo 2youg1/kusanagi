@@ -51,6 +51,10 @@ skip = [
     { crate = "cpufeatures@0.2", reason = "chacha20 0.9 is still on 0.2; sha2 0.10 has moved to 0.3" },
     { crate = "syn@2", reason = "zeroize_derive is still on syn 2; the other derive macros have moved to 3" },
     { crate = "windows-sys@0.52", reason = "ring 0.17 is still on 0.52; site::permissions::windows asks for 0.61" },
+    { crate = "sha2@0.10", reason = "fips204 0.4.6 is still on sha2 0.10 (via digest 0.10); this workspace has moved to 0.11" },
+    { crate = "digest@0.10", reason = "fips204 0.4.6 is still on digest 0.10; this workspace has moved to 0.11" },
+    { crate = "block-buffer@0.10", reason = "fips204 0.4.6 is still on block-buffer 0.10 via digest 0.10; this workspace has moved to 0.12" },
+    { crate = "crypto-common@0.1", reason = "fips204 0.4.6 is still on crypto-common 0.1 via digest 0.10; this workspace has moved to 0.2" },
 ]
 # `unsafe_code = "forbid"` covers our own crates; these are the ones whose
 # absence keeps the binary small and the failure modes few.
