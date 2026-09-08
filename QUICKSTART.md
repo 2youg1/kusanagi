@@ -72,6 +72,9 @@ kusanagi invite --name bob --waypoint http://THAT-MACHINE:8963
 
 (`--waypoint` takes the host from step 3: a URL, or a folder path.)
 
+Channel names are lowercase letters, digits and hyphens (1–32 characters,
+never starting with `-`): `Bob` is refused as `kusanagi.malformed`.
+
 You should see: `channel `bob` is open`, then a line starting `kusanagi2:`,
 then `check code 8e5c` (your four characters will differ).
 

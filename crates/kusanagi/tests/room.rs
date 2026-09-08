@@ -210,3 +210,20 @@ fn only_the_founder_invites_and_a_room_name_is_a_channel_name() {
         .expect_err("a channel took a room's name");
     assert_eq!(taken.code(), "kusanagi.channel_exists");
 }
+
+#[test]
+fn a_room_invitation_over_an_absolute_directory_says_so_too() {
+    // Rooms mint through the same sentence family as channels: the same
+    // absolute directory rides the same line, so the same warning applies.
+    let (alice, _, _, host) = trio("room-absolute-warned");
+    found(&alice, "team", &host.display().to_string());
+
+    let outcome = alice
+        .run(&Request::RoomInvite {
+            name: "team".to_owned(),
+            lifetime: 3_600,
+        })
+        .expect("the founder could not invite");
+    let prose = outcome.render(false, common::FENCE);
+    assert!(prose.contains("absolute path on this machine"), "{prose}");
+}

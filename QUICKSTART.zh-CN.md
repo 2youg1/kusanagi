@@ -65,6 +65,9 @@ kusanagi invite --name bob --waypoint http://那台机器:8963
 
 （`--waypoint` 接第 3 步的主机：一段 URL，或一个文件夹路径。）
 
+通道名只认小写字母、数字和连字符（1–32 个，不以连字符开头）：`Bob`
+会被 `kusanagi.malformed` 拒绝。
+
 你该看到：`channel `bob` is open`，然后一行 `kusanagi2:` 开头的长串，
 再是 `check code 8e5c`（你的四个字符和例子不一样）。
 

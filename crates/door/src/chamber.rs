@@ -49,11 +49,14 @@ pub(crate) fn founded(name: &str, ward: &str, founder: &str) -> String {
 
 /// What a room invitation says: the line, and the check code beside it.
 pub(crate) fn invited(name: &str, invite: &str, check: &str, expires_at: u64) -> String {
+    let warning = crate::passage::local_path_note(invite)
+        .map(|note| format!("\n\n{note}"))
+        .unwrap_or_default();
     format!(
         "room `{name}` invitation, until {expires_at}\n\n{invite}\n\n\
          hand that line over once. Anybody who holds it can join, so treat it \
          the way you would treat a key.\n\n\
-         check code {check} \u{2014} read it out to whoever you gave the line to."
+         check code {check} \u{2014} read it out to whoever you gave the line to.{warning}"
     )
 }
 
