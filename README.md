@@ -63,6 +63,17 @@ requires — `ring`, which is what supplies TLS, builds a little C during the
 build. On Windows that is the Build Tools the MSVC toolchain needs anyway. There
 is no runtime and nothing to install beside the binary.
 
+If a release build is trust enough for you, the shortcut verifies the checksum
+before it installs — Linux/macOS on the left, Windows on the right:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/install.ps1 | iex
+```
+
 ## What you get
 
 A **name** you choose, signed by your key. The other side sees it beside your

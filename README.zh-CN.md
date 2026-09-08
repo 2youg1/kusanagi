@@ -52,6 +52,16 @@ cargo build --release      # 产物是 target/release/kusanagi.exe
 
 需要 Rust 1.97 或更高版本，以及你的 Rust 工具链本来就要求的那个 C 编译器——提供 TLS 的 `ring` 在构建时会编译一点 C。在 Windows 上那就是 MSVC 工具链本来就需要的 Build Tools。没有运行时，除了这个二进制文件之外没有任何东西要装。
 
+release 构建的信任对你够用的话，快捷安装会在装之前先对校验——左边 Linux/macOS，右边 Windows：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/install.ps1 | iex
+```
+
 ## 你实际得到什么
 
 一个你自己起的**名字**，由你的密钥签名。对端在你的 handle 旁边看到它。当面核对的仍是 handle 和四位校验码；名字是胸牌，不是护照。设名之前认识的人看不到变化。
