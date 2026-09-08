@@ -51,6 +51,8 @@ Any of these works. The simplest is the first.
 **A folder both machines can see** — a synced folder (OneDrive, Dropbox,
 iCloud, a network share mounted as a drive letter) or any directory when both
 sides are the same computer. Write down its path; that path is your host.
+An absolute path ends up inside the invitation line itself, so `invite` says
+so out loud — hand that line only to somebody on this machine.
 
 **A program** — on any machine both sides can reach, run:
 
