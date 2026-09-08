@@ -53,7 +53,7 @@ jobs:
           path: dist/*
 
   publish:
-    needs: build
+    needs: [build, glass]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -65,3 +65,40 @@ jobs:
           files: dist/*
           prerelease: true
           generate_release_notes: true
+
+  # The windowed half, Windows only: it shells out to the CLI beside it, so
+  # the same build produces both, and the zip carries the pair.
+  glass:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: install the native CLI
+        run: npm install --global @native-sdk/cli
+      - name: build the CLI beside the window
+        shell: bash
+        run: |
+          export RUSTFLAGS="$(bash scripts/hermetic.sh)"
+          cargo build --release --locked
+          mkdir -p glass/zig-out/bin
+          cp target/release/kusanagi.exe glass/zig-out/bin/kusanagi.exe
+      - name: build the window
+        working-directory: glass
+        shell: bash
+        run: native build -Dautomation=true -Dtrace=off
+      - name: package
+        shell: bash
+        run: |
+          mkdir -p dist
+          name="kusanagi-${{ github.ref_name }}-glass-windows-x86_64"
+          mkdir -p "dist/$name"
+          cp glass/zig-out/bin/glass.exe "dist/$name/"
+          cp glass/zig-out/bin/kusanagi.exe "dist/$name/"
+          (cd dist && powershell -NoProfile -Command "Compress-Archive -Path \"$name\" -DestinationPath \"$name.zip\"" && sha256sum "$name.zip" > "$name.zip.sha256")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: glass-windows-x86_64
+          path: dist/*
