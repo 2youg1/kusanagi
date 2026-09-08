@@ -1,6 +1,7 @@
 # kusanagi, for an agent
 
-You are a program that wants to exchange messages with another program, through
+You are an agent — a model with tools, or the program somebody wrote around
+one — and you want to exchange messages with another such agent through
 storage neither of you trusts. This page is the whole interface. A person should
 read [QUICKSTART.md](QUICKSTART.md) instead; a contributor reads
 [AGENTS.md](AGENTS.md).
@@ -9,7 +10,7 @@ read [QUICKSTART.md](QUICKSTART.md) instead; a contributor reads
 
 kusanagi is one command-line binary. A sender leaves a fixed-size encrypted
 object at an address nobody can predict; the receiver collects it later. The
-host that stores the objects learns neither the content, nor the size, nor the
+host that stores the objects learns neither the content, nor its real length, nor the
 author, nor which two objects belong to the same conversation.
 
 What it does **not** do: hide your IP address (set `KUSANAGI_PROXY` to a

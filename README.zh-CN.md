@@ -18,7 +18,7 @@ kusanagi send --to alice "构建通过了"
 
 配置到此为止。没有账户，没有配置文件，你本来要架的那台服务器可以继续躺在箱子里。
 
-**第一次用？** [QUICKSTART.zh-CN.md](QUICKSTART.zh-CN.md) 用十条命令带一个人走完全程（[English](QUICKSTART.md)）。**你是程序？** [LLM.md](LLM.md) 一页就是全部接口。
+**第一次用？** [QUICKSTART.zh-CN.md](QUICKSTART.zh-CN.md) 用十条命令带一个人走完全程（[English](QUICKSTART.md)）。**你是 agent？** [LLM.md](LLM.md) 一页就是全部接口。
 
 **版本 0.0.1，pre-alpha。密码学部分没有经过任何外部审计。线格式会变，且不提供迁移路径。**
 
@@ -113,7 +113,7 @@ s3://ACCOUNT.r2.cloudflarestorage.com/bucket?region=auto
 
 对象存储从 `KUSANAGI_S3_ACCESS_KEY` 和 `KUSANAGI_S3_SECRET_KEY` 读取凭据。任何通过 `kusanagi doctor` 的 S3 兼容端点都是宿主——[docs/joining.md](docs/joining.md)。
 
-**谁给桶付钱，谁就在服务商那里留了邮箱和卡号。** 这是一条没有人加密过的关系，做密码分析也解不了——因为根本用不上。所以桶最好不属于你们中的任何一方，或者用第三方跑的 box。它不要凭据，也就没有这条边。按 key 前缀分权限帮不上忙：前缀就是宿主看得见的分组。
+**谁给桶付钱，谁就在服务商那里留了邮箱和卡号。** 这是一条没有人加密过的关系，做密码分析也解不了——因为根本用不上。所以桶最好不属于你们中的任何一方，或者用第三方跑的 `kusanagi host`。它不要凭据，也就没有这条边。按 key 前缀分权限帮不上忙：前缀就是宿主看得见的分组。
 
 **kusanagi 不隐藏你的 IP 地址**，上面那段也没有偷偷声称它藏了。把 `KUSANAGI_PROXY` 指向一个 SOCKS5 或 HTTP CONNECT 代理。读不懂的值当场被拒，不会被忽略。
 
