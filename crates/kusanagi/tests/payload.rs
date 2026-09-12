@@ -332,3 +332,64 @@ fn two_invocations_never_draw_the_same_fence() {
     assert_ne!(first, second);
     assert_ne!(first, Fence::from_bytes([0; 8]));
 }
+
+#[test]
+fn an_invitation_over_an_absolute_directory_says_so_out_loud() {
+    // The line carries `--waypoint` verbatim, so an absolute directory puts
+    // this machine's usernames and layout into whoever receives it — and it
+    // is a dead link anywhere but here. The behavior does not change; the
+    // prose says so, where a person will see it.
+    let ground = scratch("absolute-warned");
+    let host = ground.join("host");
+    let alice = Endpoint::new(ground.join("alice"));
+    assert!(host.is_absolute());
+
+    let outcome = alice
+        .run(&Request::Invite {
+            name: "bob".to_owned(),
+            waypoint: host.display().to_string(),
+            lifetime: 3_600,
+            abilities: kusanagi_grant::Abilities::ALL,
+            habit: kusanagi::Habit::default(),
+        })
+        .expect("alice could not invite over a directory");
+    let prose = outcome.render(false, common::FENCE);
+    assert!(prose.contains("absolute path on this machine"), "{prose}");
+    // And `--json` is untouched: the warning is a prose device.
+    let machine = outcome.render(true, common::FENCE);
+    assert!(!machine.contains("absolute path"), "{machine}");
+
+    std::fs::remove_dir_all(&ground).ok();
+}
+
+#[test]
+fn an_invitation_over_a_box_carries_no_such_warning() {
+    // A URL names no local path, so there is nothing to warn about. The host
+    // is real (across_tcp.rs's pattern): the warning must be absent because
+    // the condition is absent, not because the invite failed.
+    let ground = scratch("boxed-quiet");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("could not bind a port");
+    let port = listener.local_addr().expect("no local address").port();
+    let directory = ground.join("host");
+    std::thread::spawn(move || {
+        match kusanagi_box::Server::new(&directory, kusanagi::SystemClock).serve(&listener) {
+            Ok(()) => {}
+            Err(error) => eprintln!("test host stopped: {error}"),
+        }
+    });
+    let alice = Endpoint::new(ground.join("alice"));
+
+    let outcome = alice
+        .run(&Request::Invite {
+            name: "bob".to_owned(),
+            waypoint: format!("http://127.0.0.1:{port}"),
+            lifetime: 3_600,
+            abilities: kusanagi_grant::Abilities::ALL,
+            habit: kusanagi::Habit::default(),
+        })
+        .expect("alice could not invite over a box");
+    let prose = outcome.render(false, common::FENCE);
+    assert!(!prose.contains("absolute path"), "{prose}");
+
+    std::fs::remove_dir_all(&ground).ok();
+}

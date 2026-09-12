@@ -163,6 +163,9 @@ pub const CONTRACT: u8 = 1;
 | `serde_json` 序列化失败 | 退回 `{"error":"…"}` / `{"code":"…"}`，**不 panic**（工作区禁 `unwrap`） |
 | 通道无 peer | `peer: None`，散文「(nobody met yet)」 |
 | peer 被撤销 | `peer_refused` 有值；`can` 与 `refused` 恰好一个非空 |
+| 邀请行的宿主是本机绝对路径目录 | 散文末尾加一句警告（见下）。邀请行把 `--waypoint` 原样带走，绝对路径于是把本机用户名与目录结构递给对端；同机两终端这是能用的，跨机器这是一条死链接，人分不清两种情形，程序更分不清。**行为不动**：测试 harness 与 QUICKSTART 第 3 步都靠绝对路径做同机宿主，一刀切会连它们一起改。警告只出现在散文，不进 `--json`（机器读的形状不动），房间邀请同句 |
+
+警告句定稿（散文只有英文）：`this invitation carries an absolute path on this machine; hand it only to somebody on this machine`。
 
 ## 12 错误处理
 

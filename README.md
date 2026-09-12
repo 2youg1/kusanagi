@@ -63,6 +63,30 @@ requires — `ring`, which is what supplies TLS, builds a little C during the
 build. On Windows that is the Build Tools the MSVC toolchain needs anyway. There
 is no runtime and nothing to install beside the binary.
 
+If a release build is trust enough for you, the shortcut verifies the checksum
+before it installs — Linux/macOS on the left, Windows on the right:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/install.ps1 | iex
+```
+
+On a machine that already has node or bun, those same release binaries arrive
+through the registry, and only the build that matches your machine is
+downloaded:
+
+```bash
+npx @kasanagi/cli id               # runs it once, installs nothing
+npm install --global @kasanagi/cli # or: bun install --global @kasanagi/cli
+```
+
+Either global install gives you the command `kusanagi`. Each version is
+published by the release workflow with a provenance attestation, so npm can
+show you which run built the bytes.
+
 ## What you get
 
 A **name** you choose, signed by your key. The other side sees it beside your
@@ -159,7 +183,7 @@ doctor` is a host — [docs/joining.md](docs/joining.md).
 
 **Whoever pays for the bucket left an email address and a card on file.** That is
 a relationship nobody encrypted, and cryptanalysis cannot help you because nobody
-needed any. Prefer a bucket that belongs to neither of you, or `kusanagi host` run
+needed any. Prefer a bucket that belongs to neither of you, or a `kusanagi host` run
 by a third party. It asks for no key, so it has no such edge. Splitting
 permissions by key prefix does not help — a
 prefix is a grouping the host can see.
@@ -237,7 +261,7 @@ Listed so that each absence is a decision rather than something we forgot to men
 | Long-polling | Would turn a poll into a wait; a read that lists a bin has no live edge to follow. |
 | Chunked shared workspaces | A separate problem. One segment carries at most 126 339 bytes; one message may be 32 segments on a channel and 64 in a room. |
 | Hiding an endpoint IP address | Not this project's. `KUSANAGI_PROXY` plus `kusanagi proxy --require`. |
-| Hiding which channels share one bucket credential | An S3 access key travels with every request it signs. `kusanagi host`, which anyone can run, asks for none. |
+| Hiding which channels share one bucket credential | An S3 access key travels with every request it signs. A `kusanagi host` anyone runs asks for none. |
 | A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |
 
 ## Working on it

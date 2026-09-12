@@ -1,0 +1,8 @@
+# These files carry a shebang and are executed on Linux and macOS. Checked out
+# with CRLF on Windows, their interpreter line reads `/usr/bin/env node\r`,
+# which resolves to nothing: the program fails to start, or on Windows runs as
+# a shell script that prints nothing and exits 0. The first npm publish of each
+# package name is made by hand from a person's machine, so a Windows checkout
+# is on the path that reaches the registry.
+npm/cli/bin.js text eol=lf
+scripts/*.sh   text eol=lf

@@ -12,6 +12,24 @@
 
 use crate::rows::Grouping;
 
+/// A warning when the invitation's host is an absolute directory on this
+/// machine: the line carries the inviter's usernames and directory layout to
+/// whoever receives it, and it is a dead link anywhere but this machine.
+/// Parsing here is pure — no IO, no clock — so the rendering layer's
+/// constraint holds. An unparsable line gets no note: it has a
+/// `BadInvitation` of its own coming.
+pub(crate) fn local_path_note(invite: &str) -> Option<&'static str> {
+    let locator = kusanagi_site::Invite::parse(invite).ok()?.locator;
+    let place: kusanagi_waypoint::Locator = locator.parse().ok()?;
+    match place {
+        kusanagi_waypoint::Locator::Directory(path) if path.is_absolute() => Some(
+            "this invitation carries an absolute path on this machine; \
+             hand it only to somebody on this machine",
+        ),
+        _ => None,
+    }
+}
+
 /// What cutting a peer off says: the step that no longer counts.
 pub(crate) fn severed(name: &str, step: &str) -> String {
     format!(
@@ -42,12 +60,15 @@ pub(crate) fn welcomed(
     expires_at: u64,
     expires_in: u64,
 ) -> String {
+    let warning = local_path_note(invite)
+        .map(|note| format!("\n\n{note}"))
+        .unwrap_or_default();
     format!(
         "channel `{name}` is open. This invitation lasts {}, until {expires_at}\n\n{invite}\n\n\
          hand that line over once. Anybody who holds it can join, so treat it \
          the way you would treat a key.\n\n\
          check code {check} \u{2014} read it out to whoever you gave the line to. If their \
-         `join` shows anything else, the line was altered on the way.",
+         `join` shows anything else, the line was altered on the way.{warning}",
         lasting(expires_in)
     )
 }

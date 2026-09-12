@@ -16,7 +16,8 @@ Words you will meet, once each:
   host is never trusted: it stores locked boxes and cannot open them.
 - **channel** — one conversation between you and one other person. You give it
   a name that only you see, like a contact in your phone.
-- **invitation** — one long line of text. Whoever has it can join the channel,
+- **invitation** — one long line of text (about 180 characters for a folder host;
+  an address host prints a longer one). Whoever has it can join the channel,
   so hand it over the way you would hand over a key.
 - **check code** — four characters both sides see. If they match, nobody
   altered the invitation on the way.
@@ -51,6 +52,8 @@ Any of these works. The simplest is the first.
 **A folder both machines can see** — a synced folder (OneDrive, Dropbox,
 iCloud, a network share mounted as a drive letter) or any directory when both
 sides are the same computer. Write down its path; that path is your host.
+An absolute path ends up inside the invitation line itself, so `invite` says
+so out loud — hand that line only to somebody on this machine.
 
 **A program** — on any machine both sides can reach, run:
 
@@ -71,6 +74,9 @@ kusanagi invite --name bob --waypoint http://THAT-MACHINE:8963
 ```
 
 (`--waypoint` takes the host from step 3: a URL, or a folder path.)
+
+Channel names are lowercase letters, digits and hyphens (1–32 characters,
+never starting with `-`): `Bob` is refused as `kusanagi.malformed`.
 
 You should see: `channel `bob` is open`, then a line starting `kusanagi2:`,
 then `check code 8e5c` (your four characters will differ).
@@ -195,7 +201,7 @@ do pay someone, pick any S3-compatible bucket that `doctor` passes. This page
 will not name a shop. A shop named here would be a recommendation, and a
 recommendation is another thing to trust.
 
-**How much?** A folder, or a computer you already run, is metered at zero. A billed
+**How much?** A folder or a `kusanagi host` you already run is metered at zero. A billed
 bucket charges for listing and for download. A quiet reader, ten-minute periods,
 cap 32, was estimated around $1.50 a month — an order of magnitude, not a quote.
 A busy ward costs more; every reader of it downloads what everyone else received.

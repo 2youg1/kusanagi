@@ -138,7 +138,7 @@ jobs:
         with:
           version: 0.16.0
       - name: install the native CLI
-        run: npm install --global @native-sdk/cli
+        run: npm install --global @native-sdk/cli@0.10.1
       - name: check
         run: native check
       - name: test
