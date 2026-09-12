@@ -12,7 +12,9 @@ Every rule below exists for one reason that applies to a person just as much: **
 just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tests + budget + cargo-deny
 ```
 
-**A change is finished when `just check` is green.** "I finished it" is a claim; a green run is the evidence.
+**A change is ready for the operator when `just check` is green.** "I finished it" is a claim; a green run is the evidence — but only the agent's evidence about its own work.
+
+**Agent-green is not done.** The agent's tests prove the agent's work holds; they do not prove the feature works for a person. A feature counts as implemented only after the operator runs it by hand and confirms — until then, report it as "agent-green", never as "done".
 
 **Inner loop, before closing:** `cargo nextest run --workspace -E 'not package(kusanagi-grant)'` (≈30 s; `just test` without the filter is the same runner unfiltered) plus `cargo fmt` and full-workspace clippy `-D warnings` at every step, not at closing. `grant`'s two proptests take ~2 min and run only when `grant` changed or at closing. One tool call lasts 150 s: what fits in one call runs in the foreground; only release builds, the full adversary suite and `grant`'s proptests go to the background.
 
