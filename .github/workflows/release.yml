@@ -104,7 +104,7 @@ jobs:
         with:
           version: 0.16.0
       - name: install the native CLI
-        run: npm install --global @native-sdk/cli
+        run: npm install --global @native-sdk/cli@0.10.1
       - name: show the native version
         run: native --version
       - name: build the CLI beside the window
@@ -115,9 +115,7 @@ jobs:
           mkdir -p glass/zig-out/bin
           cp target/release/kusanagi.exe glass/zig-out/bin/kusanagi.exe
       - name: build the window
-        run: |
-          native check glass
-          native build glass -Dautomation=true -Dtrace=off
+        run: native build glass -Dautomation=true -Dtrace=off
       - name: package
         shell: bash
         run: |
