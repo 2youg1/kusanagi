@@ -88,7 +88,6 @@ jobs:
           cp target/release/kusanagi.exe glass/zig-out/bin/kusanagi.exe
       - name: build the window
         working-directory: glass
-        shell: bash
         run: native build -Dautomation=true -Dtrace=off
       - name: package
         shell: bash
