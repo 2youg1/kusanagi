@@ -157,6 +157,9 @@ fn a_symbolic_link_planted_at_a_record_is_replaced_and_never_followed() {
     std::os::unix::fs::symlink(&bait, channels.join("peer")).unwrap();
 
     site.keep(&Channel {
+        cadence: kusanagi_site::Cadence::OnDemand,
+        retention: kusanagi_site::Retention::Keep,
+        opened: kusanagi_kernel::Period::from_count(0),
         name: "peer".to_owned(),
         secret: Secret::from_bytes([7; 32]),
         root: Signer::from_seed(&[3; 32]).handle(),
