@@ -74,9 +74,9 @@
         }
       );
 
-      # The same tools a contributor's machine has, for `just check`. `cabal`
+      # The same tools a contributor's machine has, for `just check`. `elan`
       # is left out on purpose: `adversary/` is outside the workspace and skips
-      # itself when GHC is absent (`justfile`).
+      # itself when Lean is absent (`justfile`).
       devShells = each (pkgs: {
         default = pkgs.mkShell {
           packages = [

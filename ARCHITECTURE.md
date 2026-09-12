@@ -206,7 +206,7 @@ output contract to `door` (`door-SPEC.md` §4) and how a read reaches a host to 
 beat separating two implementations of one seam. What that reversal feared is held by a
 test: the box's own tests drive the shipped client against the shipped server.
 
-**Outside the workspace.** `adversary/` is a Haskell counterexample hunter — not a crate,
+**Outside the workspace.** `adversary/` is a Lean counterexample hunter — not a crate,
 not a dependency, not released, not counted here. §8 says what stops it becoming an authority.
 
 ## 6 The seams
@@ -368,9 +368,12 @@ Reopening one requires a reason that did not exist when it was taken.
 - **The adversary is out of the workspace and speaks only through the door a user has.**
   `adversary/` drives the shipped binary with `--json` and asserts *relations between
   traces*, never an expected output, because restating a rule is what a second authority
-  is. Haskell earns the place because a lying host is a choice over a strategy space and a
-  directed attack is "any prefix, then this, then any suffix", where uniform random
-  generation is a fuzzer rather than an adversary. Four properties keep it from drifting:
+  is. A second language earns the place because a lying host is a choice over a strategy
+  space and a directed attack is "any prefix, then this, then any suffix", where uniform
+  random generation is a fuzzer rather than an adversary. Lean carries it: the generator,
+  the shrinker, the state model and the dynamic logic are in-tree because its toolchain
+  ships the JSON reader, the subprocess, the clock and the socket they need, so the suite
+  adds no dependency to anything. Four properties keep it from drifting:
   it enters through the door a person enters through, it states relations rather than
   behaviour, it never gates the Rust build, and **what it delivers is a Rust regression
   test**. Delete the directory and the network is unchanged.

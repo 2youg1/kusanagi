@@ -22,7 +22,7 @@ line budget, and cargo-deny.
 4. Every failure names the action, the subject, a stable code, and the command
    that recovers. A new code is added to `docs/codes.md` in the same change.
 
-Black-box claims belong in `adversary/` (Haskell, driving the shipped binary);
+Black-box claims belong in `adversary/` (Lean, driving the shipped binary);
 white-box claims stay in Rust. `just boxes` holds the boundary.
 
 ## Every pull request carries its evidence

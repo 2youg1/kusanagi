@@ -1,0 +1,15 @@
+name = "kusanagi-adversary"
+version = "0.0.1"
+defaultTargets = ["adversary"]
+testDriver = "adversary"
+
+# A warning here is a claim the compiler could make and this suite chose not to
+# hear, so the build refuses it.
+leanOptions = { warningAsError = true }
+
+[[lean_lib]]
+name = "Kusanagi"
+
+[[lean_exe]]
+name = "adversary"
+root = "Main"

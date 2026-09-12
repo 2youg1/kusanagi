@@ -365,7 +365,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 **since 从哪来。** 续读：sweep 记录的 `through`（含，因为那个 bin 到 period 结束前还在长）；无记录或整链行走：通道记录 v6 的 `opened`（invite/join 当时的 period）。丢掉全部 cairn 与 sweep 记录 → 从 `opened` 重扫每个 bin，**代价是 bin 数，永不是消息**（`losing_every_cairn_changes_what_a_read_costs_and_nothing_else`）。
 
-**写者同样 sweep。** `appended` 为找链头对 **peer 的 ward** 做同一种 sweep（`Reach::Head`，从自己道的 sweep 记录起）：主机早已看见这个端点往那个 ward 写，再看见它列举那个 ward 不添新边。`read --mine` 同理。`join`/`greet` 仍按地址取 rendezvous bin（period 0）里的 offer 与问候——一次性、与后续流量不可关联，是写明的例外（adversary `Sweep.hs` 也排除 period 0）。
+**写者同样 sweep。** `appended` 为找链头对 **peer 的 ward** 做同一种 sweep（`Reach::Head`，从自己道的 sweep 记录起）：主机早已看见这个端点往那个 ward 写，再看见它列举那个 ward 不添新边。`read --mine` 同理。`join`/`greet` 仍按地址取 rendezvous bin（period 0）里的 offer 与问候——一次性、与后续流量不可关联，是写明的例外（adversary `Sweep.lean` 也排除 period 0）。
 
 **释放不再 DELETE。** `settle` 只烧钥匙：DELETE 会点名地址，且 drop 归档在写入时的 period 而作者不记它。字节留给宿主的生命周期（D-20 性质 4；`released.rs` 断言三个 drop 仍在）。
 
@@ -373,7 +373,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 **诚实边界。** ① 写者时钟比读者慢超过一个 period（10 min）跨界写入，读者已把 `through` 推过去，那段要等下一次列举变化才被取；② 同一 bin 超过 `CAP`（256）个对象 → `kusanagi.ward_overfull`，拒绝而非泄漏；③ 首次 read/send 在邀请后很久才发生时，要列举 `opened` 以来的每个 period（一周 = 1 008 个请求，只付一次）。
 
-**判据。** 白盒 `unwatched.rs` 四条（没列举过的键不 GET；空轮询只有列举、不随流长变贵；同 ward 两个读者请求集合相同；send 只列举 peer 的 ward）；黑盒 `adversary/Sweep.hs` 两条（H20 读取的 GET 集合 == bin 全部对象含陌生人、报告不变；H21 无请求点名列举之外的地址、无 DELETE）。
+**判据。** 白盒 `unwatched.rs` 四条（没列举过的键不 GET；空轮询只有列举、不随流长变贵；同 ward 两个读者请求集合相同；send 只列举 peer 的 ward）；黑盒 `adversary/Sweep.lean` 两条（H20 读取的 GET 集合 == bin 全部对象含陌生人、报告不变；H21 无请求点名列举之外的地址、无 DELETE）。
 
 **`Reach`——编码调用方的需求，而不是机制。** `track`/`walk`/`Walked` 签名见 `walk-SPEC.md` §1。
 
@@ -389,7 +389,7 @@ forget：删掉本机那一个通道文件。撤销表不动，宿主上的字�
 
 **`Reach::Head` 不确认前驱。** 曾想在 `send` 前多 `peek` 一次记录的头，但那让每次 send 点名**两个相邻地址**，`unwatched.rs` 的 2b 断言咬红——隐私法则高于这道检查。真实形状是法则 1：有记忆的读者用 `--after` 续读照样验证，无记忆的整链行走得 `history_changed`（H19）。
 
-**`Complaint::HistoryChanged`，码 `kusanagi.history_changed`。** 恢复指向 `kusanagi doctor <waypoint>`。由 `Lying.hs` 找到，`tests/lying.rs` 记住。
+**`Complaint::HistoryChanged`，码 `kusanagi.history_changed`。** 恢复指向 `kusanagi doctor <waypoint>`。由 `Lying.lean` 找到，`tests/lying.rs` 记住。
 
 ---
 

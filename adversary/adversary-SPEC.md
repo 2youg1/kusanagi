@@ -6,7 +6,7 @@
 
 ## 1 需求拆解
 
-`ARCHITECTURE.md` §8 允许一个仓外的 Haskell 预言机存在，条件是它永远不会长成第二权威。拆成五个可独立验收的最小单元：
+`ARCHITECTURE.md` §8 允许一个仓外的 Lean 预言机存在，条件是它永远不会长成第二权威。拆成五个可独立验收的最小单元：
 
 | 单元 | 交付物 | 独立验收 |
 |---|---|---|
@@ -24,11 +24,11 @@
 
 ## 2 验收标准
 
-1. `cabal test` 全绿。
-2. 没有 GHC 的机器上 `just check` 的行为与本目录不存在时**逐字节相同**；`just adversary` 打印 `skipped: GHC is not installed` 并返回 0。
+1. `lake test` 全绿，且 `lakefile.toml` 置 `warningAsError = true`，警告即失败。
+2. 没有 Lean 的机器上 `just check` 的行为与本目录不存在时**逐字节相同**；`just adversary` 打印 `skipped: lake is not installed` 并返回 0。
 3. 模型不预测任何地址、摘要、签名或密文。凡断言只谈**两条轨迹之间的关系**。
 4. U5 渲染出的 Rust 源码与 `crates/kusanagi/tests/from_adversary.rs` 逐字节相同。
-5. **咬得动的证据**：`Model.hs` 的 `revocationIsFinal` 在把 `Cut` 从模型里摘掉后必须失败。一个永远为真的性质与没有性质等价。
+5. **咬得动的证据**：`Model.lean` 的 `revocationIsFinal` 在把 `cut` 从模型里摘掉后必须失败。一个永远为真的性质与没有性质等价。
 
 ### U8 与 U9 的三条（数字接上文）
 
@@ -81,7 +81,7 @@
 
 | 歧义 | 假设 | 何时失效 |
 |---|---|---|
-| 门的形状 | CLI 的 `--json`：成功走 stdout 的 `Outcome`，失败走 stderr 的 `{error, code, recover}`，由退出码选择 | `port` 落地后门变成它的 schema，改 `Door.hs` 一处 |
+| 门的形状 | CLI 的 `--json`：成功走 stdout 的 `Outcome`，失败走 stderr 的 `{error, code, recover}`，由退出码选择 | `port` 落地后门变成它的 schema，改 `Door.lean` 一处 |
 | 宿主是什么 | 两种世界。大多数性质里它是一个本地目录，分片规则为地址前两字符；U8/U9 里它是一个真 `kusanagi host` 进程，经 `Relay` 拿到 `http://` locator。**两种世界共用同一个目录**，所以 `stored` 不分彼此 | 没有时序问题的性质不花进程钱；敌意动作仍走目录 |
 | 时钟 | 只用两档 `--for`：`0`（当场过期）与 `3600`（本轮不过期）。模型不预测时钟 | 若将来要测过期的时刻边界，须由产品提供可注入的时间，而不是由本目录去猜 |
 | 身份的数量 | 三个 site：`alice`、`bob`、`mallory`。一条通道恰好两方 | `cohort` 落地后名册进入模型 |
@@ -103,7 +103,7 @@ var1 <- Invite Alice "one" Forever {send,read}
 
 **诊断**：流由 `(secret, author)` 派生。自接之后，一个端点拿到同一条流的两个本地名字，`greet` 从介绍流里认出的 peer 就是它自己，于是 `read` 把自己刚写的段当作对方说的递回来。对一个自主代理而言，把自己的输出当输入读是反馈环，不是对话。
 
-**处置**：在 Rust 侧 `join` 拒绝 `inviter == 自己`，新错误码 `kusanagi.own_invitation`；模型学会这一条拒绝；最小化后的轨迹渲染成 `crates/kusanagi/tests/from_adversary.rs`。知识已经迁到 Rust，Haskell 这边只留下那条性质。
+**处置**：在 Rust 侧 `join` 拒绝 `inviter == 自己`，新错误码 `kusanagi.own_invitation`；模型学会这一条拒绝；最小化后的轨迹渲染成 `crates/kusanagi/tests/from_adversary.rs`。知识已经迁到 Rust，本目录只留下那条性质。
 
 ### U6 首次运行的两处发现
 
@@ -117,21 +117,23 @@ var1 <- Invite Alice "one" Forever {send,read}
    处置：`SiteError` 把「格式不对」拆成 `BadName` / `BadInvitation` / `BadRecord`，
    稳定码不变，恢复命令各说各的。
 
-两处都符合 §4 的规矩：**Haskell 找，Rust 记**。
+两处都符合 §4 的规矩：**对手找，Rust 记**。
 
 ## 5 权威信源
 
 | 事实 | 来源 |
 |---|---|
-| `quickcheck-dynamic` 4.0.1（2025-07-14），在 LTS 24.x / GHC 9.10.3 与 Nightly / GHC 9.12.4 中 | Hackage、Stackage 实测 |
-| 它由 IOG 与 QuviQ 从 Plutus 测试里抽出，`StateModel` 与 `RunModel` 分属两个类型类 | 上游 README |
-| `hedgehog-lockstep` 已是 Hackage 上的真包，提供集成式收缩 | Hackage |
+| 工具链自带 `Lean.Data.Json`（门讲 JSON）、`Std.Data.TreeMap`（有序映射）、`IO.Process`（起进程、`Child.takeStdin` 写 stdin）、`IO.FS.createTempDir`、`IO.monoNanosNow`、`Init.Data.Random` 的 `StdGen`/`stdSplit` | 工具链源码与本机实测 |
+| `Std.Async.TCP` 给出 `Server.{mk,bind,listen,accept,getSockName}` 与 `Client.{connect,sendAll,recv?,shutdown}`；绑定端口 0 即由操作系统分配 | 同上，回环收发实测通过 |
+| Lean 生态里没有现成的状态模型与 dynamic logic；性质测试库面向的是可判定命题，不是跨进程的 `IO` 轨迹 | Reservoir 检索 |
 
-**一处对提案的更正**：v3 提案设的复查点是「收缩结果不可读就换 Hedgehog」。当时 `hedgehog-lockstep` 尚不存在，如今它存在，但它给的是 lockstep 加集成收缩，**没有 dynamic logic**。于是这个赌注的代价现在是明确的：换过去会丢掉「任意前缀 ＋ 这个具体攻击 ＋ 任意后缀」的表达力，而那正是当初选 `quickcheck-dynamic` 的全部理由。复查点保留，但门槛提高为「收缩不可读**且**定向场景已不再需要」。
+**于是引擎在仓内**：`Check.lean`（生成、收缩、性质树）与 `Dynamic.lean`（`StateModel`/`RunModel`/`Script`）。这不是重造一个已有的轮子：状态模型本来就必须手写，而一旦它在，生成器与收缩只占其中一百多行。
+
+**复查点**：若有一天 Lean 生态出现一个同时提供集成收缩与有方向场景的库，再衡量是否换过去。门槛是「它能写出任意前缀 ＋ 这个具体攻击 ＋ 任意后缀**且**不引入任何工具链之外的依赖」——后一半是现在这份实现白拿的，不应该惄惄丢掉。
 
 ## 6 命名统一
 
-`Segment`、`Drop`、`Channel`、`Grant`、`Standing` 一律沿用 `ARCHITECTURE.md` §4 的词表，Haskell 侧不得另起名字。本目录只新增三个词，各自只指一件事：
+`Segment`、`Drop`、`Channel`、`Grant`、`Standing` 一律沿用 `ARCHITECTURE.md` §4 的词表，Lean 侧不得另起名字。本目录只新增三个词，各自只指一件事：
 
 | 词 | 它是什么 |
 |---|---|
@@ -142,17 +144,21 @@ var1 <- Invite Alice "one" Forever {send,read}
 ## 7 模块边界
 
 ```
-adversary.cabal            工程定义；不被任何 Rust 构建读到
-src/Kusanagi/Answer.hs     门的 schema 的代数镜像。只解析，不判断
-src/Kusanagi/Door.hs       唯一知道二进制存在的地方
-src/Kusanagi/Ground.hs     一次性场地，以及宿主的敌意
-src/Kusanagi/Keyboard.hs   人怎么敲，代理怎么管道；以及引导能不能被照做
-src/Kusanagi/Overheard.hs  同机器另一个账户从命令行读得到什么。纯性质，不起进程
-src/Kusanagi/Model.hs      状态模型、后置条件、定向对抗场景
-src/Kusanagi/Regression.hs 反例 → Rust #[test]
-src/Kusanagi/Stage.hs      两端入席，各对手手里有什么；Leakage / Custody / Forging / Terminal / Port /
+lakefile.toml              工程定义；不被任何 Rust 构建读到
+lean-toolchain             它需要的 Lean 版本，唯一一处
+Kusanagi.lean              模块索引，除此之外什么都不放
+Kusanagi/Answer.lean       门的 schema 的代数镜像。只解析，不判断
+Kusanagi/Door.lean         唯一知道二进制存在的地方
+Kusanagi/Ground.lean       一次性场地，以及宿主的敌意
+Kusanagi/Check.lean        生成、收缩、性质树与它的运行器
+Kusanagi/Dynamic.lean      StateModel / RunModel / Script（有方向的场景）
+Kusanagi/Keyboard.lean     人怎么敲，代理怎么管道；以及引导能不能被照做
+Kusanagi/Overheard.lean    同机器另一个账户从命令行读得到什么。纯性质，不起进程
+Kusanagi/Model.lean        状态模型、后置条件、定向对抗场景
+Kusanagi/Regression.lean   反例 → Rust #[test]
+Kusanagi/Stage.lean        两端入席，各对手手里有什么；Leakage / Custody / Forging / Terminal / Port /
                            Insider / Twins / Scanner / Reach / Listener 是 surface-SPEC.md 的矩阵，一格一条
-test/Main.hs               tasty 入口；test/Surface.hs 是矩阵那棵子树
+Main.lean                  测试驱动入口；Kusanagi/Surface.lean 是矩阵那棵子树
 ```
 
 `Keyboard` 与 `Model` 互不相识：一个敲字符，一个走动词。两者只共用 `Door` 与 `Ground`。
@@ -161,59 +167,63 @@ test/Main.hs               tasty 入口；test/Surface.hs 是矩阵那棵子树
 
 ## 8 接口先行
 
-```haskell
--- Answer.hs —— 门说了什么
-data Answer   = Accepted Outcome | Refused Complaint
-data Complaint = Complaint { code :: Code, message :: Text, recover :: Text }
-data Outcome  = Identity Handle | Listing [Summary] | Invited ChannelName Invitation Word64
-              | Joined ChannelName Handle Handle | Sent ChannelName Word64 Address
-              | Heard ChannelName (Maybe Word64) [Entry] | Revoked ChannelName Text
-              | Forgotten ChannelName Text | Examined Text Text | Hosted
+```lean
+-- Answer.lean —— 门说了什么
+inductive Answer where | accepted (outcome : Outcome) | refused (complaint : Complaint)
+structure Complaint where code : Code; message recover : String
+inductive Outcome where
+  | identity (handle : Handle) | channels (listed : List Summary)
+  | invited (name : ChannelName) (invitation : Invitation) (expiresAt : UInt64)
+  | joined (name : ChannelName) (handle peer : Handle)
+  | sent (name : ChannelName) (index : UInt64) (address : Address)
+  | read (name : ChannelName) (author : Handle) (height : Option UInt64) (segments : List Entry)
+  | revoked … | forgotten … | examined … | hosted | …
 
--- Door.hs —— 怎么问
-newtype Door = Door FilePath
-discover :: IO (Maybe Door)                       -- KUSANAGI_BIN，或 target/{debug,release}
-ask      :: Door -> FilePath -> Verb -> IO Answer -- site 根目录 → 动词 → 回答
-type  :: Door -> [String] -> Maybe ByteString -> IO Typed  -- 原始 argv 与 stdin
+-- Door.lean —— 怎么问
+structure Door where binary : System.FilePath
+discover : IO (Option Door)                          -- KUSANAGI_BIN，或 target/{debug,release}
+ask   (door) (site : System.FilePath) (verb : Verb) : IO Answer  -- site 根目录 → 动词 → 回答
+typed (door) (arguments : List String) (input : Option ByteArray) : IO Typed -- 原始 argv 与 stdin
+typedWith (door) (surroundings : Surroundings) … : IO Typed      -- 连环境一起选
 
--- Keyboard.hs —— 人怎么敲
-data Slip = Slip { slipName :: String, slipHit :: String -> String }
-fumbled  :: [String] -> Gen [String]              -- 把一条命令行敲坏
-advice   :: Text -> [[String]]                    -- 从 recover 里抽出可执行命令
+-- Keyboard.lean —— 人怎么敲
+structure Slip where name : String; hit : String → String
+fumbled : List String → Gen (List String)            -- 把一条命令行敲坏
+advice  : String → List (List String)                -- 从 recover 里抽出可执行命令
 
--- Ground.hs —— 在哪里问，以及宿主怎么撒谎
-withGround :: (Ground -> IO a) -> IO a
-siteOf     :: Ground -> Site -> FilePath
-waypoint   :: Ground -> FilePath
-stored     :: Ground -> IO [(Address, ByteString)]
-corrupt    :: Ground -> Address -> IO ()            -- 翻一位
+-- Ground.lean —— 在哪里问，以及宿主怎么撒谎
+withGround (act : Ground → IO α) : IO α
+Ground.siteOf (site : Site) : System.FilePath
+Ground.waypoint : System.FilePath
+Ground.stored : IO (List (Address × ByteArray))
+Ground.corrupt (address : Address) : IO Unit         -- 翻一位
 
--- 丢弃与重放属于「撒谎的宿主」那一单元，**届时才写**：
+-- 丢弃与重放属于「撒谎的宿主」那一单元：`vanish` 与 `transplant`。
 -- 一个没有调用者的敌意动作，与一句没有被证伪过的断言等价。
 
--- Model.hs —— 断言什么
-instance StateModel World
-instance RunModel World (ReaderT Ground IO)
-revocationIsFinal :: DL World ()
+-- Model.lean —— 断言什么
+instance : StateModel World Action
+instance : RunModel Kit World Action Realized        -- Kit 是二进制加场地，做参数而不做实例
+revocationIsFinal : Script World Action Unit
 
--- Regression.hs —— 交付什么
-sequenced :: [Any (Action World)] -> Actions World   -- 极性由模型判定，不由手写声明
-coherent  :: Actions World -> Bool                   -- 每一步都是模型此刻允许的
-render    :: Text -> Actions World -> Text           -- 轨迹 → 一个 Rust #[test]
+-- Regression.lean —— 交付什么
+sequenced (World) (candidates : List Action) : Actions Action -- 极性由模型判定，不由手写声明
+coherent  (World) (actions : Actions Action) : Bool           -- 每一步都是模型此刻允许的
+render    (name : String) (actions : Actions Action) : String -- 轨迹 → 一个 Rust #[test]
 ```
 
 `ask` 返回 `Answer` 而不是抛异常：被拒绝是产品的正常输出，而**解析失败**才是异常——门的形状变了，测试应当当场停下，而不是把新形状当成一次拒绝。
 
 ## 9 工作流程
 
-1. `just adversary` 先 `cargo build`，把二进制路径经 `KUSANAGI_BIN` 传给 cabal。**唯一一处知道二进制在哪的地方是 justfile**。
-2. `cabal test` 跑 tasty：先跑 U5 的渲染对拍（毫秒级，先失败先止损），再跑 U3 的随机轨迹，最后跑 U4 的定向场景。
+1. `just adversary` 先 `cargo build`，把二进制路径经 `KUSANAGI_BIN` 传给 lake。**唯一一处知道二进制在哪的地方是 justfile**。
+2. `lake test` 跑性质树：先跑 U5 的渲染对拍（毫秒级，先失败先止损），再跑 U3 的随机轨迹，最后跑 U4 的定向场景。
 3. 反例出现时，`Regression.render` 把最小化后的轨迹写成 Rust 源码打到 stderr，并给出它该被放在哪个路径。
-4. 人把那个文件提交到 `crates/kusanagi/tests/`。**知识就此迁移到 Rust，Haskell 不保留它。**
+4. 人把那个文件提交到 `crates/kusanagi/tests/`。**知识就此迁移到 Rust，本目录不保留它。**
 
 ## 10 实现逻辑
 
-**门**：`readProcessWithExitCode`。退出码 0 解 stdout 为 `Outcome`，非 0 解 stderr 为 `Complaint`。两者都失败即抛出——见 §8 的理由。
+**门**：`IO.Process.spawn` 加 `Child.takeStdin`，两条流同时抽干（stdout 走 `IO.asTask`）——先读完一条再读另一条，会在子进程写满第二条管道时双方死等，而 `export` 正是往 stdout 写归档的那个动词。退出码 0 解 stdout 为 `Outcome`，非 0 解 stderr 为 `Complaint`。两者都失败即抛出——见 §8 的理由。
 
 **模型**：`World` 只记一个用户记得住的东西——哪些通道开着、谁是对端、每一方在每条通道上说过哪些话、谁被撤了、邀请是否用过。它**不记**地址、高度以外的任何链上事实；高度也只作为 `[Text]` 的长度间接出现。
 
@@ -249,18 +259,23 @@ render    :: Text -> Actions World -> Text           -- 轨迹 → 一个 Rust #
 
 ## 13 依赖选型
 
-| 依赖 | 为什么 |
-|---|---|
-| `quickcheck-dynamic` | `StateModel` 与 `RunModel` 的类型分界**就是黑盒边界**，由类型强制而不靠自律；且它能写有方向的对抗场景 |
-| `QuickCheck` | 上游要求 |
-| `aeson` | 门讲 JSON。手写 JSON 解析器等于在这里养第二个 bug 源 |
-| `process`、`directory`、`filepath`、`temporary` | 起进程、造场地 |
-| `tasty` + `tasty-quickcheck` | 把三组性质编成一棵可选择运行的树 |
-| `bytestring`、`text`、`containers` | 基础件 |
-| `-threaded -with-rtsopts=-N4` | **这套测试从来没并发过。** tasty 问运行时有几个 capability，而没有 `-threaded` 时答案永远是 1，所以十六核机器上也是一条一条跑。实测：`-j1` 76.68s，`-j4` 70.06s。并发度取 4 而不是 16，因为每条性质都在起真的二进制，十六个同时跑量的是调度器而不是产品，而 `Tempo` 恰好是会注意到这件事的那一条 | **隔离是构造上的**：一个世界一个临时目录（`withSystemTempDirectory`），一个中继一个由操作系统分配的端口，没有任何共享可写状态。`-threaded` 另一半价值在 U8：Windows 非线程运行时下一次阻塞的 socket 读会拦住整个运行时 |
-| `network` | U8 需要一个真实的套接字，而 `base` 没有。**中继必须在产品外面**：宿主自己记下请求时刻就是一份日志，而 §3 第 0 行正是说宿主什么都不学到。adversary 不进发布物、不进 `cargo deny`，它的供应链不是产品的供应链 |
+**本目录没有依赖。** `lakefile.toml` 里一行 `require` 也没有，也不得有。需要的东西工具链全带了：
 
-**不引入**：任何 FFI、任何绑定 Rust 类型的东西、任何需要改 Rust 代码才能工作的东西。
+| 要什么 | 用工具链里的哪一件 |
+|---|---|
+| 解门说的 JSON | `Lean.Data.Json`。手写 JSON 解析器等于在这里养第二个 bug 源 |
+| 起进程、写 stdin、造场地 | `IO.Process`、`IO.FS.createTempDir` |
+| 真实的套接字（U8 的中继） | `Std.Async.TCP`。**中继必须在产品外面**：宿主自己记下请求时刻就是一份日志，而 §3 第 0 行正是说宿主什么都不学到 |
+| 单调时钟与随机源 | `IO.monoNanosNow`、`Init.Data.Random` 的 `StdGen`（可分裂，正是生成器要的） |
+| 有序映射 | `Std.Data.TreeMap`。模型的遍历顺序不得成为性质的隐含变量 |
+| 生成、收缩、性质树 | `Check.lean`，在仓内 |
+| 状态模型与有方向的场景 | `Dynamic.lean`，在仓内。`StateModel` 与 `RunModel` 的类型分界**就是黑盒边界**，由类型强制而不靠自律 |
+
+**为什么引擎在仓内而不是找一个库。** 状态模型这一层本来就要自己写（§5）；它写完之后，生成器与收缩只是其中一百多行。代价是这一百多行归本仓维护，换到的是一件具体的东西：**CI 只需要一个 `elan`**，没有注册表要访问、没有版本要解、没有第三方供应链要相信。adversary 不进发布物也不进 `cargo deny`，但那只是说它的供应链不是产品的供应链，不是说它的供应链无所谓。
+
+**并发度 4**（`Check.abreast`）。每条性质都在起真的二进制，十六个同时跑量的是调度器而不是产品，而 `Tempo` 恰好是会注意到这件事的那一条。**隔离是构造上的**：一个世界一个临时目录，一个中继一个由操作系统分配的端口，没有任何共享可写状态。
+
+**不引入**：任何 FFI、任何绑定 Rust 类型的东西、任何需要改 Rust 代码才能工作的东西、任何 `require`。
 
 ## 14 硬编码声明
 
@@ -309,7 +324,7 @@ U6 首次运行就咬到了两处，记在 §4；U9 首次运行咬掉的是它�
 1. 本文。
 2. `ARCHITECTURE.md` §5 的「Outside the workspace」段与 §8 的对应裁决。
 3. `AGENTS.md` 的命令表（`just adversary` 一行）。
-4. `.github/workflows/adversary.yml`——定时任务，**永远不进 `check`**。
+4. `.github/workflows/full.yml` 的 `adversary` job——经 `leanprover/lean-action` 跑，**永远不进 `check`**。
 
 ---
 

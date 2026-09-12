@@ -28,7 +28,7 @@
 ## 2 验收标准
 
 - `native markup check src/app.native --strict` 零告警；`native test` 绿；`native build -Dautomation=true -Dtrace=off` 绿。
-- H8（`adversary/src/Kusanagi/Glass.hs`，驱动 automation server）五格全绿：对端命名的图片零连接；三种链接（`http:`/`javascript:`/`file:`）的控件都没有 `press`；终端字节以十六进制显示且控件树里没有 ESC/CR；会话后站点之外的盘上只有清单里的文件且 grep 不到对端内容；剪贴板只在按下复制后才变，且窗口说明剪贴板是什么。
+- H8（`adversary/Kusanagi/Glass.lean`，驱动 automation server）五格全绿：对端命名的图片零连接；三种链接（`http:`/`javascript:`/`file:`）的控件都没有 `press`；终端字节以十六进制显示且控件树里没有 ESC/CR；会话后站点之外的盘上只有清单里的文件且 grep 不到对端内容；剪贴板只在按下复制后才变，且窗口说明剪贴板是什么。
 - 主题测试：调色板里没有任何一个通道落在 `< 8` 或 `> 250`（纯黑纯白被禁），明暗两套各自通过。
 - G4 测试：单位转角总转向角 `= π/2 ± 1e-4`；两端曲率为零；关于 45° 线对称；伸出量等于调用方给的值。
 - 布局测试：把整棵视图排一遍，右格的 x 与宽等于 `plate.paneFrame` 所说，`plate.frame` 落在右格之内，

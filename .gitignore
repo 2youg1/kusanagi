@@ -1,6 +1,6 @@
 /target
 /dist
-/adversary/dist-newstyle
+/adversary/.lake
 **/*.rs.bk
 
 # The isolation zone: session handoffs, superseded proposals, and anything else

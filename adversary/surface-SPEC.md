@@ -10,7 +10,7 @@
 每格一条**关系**，不预测任何输出；每格写明**哪一种改动会让它红**（`adversary-SPEC.md` §2 第 5 条）。
 列「今日」是本轮开工前用二进制探过的事实：红 = 已经复现的缺陷，绿 = 已成立，? = 未探。
 
-### 宿主（持有全部对象，可以撒谎）— `Forging.hs`、`Leakage.hs`、`Reach.hs`
+### 宿主（持有全部对象，可以撒谎）— `Forging.lean`、`Leakage.lean`、`Reach.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
@@ -33,24 +33,24 @@
 | H17 | `302` 指向第二个监听器 → 第二个监听器**零连接**，带码拒绝 | 客户端跟随重定向 | 绿 |
 | H18 | 对象数 = 段数 + 每通道一个 offer——**诚实边界**，§3 写明，不断言 | — | — |
 | H19 | 宿主从备份回滚（作者自己的流变短）→ 作者的 `send` 与读者的 `read` **同一个码**拒绝，绝不写出一段链到已消失前驱的段落 | `send` 不再确认前驱在宿主上 | 已修：`track` 在 `Reach::Head` 上 `peek` 记录的头 |
-| H20 | 宿主往读者的 bin 里多放两个陌生对象 → 读者的 GET 集合 == 该 bin 全部对象（含陌生人），报告只有自己的三段 | 读者只取自己的那几个，等于向宿主指认它们 | 绿（`Sweep.hs`，经 Relay 取证） |
-| H21 | 邀请、三次 send、两次 read 期间，除 period 0 的 rendezvous 外，无请求点名列举之外的地址；列举只含 period 与 ward；无 DELETE | 某个动词绕开 sweep 直接按地址取，或释放时删除 | 绿（`Sweep.hs`） |
+| H20 | 宿主往读者的 bin 里多放两个陌生对象 → 读者的 GET 集合 == 该 bin 全部对象（含陌生人），报告只有自己的三段 | 读者只取自己的那几个，等于向宿主指认它们 | 绿（`Sweep.lean`，经 Relay 取证） |
+| H21 | 邀请、三次 send、两次 read 期间，除 period 0 的 rendezvous 外，无请求点名列举之外的地址；列举只含 period 与 ward；无 DELETE | 某个动词绕开 sweep 直接按地址取，或释放时删除 | 绿（`Sweep.lean`） |
 
-### 路径（看得见时刻与请求头，看不见字节）— `Reach.hs`；时序已在 `Tempo.hs`
+### 路径（看得见时刻与请求头，看不见字节）— `Reach.lean`；时序已在 `Tempo.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
 | T1 | 监听器收到的每个请求头集合 ⊆ `{host, content-length, content-type, accept, if-none-match, cache-control}`，无 `user-agent`，任一头名或值不含 `kusanagi` | 加了一个自报家门的头 | 绿（探针见 §4） |
 | L1 | **locator 永不指向网络路径**：`\\host\share`、`//host/share` 在 `invite` 与 `join` 两处都以**与未知 scheme 同一个码**拒绝，而不是去连。SMB 不走代理，一条 UNC 邀请就让受邀者的 Windows 向邀请者指定的主机做 NTLM 认证 | locator 解析放行 UNC | **红**：`\\127.0.0.1\…` 被接受，`//127.0.0.1/…` 报 `os error 53`——两者都已尝试连接 |
 
-### 代理的正门：MCP `port` — `Port.hs`
+### 代理的正门：MCP `port` — `Port.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
 | P1 | `kusanagi_read` 的工具结果：`content[].text` 里对端字节在**恰好一对 nonce 围栏**内，围栏外文本只是长度的函数，无控制字节；`structuredContent` 是 `--json` 的同一份 `Outcome` | 工具结果回到裸 JSON | 已修：`content` 散文带围栏，`structuredContent` = `--json` |
 | P2 | `tools/list` 的每个 `kusanagi_<verb>` 对应一个 `kusanagi <verb> --help` 退出码 0 的动词；被拒的调用是 `isError: true` 且 `structuredContent.code` 非空 | 两扇门的动词集分叉 | ? |
 
-### 同机他人／拿到磁盘的人 — `Leakage.hs`
+### 同机他人／拿到磁盘的人 — `Leakage.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
@@ -65,7 +65,7 @@
 | S9 | `forget` 后该通道目录消失、根下文件数减少、`read` 带码拒；宿主对象数不变 | forget 删了宿主对象（法则：宿主的删除是卫生，不是保证） | ? |
 | S10 | 任意动词序列后宿主 `.staging` 为空、站点根下无临时名 | 原子替换退化 | ? |
 
-### 对端（持有通道秘密，可以恶意）— `Terminal.hs`
+### 对端（持有通道秘密，可以恶意）— `Terminal.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
@@ -74,7 +74,7 @@
 | M3 | 64 KiB 与 100 KiB 正文：要么带码拒，要么逐字节回读——**永不静默截断** | 某层截断 | ? |
 | M4 | 整条轨迹所有输出里，邀请秘密只在 `invited` 出现一次 | 某个报告回显了秘密 | ? |
 
-### 对端，对着窗口（H8，D-18）— `Glass.hs`
+### 对端，对着窗口（H8，D-18）— `Glass.lean`
 
 窗口把对端字节渲染成 markdown；D-18 裁定渲染永不引发 I/O。这里不信「按构造如此」：本机监听端口数连接、automation server 报告画了什么、会话后读回磁盘与剪贴板。窗口未构建（`native build -Dautomation=true -Dtrace=off`）或 `native` 不在 PATH 时整组答「skipped」——CI 从不构建 GUI（Roadmap 事实 21），这是出货机器的门，不是合并机器的门。
 
@@ -86,7 +86,7 @@
 | W4 | 会话（含在窗口里铸一张邀请）后，站点之外的盘上只有清单里的文件（两个偏好、`windows.zon`、有 trace 时的 `native-sdk.jsonl`），且 grep 不到正文、`kusanagi2:`、宿主路径 | 窗口或 SDK 多写一个文件 | 绿；查出 SDK 默认写每帧事件日志（使用时间线），发布构建改 `-Dtrace=off` |
 | W5 | 铸出邀请后剪贴板仍是哨兵；按下「复制邀请」后才是 `kusanagi2:…`，且窗口说明剪贴板是日志 | 自动复制，或复制不说明 | 绿；查出复制后**无 B4 警告**，已加说明 + 60 s 回收（`scrub`） |
 
-### 一个人，对着窗口走完整程（H7）— `Journey.hs`
+### 一个人，对着窗口走完整程（H7）— `Journey.lean`
 
 黑盒 e2e：sheet 里铸邀请 → Bob 在终端加入 → 撰写框里发 → Bob 读到 → Bob 回 → 窗口在下一次轮询（≤ 20 s）画出来。控件按中英两种文案找（本机窗口是中文）。`awaiting` 等首屏画出再快照——H8 原先在 automation server 一应答就快照，负载高时轮流偶红「rail 没有那一行」，本轮一并修。
 
@@ -96,7 +96,7 @@
 | J2 | 房间：开关「建房间」→ `room` + `room-invite` 连发；Bob `room-join`；窗口 `room-send` 的话 Bob `room-read` 得到（founder 的读先准入了他）；Bob `room-send` 的话窗口画出 | 房间开关丢了、`room-read --after -` 的 stdin 形状变了 | 绿（28 s） |
 | 边界 | 备份 → 换机恢复在窗口里**未走**（`export` 走 stdout 归档、`import` 走管道，窗口只有 backup sheet 的写文件一步）；`native` 不在 PATH 或窗口未构建即整组 skipped | — | 诚实缺口 |
 
-### 群组内鬼与前对端 — `Insider.hs`
+### 群组内鬼与前对端 — `Insider.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
@@ -105,21 +105,21 @@
 | G3 | 撤销 Bob 后 `send --to-group`：Bob 的 `Landed` 为拒，Mallory 送达；Bob 的 `read` 看不到新话 | — | 已修：`appended` 问 peer 的 standing |
 | X2 | 撤销后对该通道 `send` → `grant.revoked`，`recover` 指向 `forget` | 撤销只管读不管写 | 已修 |
 
-### 房间成员与持有房间的宿主（F8，D-17）— `Room.hs`
+### 房间成员与持有房间的宿主（F8，D-17）— `Room.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
 | R1 | Bob 的 `room-read` 列出三人 handle——**明写的代价**：房间成员互知 | 名册不再随 offer 与名册段分发 | 绿 |
 | R2 | 宿主对象 grep 不到任一成员 handle（十六进制与原始字节）、房间名、三句话 | 名册或 handle 落到密封外 | 绿 |
 
-### 持有某件东西的人 — `Twins.hs`
+### 持有某件东西的人 — `Twins.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
 | A7 | 同一归档导入两个根，两边各 `send` → 至多一个成功，另一方带码拒；读者每高度恰一段 | 写入不再 `put_if_absent` | ? |
 | K1 | 同一站点并发 8 个 `send` → 读者的链无缺口无重复；每个拒绝带码 | 记录替换不原子 | ? |
 
-### 扫描者（无地址，对着真宿主发原始 HTTP）— `Scanner.hs`
+### 扫描者（无地址，对着真宿主发原始 HTTP）— `Scanner.lean`
 
 | # | 性质 | 会让它红的改动 | 今日 |
 |---|---|---|---|
@@ -131,9 +131,9 @@
 
 ## 2 验收标准
 
-1. 每格一条 tasty 用例，名字用人话陈述关系；全部绿。
+1. 每格一条 `Suite.claim`，名字用人话陈述关系；全部绿。
 2. 标「红」的四处（S3–S5、M2、G3/X2）**先跑红再修 Rust**，修法写进对应 crate 的 SPEC。
-3. 新模块每个 ≤400 行；`test/Main.hs` 拆出 `test/Surface.hs`。
+3. 新模块每个 ≤400 行；`Main.lean` 拆出 `Kusanagi/Surface.lean`。
 4. 总时长：黑洞一条占一分钟，与其余并发；其余全部秒级。
 
 ## 3 假设与边界（诚实的残余）
@@ -143,7 +143,7 @@
 - 撤销不能收回对方**已经**持有的秘密：被撤者仍能解开撤销前的历史（X2 只断言撤销**后**的话不再送出）。
 - 释放（H14）只烧钥匙，不再删除（D-20：DELETE 会点名地址）；宿主上字节的清除对两种 retention 都由宿主的生命周期决定。
 - 同 ward 读者的匿名集是黑盒测不到的量（ward 由身份随机选定，黑盒无法造出两个同 ward 的身份）；白盒 `unwatched.rs::two_readers_of_one_ward_ask_the_host_for_the_same_things` 断言它。
-- 时序特征只有 `Tempo.hs` 那两个；本文不新增时序断言。
+- 时序特征只有 `Tempo.lean` 那两个；本文不新增时序断言。
 
 ## 4 现状分析（开工前的探针）
 
@@ -158,10 +158,10 @@
 ## 5–17 其余各节
 
 命名、依赖、错误处理、工作流程与 `adversary-SPEC.md` 完全相同，不复述。新增文件：
-`Forging.hs`、`Leakage.hs`、`Insider.hs`、`Terminal.hs`、`Reach.hs`、`Listener.hs`（脚本化 TCP 监听器，
-`Relay.hs` 之外唯一起套接字的地方）、`Scanner.hs`、`Twins.hs`、`test/Surface.hs`。
-`Door.hs` 新增动词：`InviteReleasing`、`Group`、`SendGroup`、`ReadMine`、`Forget`、`Export`、`Import`。
-`Veil.hs` 导出 `apart`。文档同步：本文、`adversary-SPEC.md` §7 模块表一行、修 Rust 时对应 crate 的 SPEC 与 `docs/codes.md`。
+`Forging.lean`、`Leakage.lean`、`Insider.lean`、`Terminal.lean`、`Reach.lean`、`Listener.lean`（脚本化 TCP 监听器，
+`Relay.lean` 之外唯一起套接字的地方）、`Scanner.lean`、`Twins.lean`、`Kusanagi/Surface.lean`。
+`Door.lean` 新增动词：`InviteReleasing`、`Group`、`SendGroup`、`ReadMine`、`Forget`、`Export`、`Import`。
+`Veil.lean` 导出 `apart`。文档同步：本文、`adversary-SPEC.md` §7 模块表一行、修 Rust 时对应 crate 的 SPEC 与 `docs/codes.md`。
 
 ---
 

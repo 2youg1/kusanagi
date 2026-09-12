@@ -130,11 +130,11 @@ demo:
     ls "$ground/host"/*/* | head -4
     echo '(opaque addresses, sealed bytes, no author anywhere)'
 
-# The Haskell counterexample hunter in `adversary/`.
+# The Lean counterexample hunter in `adversary/`.
 #
-# Deliberately not part of `check`. It needs GHC, and a contributor who is
+# Deliberately not part of `check`. It needs Lean, and a contributor who is
 # changing Rust must be able to finish without installing a second toolchain —
-# so this skips itself, successfully, when cabal is not there. The binary it
+# so this skips itself, successfully, when lake is not there. The binary it
 # drives is built here and passed in, which is why nothing inside `adversary/`
 # has to know where a target directory lives.
 #
@@ -146,19 +146,19 @@ demo:
 adversary:
     #!/usr/bin/env bash
     set -euo pipefail
-    if ! command -v cabal > /dev/null 2>&1; then
-        echo "skipped: cabal is not installed. See adversary/adversary-SPEC.md §2."
+    if ! command -v lake > /dev/null 2>&1; then
+        echo "skipped: lake is not installed. See adversary/adversary-SPEC.md §2."
         exit 0
     fi
     built=$(cargo build --release --message-format json 2>/dev/null \
         | grep -o '"executable":"[^"]*kusanagi[^"]*"' | tail -1 | cut -d'"' -f4 | sed 's|\\\\|/|g')
     [ -n "$built" ] || { echo "cargo did not report an executable"; exit 1; }
     cd adversary
-    KUSANAGI_BIN="$built" cabal test --test-show-details=direct
+    KUSANAGI_BIN="$built" lake test
 
 # Two rules about where a test may stand, and what may follow it into a release.
 #
-# **Black box in Haskell, white box in Rust.** A test that drives the shipped
+# **Black box in Lean, white box in Rust.** A test that drives the shipped
 # binary from outside is answering "does the program a person runs behave", and
 # the answer is only worth having if nothing in the test can reach inside. Rust
 # integration tests link the library, so a black-box claim written in Rust is one

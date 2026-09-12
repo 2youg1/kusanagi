@@ -166,7 +166,7 @@ kusanagi proxy --require     # 从此没有 KUSANAGI_PROXY 就一个请求也不
 
 **有两件事主机做不到。** 它没法给你投递任何你没要求过的东西：写给你就得有共享秘密。它没法把你往回拉：只要你已经读到某个高度，它再删掉或替换比这更早的内容，得到的是 `kusanagi.history_changed`，而不是一场更短的对话。
 
-上面这些不是宣称，是测出来的。`crates/kusanagi/tests/unlinkable.rs` 站在主机一侧；`unwatched.rs` 站在一台记访问日志的主机一侧；`lying.rs` 站在一台会删除和搬移对象的主机一侧。`adversary/` 是一个独立的 Haskell 程序，用你会用的方式驱动这个二进制去找反例。
+上面这些不是宣称，是测出来的。`crates/kusanagi/tests/unlinkable.rs` 站在主机一侧；`unwatched.rs` 站在一台记访问日志的主机一侧；`lying.rs` 站在一台会删除和搬移对象的主机一侧。`adversary/` 是一个独立的 Lean 程序，用你会用的方式驱动这个二进制去找反例。
 
 ## 工作原理
 
@@ -196,7 +196,7 @@ kusanagi proxy --require     # 从此没有 KUSANAGI_PROXY 就一个请求也不
 ```bash
 just check        # fmt、clippy（-D warnings）、测试、行数预算、cargo-deny
 just demo         # 在一个用完即删的目录里跑通整个故事
-just adversary    # Haskell 反例猎手，装了 GHC 才跑
+just adversary    # Lean 反例猎手，装了 Lean 才跑
 ```
 
 `just check` 是每一次改动的收工条件。它会跑整套测试——写下这句话时是 328 个，外加窗口 42 个，其中包括两个端点通过真实 TCP 对话——外加 rustfmt、`-D warnings` 的 clippy、行数预算与 `cargo-deny`。

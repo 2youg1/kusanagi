@@ -235,7 +235,7 @@ have read to a height, deleting or replacing what is below it is
 
 These claims are tested. `crates/kusanagi/tests/unlinkable.rs` takes the host's
 side. `unwatched.rs` takes an access log. `lying.rs` takes a host that deletes
-and relocates objects. `adversary/` is a Haskell program that hunts for
+and relocates objects. `adversary/` is a separate Lean program that hunts for
 counterexamples by driving this binary.
 
 ## How it works
@@ -269,7 +269,7 @@ Listed so that each absence is a decision rather than something we forgot to men
 ```bash
 just check        # fmt, clippy at -D warnings, tests, line budget, cargo-deny
 just demo         # the whole story in a throwaway directory
-just adversary    # the Haskell counterexample hunter, if you have GHC
+just adversary    # the Lean counterexample hunter, if you have Lean
 ```
 
 `just check` is the closing condition for every change. It runs the whole test

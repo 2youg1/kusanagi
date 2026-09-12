@@ -10,9 +10,9 @@
 //! forgery: the host holds real segments, really signed, and tells its lie by
 //! choosing which ones to hand over and where.
 //!
-//! Found by `adversary/src/Kusanagi/Lying.hs`, which drives the shipped binary
-//! and asserts that two readings stand in the right relation. Haskell searched
-//! for it; this file is where the repository remembers it.
+//! Found by `adversary/Kusanagi/Lying.lean`, which drives the shipped binary
+//! and asserts that two readings stand in the right relation. The adversary
+//! searched for it; this file is where the repository remembers it.
 
 #![allow(
     clippy::unwrap_used,

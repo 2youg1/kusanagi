@@ -17,7 +17,7 @@
 
 ## 2 验收标准
 
-`kusanagi` 的白盒判据不动：`unwatched.rs`、`resuming.rs`、`released.rs`、`at_rest.rs`、`lying.rs`；黑盒 `adversary/Sweep.hs` H20/H21。
+`kusanagi` 的白盒判据不动：`unwatched.rs`、`resuming.rs`、`released.rs`、`at_rest.rs`、`lying.rs`；黑盒 `adversary/Sweep.lean` H20/H21。
 F8 加一条：`room.rs::a_read_of_three_members_lists_the_host_as_often_as_a_read_of_one`（三条 lane 与一条 lane 列举次数相同）。
 `cargo tree -i kusanagi-walk` 只有 `kusanagi` 一个上游。
 
