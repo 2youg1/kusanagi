@@ -1,0 +1,19 @@
+{
+  "name": "@kusanagi/cli",
+  "version": "0.0.0-placeholder",
+  "description": "Unlinkable dead drops on a host nobody has to trust. This package runs the release binary; it never touches the network.",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2youg1/kusanagi"
+  },
+  "bin": {
+    "kusanagi": "./bin.js"
+  },
+  "files": ["bin.js"],
+  "optionalDependencies": {
+    "@kusanagi/cli-linux-x64": "0.0.1-prealpha.0",
+    "@kusanagi/cli-darwin-arm64": "0.0.1-prealpha.0",
+    "@kusanagi/cli-win32-x64": "0.0.1-prealpha.0"
+  }
+}

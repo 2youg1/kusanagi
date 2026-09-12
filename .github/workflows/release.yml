@@ -66,6 +66,32 @@ jobs:
           prerelease: true
           generate_release_notes: true
 
+  # The npm shell: no binaries here, only the version stamp. The platform
+  # packages are packed from the release assets below; nothing is published
+  # until a human runs the npm publish step by hand (see npm/README.md).
+  npm-versions:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: stamp the npm version from the tag
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          ver="${tag#v}"
+          # v0.0.1prealpha -> 0.0.1-prealpha.0 ; v0.0.2 -> 0.0.2
+          if [[ "$ver" == *prealpha ]]; then
+            ver="${ver%prealpha}-prealpha.0"
+          fi
+          sed -i "s/0\.0\.0-placeholder/$ver/" npm/cli/package.json
+          sed -i "s/0\.0\.1-prealpha\.0/$ver/" npm/cli/package.json
+          sed -i "s/0\.0\.0-placeholder/$ver/" npm/platform-*/package.json
+          grep -h '"version"' npm/cli/package.json npm/platform-*/package.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-dirs
+          path: npm/
+
   # The windowed half, Windows only: it shells out to the CLI beside it, so
   # the same build produces both, and the zip carries the pair.
   glass:

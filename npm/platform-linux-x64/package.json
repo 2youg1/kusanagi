@@ -1,0 +1,13 @@
+{
+  "name": "@kusanagi/cli-linux-x64",
+  "version": "0.0.0-placeholder",
+  "description": "kusanagi release binary for linux-x64. Published by the release workflow; do not hand-edit.",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2youg1/kusanagi"
+  },
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin/kusanagi"]
+}
