@@ -16,6 +16,8 @@ just check      # fmt + clippy (-D warnings, --all-targets --all-features) + tes
 
 **Agent-green is not done.** The agent's tests prove the agent's work holds; they do not prove the feature works for a person. A feature counts as implemented only after the operator runs it by hand and confirms — until then, report it as "agent-green", never as "done".
 
+**No tag before the lanes are green.** A release tag fires `release.yml`, and `release.yml` publishes what CI proved. Before tagging: `full.yml` on `main` must be green (three platforms, deny, reproducible, nix, adversary, glass), and the open issues and pull requests must be triaged to zero or explicitly deferred with a reason. A red lane or an untriaged list means the tag waits.
+
 **Inner loop, before closing:** `cargo nextest run --workspace -E 'not package(kusanagi-grant)'` (≈30 s; `just test` without the filter is the same runner unfiltered) plus `cargo fmt` and full-workspace clippy `-D warnings` at every step, not at closing. `grant`'s two proptests take ~2 min and run only when `grant` changed or at closing. One tool call lasts 150 s: what fits in one call runs in the foreground; only release builds, the full adversary suite and `grant`'s proptests go to the background.
 
 ## Read before you write

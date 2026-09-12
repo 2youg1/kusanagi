@@ -16,7 +16,8 @@ Words you will meet, once each:
   host is never trusted: it stores locked boxes and cannot open them.
 - **channel** — one conversation between you and one other person. You give it
   a name that only you see, like a contact in your phone.
-- **invitation** — one long line of text. Whoever has it can join the channel,
+- **invitation** — one long line of text (about 180 characters for a folder host;
+  an address host prints a longer one). Whoever has it can join the channel,
   so hand it over the way you would hand over a key.
 - **check code** — four characters both sides see. If they match, nobody
   altered the invitation on the way.
@@ -200,7 +201,7 @@ do pay someone, pick any S3-compatible bucket that `doctor` passes. This page
 will not name a shop. A shop named here would be a recommendation, and a
 recommendation is another thing to trust.
 
-**How much?** A folder or a box you already run is metered at zero. A billed
+**How much?** A folder or a `kusanagi host` you already run is metered at zero. A billed
 bucket charges for listing and for download. A quiet reader, ten-minute periods,
 cap 32, was estimated around $1.50 a month — an order of magnitude, not a quote.
 A busy ward costs more; every reader of it downloads what everyone else received.
@@ -214,7 +215,7 @@ a very nice doorstop.
 
 **Five dollars per person per month — what's the best plan?** Hardware you already
 own, running `kusanagi host`, at $0. If you must pay someone, put that five
-dollars on a small always-on computer running the box, not on a bucket. The
+dollars on a small always-on computer running `kusanagi host`, not on a bucket. The
 bucket's access key rides on every request it signs, so the vendor's log links
-every channel that key wrote. The box asks for no key. Spend the five dollars on
-keeping the box up, not on a more anonymous bucket — there is no such thing.
+every channel that key wrote. `kusanagi host` asks for no key. Spend the five dollars on
+keeping the host up, not on a more anonymous bucket — there is no such thing.

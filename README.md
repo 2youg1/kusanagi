@@ -170,7 +170,7 @@ doctor` is a host — [docs/joining.md](docs/joining.md).
 
 **Whoever pays for the bucket left an email address and a card on file.** That is
 a relationship nobody encrypted, and cryptanalysis cannot help you because nobody
-needed any. Prefer a bucket that belongs to neither of you, or a box run
+needed any. Prefer a bucket that belongs to neither of you, or a `kusanagi host` run
 by a third party. It asks for no key, so it has no such edge. Splitting
 permissions by key prefix does not help — a
 prefix is a grouping the host can see.
@@ -248,7 +248,7 @@ Listed so that each absence is a decision rather than something we forgot to men
 | Long-polling | Would turn a poll into a wait; a read that lists a bin has no live edge to follow. |
 | Chunked shared workspaces | A separate problem. One segment carries at most 126 339 bytes; one message may be 32 segments on a channel and 64 in a room. |
 | Hiding an endpoint IP address | Not this project's. `KUSANAGI_PROXY` plus `kusanagi proxy --require`. |
-| Hiding which channels share one bucket credential | An S3 access key travels with every request it signs. A box anyone runs asks for none. |
+| Hiding which channels share one bucket credential | An S3 access key travels with every request it signs. A `kusanagi host` anyone runs asks for none. |
 | A security audit | **Not done.** Nobody outside this repository has reviewed the cryptography. |
 
 ## Working on it
