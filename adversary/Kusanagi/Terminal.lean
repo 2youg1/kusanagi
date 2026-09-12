@@ -45,8 +45,8 @@ private def lookalikes : List (String × String) :=
 Payloads that are terminal code rather than text.
 
 Each is written as the codepoints whose UTF-8 encoding is the byte string the
-Haskell literal spelled out: `\u009b` is the two bytes `c2 9b`, and `\u202e` is
-the three bytes `e2 80 ae`.
+claim is about: `\u009b` is the two bytes `c2 9b`, and `\u202e` is the three
+bytes `e2 80 ae`.
 -/
 private def terminalCode : List (String × ByteArray) :=
   [ ("OSC 52 writes the clipboard", "\x1b]52;c;aGVsbG8=\x07")
@@ -79,9 +79,8 @@ private def splitOnNewline (bytes : List UInt8) : List (List UInt8) :=
   leading :: done
 
 /--
-The lines of a stream, cut the way the Haskell `Char8.lines` cut them: a final
-newline closes the last line rather than opening an empty one, and an empty
-stream has no lines at all.
+The lines of a stream: a final newline closes the last line rather than opening
+an empty one, and an empty stream has no lines at all.
 -/
 private def byteLines (bytes : ByteArray) : List (List UInt8) :=
   let parts := splitOnNewline bytes.toList
@@ -99,8 +98,7 @@ private def hexDigit (value : UInt8) : Char :=
   (("0123456789abcdef".toList)[value.toNat % 16]?).getD '0'
 
 /--
-Bytes with everything unprintable spelled out, as the Haskell `show` of a byte
-string spelled it out.
+Bytes with everything unprintable spelled out.
 
 A finding about a control byte must not put that byte on the terminal that
 reports the finding, so the report escapes what the claim is about.

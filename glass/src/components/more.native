@@ -1,5 +1,11 @@
 <!-- The rest: the welcome pane, the group pane and its roster sheet, the
-     host doctor, and the forget dialog. -->
+     host doctor, and the forget dialog.
+
+     `status-line` is defined in thread.native and used by two panes here, so
+     this file imports it rather than keeping a second copy. Checking a file on
+     its own has to find every template it names. -->
+<import src="thread.native"/>
+
 <template name="welcome-door" args="title body">
   <column gap="6" cross="start">
     <text><span weight="medium">{title}</span></text>

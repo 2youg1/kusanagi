@@ -187,9 +187,9 @@
           <textarea text="{join.invitationText}" placeholder="{t.paste_invitation}" on-input="join_text_edit" label="{t.invitation}" height="120"/>
           <text size="sm" foreground="text_muted" wrap="true">{t.stdin_hint}</text>
           <switch checked="{join.room}" on-toggle="toggle_join_room">{t.join_room_switch}</switch>
-          <if test="{join.room}"><else>
+          <if test="{not join.room}">
             <switch checked="{join.release}" on-toggle="toggle_join_release">{t.release_switch}</switch>
-          </else></if>
+          </if>
           <row gap="8" main="end">
             <button variant="ghost" on-press="close_sheet">{t.cancel}</button>
             <button variant="primary" on-press="accept" disabled="{isBusy}">{t.join}</button>

@@ -36,7 +36,9 @@ just check                                  # fmt + clippy (-D warnings, --all-t
 - Be patient with a Rust command and never kill it by PID. The lock makes it slow; that is expected.
 - Time a build that feels slow before tuning it. The seconds sit in particular compilation units, not in the breadth of the command.
 
-**No tag before the lanes are green.** A release tag fires `release.yml`, and `release.yml` publishes what CI proved. Before tagging: `full.yml` on `main` must be green (three platforms, deny, reproducible, nix, adversary, glass), and the open issues and pull requests must be triaged to zero or explicitly deferred with a reason. A red lane or an untriaged list means the tag waits.
+**Three lanes, and each is red for exactly one reason.** `check.yml` is the gate: red means **this change** broke something, so it blocks the merge and nothing that can go red for another reason may enter it. `release-ready.yml` answers whether `main` can be tagged — the third platform, `cargo-deny`, the reproducible build, Nix, the window — and blocks a tag but never a merge, because a contributor fixing Rust cannot be asked to own a GUI toolchain. `sentinel.yml` runs on the clock against code nobody changed, so its red is always the world moving underneath us; it opens one issue and updates it, because a red run that recurs every morning is a red run nobody reads.
+
+**No tag before `release-ready.yml` is green on `main`**, and the open issues and pull requests triaged to zero or explicitly deferred with a reason. A red lane or an untriaged list means the tag waits.
 
 ## Read before you write
 
@@ -99,6 +101,7 @@ Unless the change is mechanical, keep the diff small enough to review in one sit
 - **A test never reaches the build artefact.** A `mod tests` carries `#[cfg(test)]`, a crate that exists only to test with never appears on a normal dependency edge, and the shipped file carries no such crate's name.
 - Test code (`#[cfg(test)]`, `tests/`, `benches/`) relaxes lints freely with a scoped `#[allow(…, reason = "test code")]`. Production code carries them as written.
 - Prefer comparing whole objects to comparing fields one at a time. Do not test a statically defined value.
+- **A test that is known to fail never goes in a gate.** Writing one so that a gap stays visible sounds principled and costs every contributor the same red, every run, until they learn to skip past it — and the day it fails for a second reason, nobody looks. Carry the gap as `#[ignore]` with the reason, and put what would settle it in the SPEC.
 - **When the adversary finds a defect, the knowledge migrates.** The minimised trace is rendered as a Rust test under `crates/kusanagi/tests/`, and the Lean side does not keep it. `adversary/` quantifies over traces; it is not a second home for a fact.
 - `just check` on a machine without Lean behaves byte for byte as it does where `adversary/` is absent. Never make `just check` depend on it.
 

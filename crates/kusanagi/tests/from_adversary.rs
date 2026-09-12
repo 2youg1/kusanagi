@@ -29,7 +29,7 @@ fn an_endpoint_cannot_accept_its_own_invitation() {
     let host = ground.join("host").display().to_string();
     let alice = Endpoint::new(ground.join("alice"));
 
-    let invitation1 = json(
+    let invitation0 = json(
         &alice
             .run(&Request::Invite {
                 name: "one".to_owned(),
@@ -44,31 +44,31 @@ fn an_endpoint_cannot_accept_its_own_invitation() {
         .unwrap()
         .to_owned();
 
-    let refused2 = alice
+    let refused1 = alice
         .run(&Request::Join {
-            invite: invitation1.clone(),
+            invite: invitation0.clone(),
             name: "two".to_owned(),
             habit: kusanagi::Habit::default(),
         })
         .unwrap_err();
-    assert_eq!(refused2.code(), "kusanagi.own_invitation");
+    assert_eq!(refused1.code(), "kusanagi.own_invitation");
 
-    let refused3 = alice
+    let refused2 = alice
         .run(&Request::Send {
             name: "one".to_owned(),
             payload: b"beta".to_vec(),
         })
         .unwrap_err();
-    assert_eq!(refused3.code(), "kusanagi.no_peer_yet");
+    assert_eq!(refused2.code(), "kusanagi.no_peer_yet");
 
-    let refused4 = alice
+    let refused3 = alice
         .run(&Request::Read {
             name: "one".to_owned(),
             after: None,
             whose: Whose::Peer,
         })
         .unwrap_err();
-    assert_eq!(refused4.code(), "kusanagi.no_peer_yet");
+    assert_eq!(refused3.code(), "kusanagi.no_peer_yet");
 
     std::fs::remove_dir_all(&ground).ok();
 }

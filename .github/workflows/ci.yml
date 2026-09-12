@@ -1,16 +1,23 @@
-# The fast lane: what a pull request must pass before anybody reads it.
+# The gate: what a change must pass before it can merge.
 #
-# This is `just check` on two platforms, and only it. Everything slower or
-# flakier — the third platform, the supply chain, the adversary, the GUI —
-# runs on `main` and on the daily clock instead (see `full.yml`), because a
-# red that has nothing to do with the change is a verdict on the contributor,
-# and a ten-minute wait is a verdict on contributing at all. `cargo deny` left
-# this lane after one reset connection turned a network wobble into a failed
-# check on somebody's change.
+# Everything here is red for one reason only — **this change broke it**. That is
+# the whole entry rule for this file. A job that can go red because a runner
+# image moved, a registry was slow, or a half-built feature is still half-built
+# does not belong here, because a red that has nothing to do with the change is
+# a verdict on the contributor, and a lane that is usually red is a lane nobody
+# reads.
+#
+# The slower and the environment-sensitive lanes live in `release-ready.yml`
+# (which decides whether `main` can be tagged) and `sentinel.yml` (which watches
+# for the world changing underneath us). `cargo deny` left this lane after one
+# reset connection turned a network wobble into a failed check on somebody's
+# change.
 name: check
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -52,3 +59,17 @@ jobs:
       - name: budget
         shell: bash
         run: bash scripts/budget.sh
+
+  # The adversary compiles as part of the gate even though it never runs here.
+  # Building it costs seconds and catches the one way this directory can break a
+  # contributor who never opened it: a rename on the Rust side that the Lean
+  # side names. Running it is `sentinel.yml`'s job, and needs the release binary.
+  adversary-builds:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: adversary
+          build: "true"
+          test: "false"

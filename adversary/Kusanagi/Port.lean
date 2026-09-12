@@ -45,9 +45,8 @@ private def splitOnNewline (bytes : List UInt8) : List (List UInt8) :=
   leading :: done
 
 /--
-The lines of a stream, cut the way the Haskell `Char8.lines` cut them: a final
-newline closes the last line rather than opening an empty one, and an empty
-stream has no lines at all.
+The lines of a stream: a final newline closes the last line rather than opening
+an empty one, and an empty stream has no lines at all.
 -/
 private def byteLines (bytes : ByteArray) : List (List UInt8) :=
   let parts := splitOnNewline bytes.toList

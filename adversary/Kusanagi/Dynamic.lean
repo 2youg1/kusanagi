@@ -310,4 +310,39 @@ def runActions (World : Type) {Setting Action Realized : Type} [StateModel World
     (actions : Actions Action) : IO Verdict :=
   runActionsFrom (Realized := Realized) setting (initial : World) actions
 
+/--
+Draws traces until one breaks, then shrinks it as far as the model still
+explains it.
+
+Running a trace is the caller's job rather than this function's, because every
+trace needs a world of its own — one temporary directory, one host — and a
+setting built once and shared would make two traces interfere in ways that read
+as broken rules. The caller builds the world, runs the trace in it, and may add
+what it wants to assert about what the host was left holding.
+-/
+partial def huntWith (World : Type) {Action : Type} [StateModel World Action] [BEq Action]
+    (generate : Gen (Actions Action)) (runs : Nat) (seed : StdGen)
+    (attempt : Actions Action → IO Verdict) (shrinkLimit : Nat := 60) : IO Verdict := do
+  let rec narrow : List (Actions Action) → IO (Option (Actions Action × String))
+    | [] => return none
+    | candidate :: rest => do
+      match ← attempt candidate with
+      | .broke why => return some (candidate, why)
+      | _ => narrow rest
+  let rec minimise (trace : Actions Action) (why : String) (steps : Nat) : IO Verdict := do
+    if steps ≥ shrinkLimit then
+      return .broke why
+    match ← narrow (shrinkActions World trace) with
+    | some (smaller, smallerWhy) => minimise smaller smallerWhy (steps + 1)
+    | none => return .broke why
+  let rec draw (index : Nat) (seed : StdGen) : IO Verdict := do
+    if index ≥ runs then
+      return .held
+    let (trace, next) := generate.draw seed (4 + index % 9)
+    match ← attempt trace with
+    | .held => draw (index + 1) next
+    | .skipped why => return .skipped why
+    | .broke why => minimise trace why 0
+  draw 0 seed
+
 end Kusanagi.Dynamic

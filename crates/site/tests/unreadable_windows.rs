@@ -6,18 +6,21 @@
 //! Who else on this machine can read a channel secret, asked on Windows.
 //!
 //! `unreadable.rs` asks the same question in mode bits, which do not exist here.
-//! The answer here is an access control list, and the two properties below are
-//! separate tests because **they go green at different times**:
+//! The answer here is an access control list, and the two properties are separate
+//! tests because they fail for different reasons:
 //!
-//! 1. `nobody_else_is_named` is about where a site lands. Under
-//!    `%LOCALAPPDATA%` the inherited list admits the owner, `SYSTEM` and
-//!    administrators and nobody else, so this passes today and is what makes the
-//!    default root a security property rather than tidiness.
-//! 2. `the_protection_is_the_site_s_own` is about what a site asks for. Until
-//!    `site::permissions::windows` exists, a site inherits its parent's list
-//!    instead of carrying its own — so a site under a directory somebody opened
-//!    up is open too. **This one is expected to fail until then**, which is why
-//!    it is written now: a gap nobody can run is a gap nobody fixes.
+//! 1. `nobody_else_is_named` is about where a site lands. No entry on anything a
+//!    site writes may name Everyone, Users, Authenticated Users, Interactive or
+//!    Guests.
+//! 2. `the_protection_is_the_site_s_own` is about what a site asks for. Every
+//!    path carries its own list and inherits nothing, so a site under a
+//!    directory somebody opened up is still closed. What satisfies it is the
+//!    `D:P` descriptor in `vault::windows`, which refuses inheritance at
+//!    creation time.
+//!
+//! Both pass. Neither is written as a known failure: a red that a contributor is
+//! told to expect is a red nobody reads, including on the day it means something
+//! else.
 //!
 //! Identities are read as SIDs rather than as names. `icacls` prints group names
 //! in the language the system was installed in, and a test that greps for

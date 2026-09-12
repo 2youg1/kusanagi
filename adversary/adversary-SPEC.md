@@ -324,7 +324,7 @@ U6 首次运行就咬到了两处，记在 §4；U9 首次运行咬掉的是它�
 1. 本文。
 2. `ARCHITECTURE.md` §5 的「Outside the workspace」段与 §8 的对应裁决。
 3. `AGENTS.md` 的命令表（`just adversary` 一行）。
-4. `.github/workflows/full.yml` 的 `adversary` job——经 `leanprover/lean-action` 跑，**永远不进 `check`**。
+4. `.github/workflows/sentinel.yml` 的 `adversary` job——经 `leanprover/lean-action` 跑，**永远不进 `check`**；`check.yml` 只编译它，不跑它。
 
 ---
 
