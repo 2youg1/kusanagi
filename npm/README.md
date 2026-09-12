@@ -52,13 +52,30 @@ comes from CI. Run this once, from a checkout at the tag:
 npm login                       # as a member of the kasanagi org
 gh release download v0.0.1prealpha --dir dist --pattern 'kusanagi-*'
 bash scripts/npm-pack.sh v0.0.1prealpha dist out/npm
-for dir in out/npm/platform-*; do npm publish "$dir" --tag latest; done
-npm publish out/npm/cli --tag latest
+for dir in out/npm/platform-*; do npm publish "$dir" --tag latest --otp=CODE; done
+npm publish out/npm/cli --tag latest --otp=CODE
 ```
 
-Then, on npmjs.com, open **Settings → Trusted publisher** on each of the four
-packages and enter: repository `2youg1/kusanagi`, workflow `release.yml`. After
-that the manual path is finished; tagging is the whole release.
+Publishing asks for a one-time password, so `--otp` carries a code from the
+authenticator on the account. Without it npm answers `EOTP` and publishes
+nothing.
+
+Then point each package at this workflow. `npm trust` does what the settings
+page on npmjs.com does, so no browser is involved:
+
+```bash
+for package in @kasanagi/cli @kasanagi/cli-linux-x64 \
+               @kasanagi/cli-darwin-arm64 @kasanagi/cli-win32-x64; do
+  npm trust github "$package" --repo 2youg1/kusanagi --file release.yml \
+    --allow-publish --yes
+done
+```
+
+`--allow-publish` is not optional here. Without it a package accepts only
+`npm stage publish`, while the release lane calls `npm publish` — the mistake
+costs nothing today and fails every release afterwards. Check the result with
+`npm trust list <package>`. After that the manual path is finished; tagging is
+the whole release.
 
 ## Verifying a release
 
