@@ -346,8 +346,7 @@ private def allowed (letter : Char) : Bool :=
   if letter == '\t' || letter == '\n' then true
   else if letter.val ≥ 0x202A && letter.val ≤ 0x202E then false
   else if letter.val ≥ 0x2066 && letter.val ≤ 0x2069 then false
-  -- Haskell's `isControl` is the Unicode Cc category, which is exactly these
-  -- two ranges.
+  -- The Unicode Cc category is exactly these two ranges.
   else !(letter.val < 0x20 || (letter.val ≥ 0x7f && letter.val ≤ 0x9f))
 
 private def inert : List Char → Bool

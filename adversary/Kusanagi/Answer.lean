@@ -73,6 +73,22 @@ def optional (j : Json) (α : Type) [FromJson α] (key : String) : Except String
   | .ok found => (fromJson? found : Except String α).map some
 
 /--
+A height, an index or a count, as the door writes it.
+
+The door writes all of them as JSON numbers. Lean's own `UInt64` reader expects
+a string, because it serialises through one so that a value above `2^53`
+survives a reader that keeps numbers as doubles. The two are bridged here rather
+than by an instance: an instance would change what `UInt64` means for every
+other module that ever reads JSON in this tree.
+-/
+def counted (j : Json) (key : String) : Except String UInt64 :=
+  (j.getObjValAs? Nat key).map UInt64.ofNat
+
+/-- The same, where the door omits the field or writes `null` for "none". -/
+def counted? (j : Json) (key : String) : Except String (Option UInt64) :=
+  (optional j Nat key).map (·.map UInt64.ofNat)
+
+/--
 What a segment carried, in the one encoding that does not lose it.
 
 Which of the two arrives is a fact about the bytes rather than a choice: a
@@ -98,7 +114,7 @@ structure Entry where
 
 instance : FromJson Entry where
   fromJson? j := do
-    let index ← j.getObjValAs? UInt64 "index"
+    let index ← counted j "index"
     let text ← optional j String "text"
     let payload ← optional j String "payload"
     match text, payload with
@@ -178,21 +194,21 @@ instance : FromJson Outcome where
     | "channels" => return .channels (← j.getObjValAs? (List Summary) "channels")
     | "invited" =>
       return .invited (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? Invitation "invite")
-        (← j.getObjValAs? UInt64 "expires_at")
+        (← counted j "expires_at")
     | "joined" =>
       return .joined (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? Handle "handle")
         (← j.getObjValAs? Handle "peer")
     | "sent" =>
-      return .sent (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? UInt64 "index")
+      return .sent (← j.getObjValAs? ChannelName "name") (← counted j "index")
         (← j.getObjValAs? Address "address")
     | "read" =>
       return .read (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? Handle "author")
-        (← optional j UInt64 "height") (← j.getObjValAs? (List Entry) "segments")
+        (← counted? j "height") (← j.getObjValAs? (List Entry) "segments")
     | "queued" =>
-      return .queued (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? UInt64 "waiting")
+      return .queued (← j.getObjValAs? ChannelName "name") (← counted j "waiting")
     | "ticked" =>
-      return .ticked (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? UInt64 "slot")
-        (← optional j UInt64 "wrote")
+      return .ticked (← j.getObjValAs? ChannelName "name") (← counted j "slot")
+        (← counted? j "wrote")
     | "revoked" =>
       return .revoked (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? String "step")
     | "forgotten" =>
@@ -209,7 +225,7 @@ instance : FromJson Outcome where
         (← j.getObjValAs? (List Landed) "delivered")
     | "exported" => return .exported (← j.getObjValAs? String "recovery")
     | "imported" =>
-      return .imported (← j.getObjValAs? String "site") (← j.getObjValAs? UInt64 "channels")
+      return .imported (← j.getObjValAs? String "site") (← counted j "channels")
     | other => .error s!"the door reported a command this adversary does not know: {other}"
 
 /--

@@ -69,6 +69,19 @@ pub const fn store() -> &'static str {
 /// [`VaultError::Permissions`] when the platform store refuses. It is a refusal
 /// rather than a fallback: writing in the clear because encryption failed would
 /// silently withdraw the property this exists for.
+///
+/// The signature is the same on every platform because the caller's contract is:
+/// sealing may be refused. A caller that handled a refusal only on Windows would
+/// break when a second platform grows a store. Only the Windows build has a path
+/// that can refuse today, which is why the suppression below is conditional — on
+/// Windows the lint is silent, so nothing there is being hidden.
+#[cfg_attr(
+    not(windows),
+    expect(
+        clippy::unnecessary_wraps,
+        reason = "fallible on Windows, where `platform::protect` can be refused"
+    )
+)]
 pub(crate) fn seal_at_rest(plain: &[u8]) -> Result<Vec<u8>, VaultError> {
     let mut out = vec![HERE];
     #[cfg(windows)]

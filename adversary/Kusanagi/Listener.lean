@@ -60,7 +60,17 @@ structure Listener where
   port : UInt16
   private arrived : IO.Ref Nat
   private seen : IO.Ref (List ByteArray)
-  private held : IO.Ref (List Socket.Client)
+  /--
+  Every connection that was accepted, which teardown releases.
+
+  The list covers every connection rather than only the ones a black hole is
+  sitting on. A socket here has no `close`, so releasing one means cancelling
+  the read it is waiting on, and a connection still reading its head is waiting
+  the same way a held one is.
+  -/
+  private taken : IO.Ref (List Socket.Client)
+  /-- What each accepted connection is doing, so teardown can wait for it. -/
+  private working : IO.Ref (List (Task (Except IO.Error Unit)))
   private running : IO.Ref Bool
 
 /-- Where an endpoint is pointed to reach this listener as a host. -/
@@ -124,9 +134,7 @@ private def follow (script : Script) (listener : Listener) (client : Socket.Clie
   let request ← readHead client ByteArray.empty
   listener.seen.modify (request :: ·)
   match script with
-  | .blackHole =>
-    listener.held.modify (client :: ·)
-    drain listener client
+  | .blackHole => drain listener client
   | .answer bytes =>
     try
       Async.block (client.send bytes)
@@ -154,15 +162,17 @@ private partial def gather (script : Script) (listener : Listener) : IO Unit := 
   if !(← listener.running.get) then
     return
   listener.arrived.modify (· + 1)
-  let _ ← IO.asTask (swallow (follow script listener client)) Task.Priority.dedicated
+  listener.taken.modify (client :: ·)
+  let working ← IO.asTask (swallow (follow script listener client)) Task.Priority.dedicated
+  listener.working.modify (working :: ·)
   gather script listener
 
 /--
 Connects once and says nothing, to release an accept that is already blocked.
 
-Haskell closed the gate and let the blocked `accept` throw. This toolchain
-offers no way to close a listening socket, so the loop is woken from the
-outside instead, and the flag it then reads is what ends it.
+This toolchain offers no way to close a listening socket, so a blocked `accept`
+cannot be made to throw. The loop is woken from the outside instead, and the
+flag it then reads is what ends it.
 -/
 private def knock (port : UInt16) : IO Unit := do
   let client ← Socket.Client.mk
@@ -181,7 +191,8 @@ def withListener (script : Script) (act : Listener → IO α) : IO α := do
     port := taken.port
     arrived := ← IO.mkRef 0
     seen := ← IO.mkRef []
-    held := ← IO.mkRef []
+    taken := ← IO.mkRef []
+    working := ← IO.mkRef []
     running := ← IO.mkRef true }
   -- Swallowed, because the knock below leaves the loop with nothing further to
   -- accept, and whatever the last accept reports is the loop ending rather
@@ -195,11 +206,15 @@ def withListener (script : Script) (act : Listener → IO α) : IO α := do
     -- last, which is what lets a client waiting on one give up.
     listener.running.set false
     swallow (knock listener.port)
-    for client in ← listener.held.get do
+    for client in ← listener.taken.get do
       -- Cancelling the read is the release: shutting down only the write side
-      -- would leave the drain loop waiting on a client that never speaks again.
+      -- would leave a connection waiting on a client that never speaks again.
       swallow client.native.cancelRecv
       swallow (Async.block client.shutdown)
-    listener.held.set []
+    -- Waiting is what makes the end of the action the end of the listener. A
+    -- connection still answering after that would outlive the property that
+    -- asked for it, and on this runtime it holds the whole process open.
+    for answering in ← listener.working.get do
+      let _ ← IO.wait answering
 
 end Kusanagi.Listener

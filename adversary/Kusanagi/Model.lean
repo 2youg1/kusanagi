@@ -71,10 +71,30 @@ structure Chan where
 private def opened (standing : Standing) (far : Option Slot) (met : Bool) : Chan :=
   { standing, far, met, said := [], cut := false }
 
+/--
+A rule this model can be made to forget.
+
+**A property that is always true is worth exactly as much as no property.** Each
+entry names one guard in `refusal`, and `Kusanagi.Bite` asserts that dropping it
+turns the suite red. That assertion is the only evidence that the guard carries
+weight; without it, a green run says the suite ran, not that it looked.
+-/
+inductive Blunting where
+  | nothing
+  /-- Forget that revocation is final, so a read after a cut is expected to work. -/
+  | revocationCuts
+  /-- Forget that an endpoint may not accept an invitation it minted itself. -/
+  | ownInvitation
+  /-- Forget that an endpoint without `send` is refused when it speaks. -/
+  | sendNeedsGrant
+  deriving DecidableEq, Repr, Inhabited
+
 /-- Everything a person could know after a trace. -/
 structure World where
   minted : TreeMap Nat Mint := ∅
   channels : TreeMap Slot Chan := ∅
+  /-- Which of its own rules this world has been made to forget. -/
+  blunted : Blunting := .nothing
   deriving Inhabited
 
 /-- One thing to try, as the model names it. -/
@@ -129,7 +149,8 @@ def refusal (world : World) : Action → Option Code
         -- Found by this adversary, then fixed in Rust: an endpoint that
         -- accepted its own invitation held two local names for one stream and
         -- read its own segments back as a peer's.
-        if mint.minter.site == site then some ⟨"kusanagi.own_invitation"⟩
+        if mint.minter.site == site && world.blunted != .ownInvitation then
+          some ⟨"kusanagi.own_invitation"⟩
         else if !mint.living then some ⟨"grant.expired"⟩
         else if mint.spent then some ⟨"kusanagi.invite_spent"⟩
         else none
@@ -137,8 +158,9 @@ def refusal (world : World) : Action → Option Code
     match world.at? ⟨site, channel⟩ with
     | none => some ⟨"kusanagi.unknown_channel"⟩
     | some chan =>
-      if !permits .sending chan.standing then some ⟨"grant.forbidden"⟩
-      else if chan.cut then some ⟨"grant.revoked"⟩
+      if !permits .sending chan.standing && world.blunted != .sendNeedsGrant then
+        some ⟨"grant.forbidden"⟩
+      else if chan.cut && world.blunted != .revocationCuts then some ⟨"grant.revoked"⟩
       else
         -- Found by this adversary, then fixed in Rust: a segment the peer may
         -- no longer read is not written. Revocation cuts both directions, and
@@ -152,7 +174,7 @@ def refusal (world : World) : Action → Option Code
     | none => some ⟨"kusanagi.unknown_channel"⟩
     | some chan =>
       if !permits .reading chan.standing then some ⟨"grant.forbidden"⟩
-      else if chan.cut then some ⟨"grant.revoked"⟩
+      else if chan.cut && world.blunted != .revocationCuts then some ⟨"grant.revoked"⟩
       else
         match chan.far.bind world.at? with
         -- Nobody has accepted, so there is nobody to have written anything.
@@ -224,7 +246,8 @@ instance : StateModel World Action where
   next world action ticket :=
     match action with
     | .invite site channel lifetime abilities =>
-      { minted := world.minted.insert ticket.step
+      { world with
+        minted := world.minted.insert ticket.step
           { minter := ⟨site, channel⟩, grants := abilities
           , living := lifetime == .forever, spent := false }
         channels := world.channels.insert ⟨site, channel⟩ (opened .root none false) }
@@ -234,7 +257,8 @@ instance : StateModel World Action where
       | some mint =>
         let linked := world.channels.alter mint.minter
           (·.map fun far => { far with far := some ⟨site, channel⟩ })
-        { minted := world.minted.insert held.step { mint with spent := true }
+        { world with
+          minted := world.minted.insert held.step { mint with spent := true }
           channels := linked.insert ⟨site, channel⟩
             (opened (.granted mint.grants) (some mint.minter) true) }
     -- A send meets the peer the way a read does: a drop is filed where its

@@ -199,12 +199,23 @@ def anyActions : Script World Action Unit := do
 
 end Script
 
-/-- Runs a script and keeps the trace it built. -/
-def forAllScript (World : Type) {Action : Type} [StateModel World Action]
+/--
+Runs a script against a chosen starting world and keeps the trace it built.
+
+The starting world is a parameter because a model that has been made to forget
+one of its own rules is still a model, and asking what it generates is how the
+rule is shown to be load-bearing.
+-/
+def forAllScriptFrom {World Action : Type} [StateModel World Action] (start : World)
     (script : Script World Action α) : Gen (Actions Action) := do
   let (_, built) ← StateT.run script
-    ({ world := initial, taken := [], length := 0 } : Building World Action)
+    ({ world := start, taken := [], length := 0 } : Building World Action)
   return built.taken
+
+/-- Runs a script from the model's own initial world. -/
+def forAllScript (World : Type) {Action : Type} [StateModel World Action]
+    (script : Script World Action α) : Gen (Actions Action) :=
+  forAllScriptFrom (initial : World) script
 
 /-- A trace of arbitrary steps, which is `anyActions` and nothing else. -/
 def arbitraryActions (World : Type) {Action : Type} [StateModel World Action] :
@@ -265,10 +276,10 @@ The environment only ever holds what a step produced, so a step that reaches
 for a variable an earlier step did not fill gets `none` and the model's own
 `attemptable` is what stopped that from being generated.
 -/
-def runActions (World : Type) {Setting Action Realized : Type} [StateModel World Action]
-    [RunModel Setting World Action Realized] (setting : Setting)
+def runActionsFrom {World Setting Action Realized : Type} [StateModel World Action]
+    [RunModel Setting World Action Realized] (setting : Setting) (start : World)
     (actions : Actions Action) : IO Verdict := do
-  let mut world : World := initial
+  let mut world : World := start
   let mut produced : Array (Option Realized) := #[]
   for (step, index) in actions.zipIdx do
     let look : Var → Option Realized := fun v => (produced[v.step]?).join
@@ -292,5 +303,11 @@ def runActions (World : Type) {Setting Action Realized : Type} [StateModel World
     produced := produced.push attempted.toOption
     world := after
   return .held
+
+/-- Runs a trace from the model's own initial world. -/
+def runActions (World : Type) {Setting Action Realized : Type} [StateModel World Action]
+    [RunModel Setting World Action Realized] (setting : Setting)
+    (actions : Actions Action) : IO Verdict :=
+  runActionsFrom (Realized := Realized) setting (initial : World) actions
 
 end Kusanagi.Dynamic

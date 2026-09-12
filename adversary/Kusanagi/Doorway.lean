@@ -59,10 +59,10 @@ private def refusal (door : Door) (ground : Ground) (arguments : List String)
 /--
 This process's environment with `LOCALAPPDATA` set to something, or removed.
 
-The Haskell version listed the inherited environment and handed the child the
-whole list back with one pair edited. `Kusanagi.Door.Surroundings` says the same
-thing without reading the environment first: inherit it, and change the one
-variable this claim is about.
+`Kusanagi.Door.Surroundings` says this without reading the environment first:
+inherit it, and change the one variable this claim is about. Listing the whole
+environment in order to hand it back with one pair edited would make the claim
+depend on every other variable that happened to be set.
 -/
 private def withProfile (chosen : Option System.FilePath) : Surroundings :=
   { changes := #[("LOCALAPPDATA", chosen.map System.FilePath.toString)] }

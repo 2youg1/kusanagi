@@ -93,6 +93,12 @@ windows-sys = { version = "0.61", default-features = false }
 #   clippy::large_enum_variant — at exactly one type, `kernel::Link`, whose two
 #     shapes differ by an ML-DSA-87 signature. Boxing it would cost `Copy`, which
 #     every `const fn` accessor on `Segment` relies on.
+#   clippy::unnecessary_wraps — at exactly one function, `vault::at_rest::seal_at_rest`,
+#     and only under `#[cfg_attr(not(windows), …)]`. Sealing may be refused, and the
+#     signature says so on every platform because the caller's contract does not vary
+#     by platform; only the Windows build has a store that can refuse it today. The
+#     suppression is absent on Windows, so it cannot hide a regression there, and it
+#     is written with `expect`, so a second platform growing a store deletes it.
 #     AGENTS.md already rules that "the single sampling point is
 #     `kusanagi::world::sample`", which `kusanagi::assembly` calls once per command
 #     and then passes down as a value; clippy.toml denies the clock everywhere so

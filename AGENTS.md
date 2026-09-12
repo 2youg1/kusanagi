@@ -109,7 +109,7 @@ Violating any of these turns the build red.
 | Rule | Held by |
 |---|---|
 | The Rust rules above: no panics, checked arithmetic, no `as` casts, `unsafe` only in `vault::windows`. | `[workspace.lints]` in `Cargo.toml`, with `-D warnings` |
-| Every suppression carries `reason = "…"`. In non-test code a suppression is allowed **only** for a lint on the allowlist written in `Cargo.toml`, which currently holds three entries: `clippy::disallowed_methods` at the one function that reads the clock, `clippy::large_enum_variant` at `kernel::Link`, and `unsafe_code` at `vault::windows`. | `allow_attributes_without_reason = "deny"`, plus review |
+| Every suppression carries `reason = "…"`. In non-test code a suppression is allowed **only** for a lint on the allowlist written in `Cargo.toml`, which currently holds four entries: `clippy::disallowed_methods` at the one function that reads the clock, `clippy::large_enum_variant` at `kernel::Link`, `unsafe_code` at `vault::windows`, and `clippy::unnecessary_wraps` at `vault::at_rest::seal_at_rest` on non-Windows only. | `allow_attributes_without_reason = "deny"`, plus review |
 | The clock and the random source reached from their one address each. | `clippy.toml` disallowed methods |
 | A black-box claim in Lean under `adversary/`; a white-box claim in Rust beside the code it judges. | `just boxes`, which refuses `CARGO_BIN_EXE` anywhere under `crates/` |
 | Nothing written for a test compiled into the binary a person downloads. | `just boxes` |

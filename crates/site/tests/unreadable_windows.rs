@@ -76,6 +76,12 @@ const NEXT: &str = "--- next ---";
 /// fail intermittently with an empty error stream — an interpreter that would
 /// not start, reported as an access control list that was wrong. One run per
 /// test cannot say that.
+///
+/// **The .NET method rather than the `Get-Acl` cmdlet.** `Get-Acl` lives in
+/// `Microsoft.PowerShell.Security`, so calling it asks the module autoloader to
+/// work; a hosted image where that module will not load fails every test here
+/// with a message about PowerShell rather than about an access control list.
+/// `DirectoryInfo.GetAccessControl` needs no module and returns the same object.
 fn acls(paths: &[PathBuf]) -> Vec<(bool, Vec<Ace>)> {
     let listed = paths
         .iter()
@@ -85,7 +91,7 @@ fn acls(paths: &[PathBuf]) -> Vec<(bool, Vec<Ace>)> {
     let script = format!(
         "$ErrorActionPreference='Stop'; foreach ($p in @({listed})) {{ \
            Write-Output '{NEXT}'; \
-           $a = Get-Acl -LiteralPath $p; \
+           $a = (Get-Item -LiteralPath $p).GetAccessControl(); \
            Write-Output $a.AreAccessRulesProtected; \
            $a.Access | ForEach-Object {{ \
              Write-Output ($_.IdentityReference.Translate(\
