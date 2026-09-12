@@ -1,38 +1,74 @@
-# npm packages: `@kusanagi/cli` + three platform packages
+# The npm channel
 
-The shell (`cli/`) carries `bin.js` and nothing else. Each platform package
-carries one release binary under `bin/`. `npx @kusanagi/cli` picks the
-platform package npm installed and runs its binary; the shell never touches
-the network.
+Four packages carry one release: the shell `@kasanagi/cli`, and one platform
+package per target holding a single binary. `npm` and `bun` read `os`/`cpu` on
+the platform packages and download only the one that matches, so an install
+costs one binary and the shell never reaches the network.
+
+```
+npm/cli/                  @kasanagi/cli              bin.js, pins the three below
+npm/platform-linux-x64/   @kasanagi/cli-linux-x64    bin/kusanagi
+npm/platform-darwin-arm64/@kasanagi/cli-darwin-arm64 bin/kusanagi
+npm/platform-win32-x64/   @kasanagi/cli-win32-x64    bin/kusanagi.exe
+```
 
 ## Versions
 
-`package.json` files carry `0.0.0-placeholder` (shell) and fixed
-`optionalDependencies` pins. The `npm-versions` job in `release.yml` stamps
-all four from the tag (`v0.0.1prealpha` → `0.0.1-prealpha.0`) and uploads the
-stamped `npm/` dirs as the `npm-dirs` artifact. Never hand-edit a version.
+Every version in these four `package.json` files is the literal token
+`0.0.0-placeholder` — the shell's own version and its three pins included.
+`scripts/npm-pack.sh` replaces every occurrence with the version the release tag
+names, so the tag is the only place a release version is written.
 
-## Publishing (by hand, after the release page shows all assets)
+| tag | published as |
+|---|---|
+| `v0.0.2` | `0.0.2` |
+| `v0.0.1prealpha` | `0.0.1-prealpha.0` |
 
-Nothing in CI publishes to the registry. After `npm-versions` is green:
+A tag outside `v<major>.<minor>.<patch>[identifier]` stops the pack script
+rather than reaching the registry as a version nobody chose. **Never hand-edit a
+version in this directory.**
+
+## Publishing
+
+The `npm` job in `release.yml` does it on every tag: it packs the built binaries,
+publishes the three platform packages, waits until the registry serves each pin,
+then publishes the shell. That order is not cosmetic — the shell declares the
+platform packages as `optionalDependencies` at an exact version, and a pin the
+registry cannot yet resolve is an install that fails on somebody else's machine.
+
+Credentials are npm trusted publishing over OIDC: the job asks for
+`id-token: write`, npm exchanges the token for a short-lived credential, and no
+npm token is stored anywhere. It also earns each version a provenance
+attestation, which a stored token would not.
+
+## Bootstrapping a package name — once per name, by hand
+
+**OIDC cannot create a package.** npm requires a package to exist before its
+settings will accept a trusted publisher, so the first version of each of the
+four names is published from a person's machine, and every version after that
+comes from CI. Run this once, from a checkout at the tag:
 
 ```bash
-# one-time: the scope must exist and you must be logged in
-npm login
-# from the downloaded npm-dirs artifact:
-cd npm/platform-linux-x64 && npm publish --access public && cd ../..
-cd npm/platform-darwin-arm64 && npm publish --access public && cd ../..
-cd npm/platform-win32-x64 && npm publish --access public && cd ../..
-# the platform binaries ride the release assets, so pack each dir with its
-# binary copied from the release page under bin/ first
-cd npm/cli && npm publish --access public
+npm login                       # as a member of the kasanagi org
+gh release download v0.0.1prealpha --dir dist --pattern 'kusanagi-*'
+bash scripts/npm-pack.sh v0.0.1prealpha dist out/npm
+for dir in out/npm/platform-*; do npm publish "$dir" --tag latest; done
+npm publish out/npm/cli --tag latest
 ```
 
-Verify with a cold install on each platform:
+Then, on npmjs.com, open **Settings → Trusted publisher** on each of the four
+packages and enter: repository `2youg1/kusanagi`, workflow `release.yml`. After
+that the manual path is finished; tagging is the whole release.
+
+## Verifying a release
+
+On each platform, from a machine that has never installed it:
 
 ```bash
-npx --yes @kusanagi/cli@VERSION id
-bunx --yes @kusanagi/cli@VERSION id
+npx --yes @kasanagi/cli@VERSION id
+bunx --yes @kasanagi/cli@VERSION id
 ```
 
-Both must print a handle. Until they do, the npm issue stays open.
+Both must print a handle. A silent exit with status 0 on Windows means `bin.js`
+lost its shebang — npm's generated wrapper reads that line to decide what
+interprets the file.

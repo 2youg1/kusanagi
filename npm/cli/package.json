@@ -1,19 +1,27 @@
 {
-  "name": "@kusanagi/cli",
+  "name": "@kasanagi/cli",
   "version": "0.0.0-placeholder",
   "description": "Unlinkable dead drops on a host nobody has to trust. This package runs the release binary; it never touches the network.",
   "license": "MPL-2.0",
+  "homepage": "https://github.com/2youg1/kusanagi#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/2youg1/kusanagi"
+    "url": "git+https://github.com/2youg1/kusanagi.git"
   },
+  "bugs": {
+    "url": "https://github.com/2youg1/kusanagi/issues"
+  },
+  "keywords": ["kusanagi", "dead-drop", "end-to-end-encryption", "agents", "cli"],
   "bin": {
     "kusanagi": "./bin.js"
   },
   "files": ["bin.js"],
+  "publishConfig": {
+    "access": "public"
+  },
   "optionalDependencies": {
-    "@kusanagi/cli-linux-x64": "0.0.1-prealpha.0",
-    "@kusanagi/cli-darwin-arm64": "0.0.1-prealpha.0",
-    "@kusanagi/cli-win32-x64": "0.0.1-prealpha.0"
+    "@kasanagi/cli-linux-x64": "0.0.0-placeholder",
+    "@kasanagi/cli-darwin-arm64": "0.0.0-placeholder",
+    "@kasanagi/cli-win32-x64": "0.0.0-placeholder"
   }
 }

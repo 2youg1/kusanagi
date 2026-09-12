@@ -74,6 +74,19 @@ curl -fsSL https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/instal
 irm https://raw.githubusercontent.com/2youg1/kusanagi/main/scripts/install.ps1 | iex
 ```
 
+On a machine that already has node or bun, those same release binaries arrive
+through the registry, and only the build that matches your machine is
+downloaded:
+
+```bash
+npx @kasanagi/cli id               # runs it once, installs nothing
+npm install --global @kasanagi/cli # or: bun install --global @kasanagi/cli
+```
+
+Either global install gives you the command `kusanagi`. Each version is
+published by the release workflow with a provenance attestation, so npm can
+show you which run built the bytes.
+
 ## What you get
 
 A **name** you choose, signed by your key. The other side sees it beside your

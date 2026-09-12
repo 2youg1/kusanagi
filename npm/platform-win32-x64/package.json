@@ -1,13 +1,17 @@
 {
-  "name": "@kusanagi/cli-win32-x64",
+  "name": "@kasanagi/cli-win32-x64",
   "version": "0.0.0-placeholder",
-  "description": "kusanagi release binary for win32-x64. Published by the release workflow; do not hand-edit.",
+  "description": "kusanagi release binary for win32-x64. Packed by scripts/npm-pack.sh from the release asset; do not hand-edit.",
   "license": "MPL-2.0",
+  "homepage": "https://github.com/2youg1/kusanagi#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/2youg1/kusanagi"
+    "url": "git+https://github.com/2youg1/kusanagi.git"
   },
   "os": ["win32"],
   "cpu": ["x64"],
-  "files": ["bin/kusanagi.exe"]
+  "files": ["bin/kusanagi.exe"],
+  "publishConfig": {
+    "access": "public"
+  }
 }

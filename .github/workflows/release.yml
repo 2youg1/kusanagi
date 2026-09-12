@@ -66,31 +66,76 @@ jobs:
           prerelease: true
           generate_release_notes: true
 
-  # The npm shell: no binaries here, only the version stamp. The platform
-  # packages are packed from the release assets below; nothing is published
-  # until a human runs the npm publish step by hand (see npm/README.md).
-  npm-versions:
+  # The npm channel: the same binaries the release page carries, wrapped so a
+  # machine that already has node or bun reaches them with one command. The
+  # platform packages go first and the shell last, because the shell pins them
+  # as optional dependencies at an exact version, and a pin the registry cannot
+  # resolve is an install that fails on somebody else's machine.
+  #
+  # The first version of each package name cannot come from here — npm requires
+  # a package to exist before its settings accept a trusted publisher, so a
+  # person publishes each name once by hand (npm/README.md) and CI owns every
+  # version after that.
+  npm:
     needs: [publish]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Trusted publishing: npm exchanges this OIDC token for a short-lived
+      # credential, so no npm token is stored, and each version gets a
+      # provenance attestation naming the run that built it.
+      id-token: write
+    env:
+      # Every release so far is a prerelease, so `latest` is simply the newest
+      # build a user should get, and npm refuses a prerelease that names no
+      # dist-tag. A stable line would change this value here and nowhere else.
+      DIST_TAG: latest
     steps:
       - uses: actions/checkout@v7
-      - name: stamp the npm version from the tag
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: trusted publishing needs npm 11.5.1 or newer
+        run: |
+          npm install --global npm@latest
+          npm --version
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: pack the built binaries into the npm tree
+        id: pack
         shell: bash
         run: |
-          tag="${{ github.ref_name }}"
-          ver="${tag#v}"
-          # v0.0.1prealpha -> 0.0.1-prealpha.0 ; v0.0.2 -> 0.0.2
-          if [[ "$ver" == *prealpha ]]; then
-            ver="${ver%prealpha}-prealpha.0"
-          fi
-          sed -i "s/0\.0\.0-placeholder/$ver/" npm/cli/package.json
-          sed -i "s/0\.0\.1-prealpha\.0/$ver/" npm/cli/package.json
-          sed -i "s/0\.0\.0-placeholder/$ver/" npm/platform-*/package.json
-          grep -h '"version"' npm/cli/package.json npm/platform-*/package.json
-      - uses: actions/upload-artifact@v7
-        with:
-          name: npm-dirs
-          path: npm/
+          version="$(bash scripts/npm-pack.sh '${{ github.ref_name }}' dist out/npm)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: publish the platform packages
+        run: |
+          for dir in out/npm/platform-*; do
+            npm publish "$dir" --tag "$DIST_TAG"
+          done
+      - name: wait until the registry serves every pin
+        shell: bash
+        run: |
+          version='${{ steps.pack.outputs.version }}'
+          # The packed tree is the only list of platform packages there is, so a
+          # target added to npm-pack.sh is waited for here without a second edit.
+          for dir in out/npm/platform-*; do
+            package="$(npm pkg get name --prefix "$dir" | tr -d '"')"
+            for attempt in $(seq 1 10); do
+              if npm view "$package@$version" version >/dev/null 2>&1; then
+                break
+              fi
+              if [ "$attempt" -eq 10 ]; then
+                echo "$package@$version is still unresolvable; the shell would install broken" >&2
+                exit 1
+              fi
+              sleep 6
+            done
+          done
+      - name: publish the shell
+        run: npm publish out/npm/cli --tag "$DIST_TAG"
 
   # The windowed half, Windows only: it shells out to the CLI beside it, so
   # the same build produces both, and the zip carries the pair.
