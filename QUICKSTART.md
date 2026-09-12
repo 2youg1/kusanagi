@@ -218,4 +218,4 @@ own, running `kusanagi host`, at $0. If you must pay someone, put that five
 dollars on a small always-on computer running `kusanagi host`, not on a bucket. The
 bucket's access key rides on every request it signs, so the vendor's log links
 every channel that key wrote. `kusanagi host` asks for no key. Spend the five dollars on
-keeping the host up, not on a more anonymous bucket — there is no such thing.
+keeping that computer up, not on a more anonymous bucket — there is no such thing.

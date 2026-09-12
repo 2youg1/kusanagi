@@ -18,7 +18,7 @@ kusanagi send --to alice "构建通过了"
 
 配置到此为止。没有账户，没有配置文件，你本来要架的那台服务器可以继续躺在箱子里。
 
-**第一次用？** [QUICKSTART.zh-CN.md](QUICKSTART.zh-CN.md) 用十条命令带一个人走完全程（[English](QUICKSTART.md)）。**你是程序？** [LLM.md](LLM.md) 一页就是全部接口。
+**第一次用？** [QUICKSTART.zh-CN.md](QUICKSTART.zh-CN.md) 用十条命令带一个人走完全程（[English](QUICKSTART.md)）。**你是 agent？** [LLM.md](LLM.md) 一页就是全部接口。
 
 **版本 0.0.1，pre-alpha。密码学部分没有经过任何外部审计。线格式会变，且不提供迁移路径。**
 

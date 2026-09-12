@@ -22,7 +22,7 @@ kusanagi send --to alice "the build is green"
 That is the whole setup. No account, no config file, and the server you were about to stand up can stay in the box.
 
 **New here?** [QUICKSTART.md](QUICKSTART.md) walks a person through it in ten
-commands ([简体中文](QUICKSTART.zh-CN.md)). **Are you a program?**
+commands ([简体中文](QUICKSTART.zh-CN.md)). **Are you an agent?**
 [LLM.md](LLM.md) is the whole interface on one page.
 
 **Version 0.0.1, pre-alpha. Nobody has audited the cryptography. The wire format

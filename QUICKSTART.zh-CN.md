@@ -189,7 +189,7 @@ Cloudflare R2、Backblaze B2、MinIO、Garage、SeaweedFS、Ceph RGW、Storj 的
 或能跑这个二进制（Rust 1.97）。2004 年的 PowerPC iMac 是个很好看的门挡。
 
 **每人每月 5 美元，怎么花最值？** 花在你已经拥有的硬件上，跑 `kusanagi host`，
-零美元。非花不可，就把这 5 美元花在一台一直开着、跑 `kusanagi host` 的小机器上，而不是
+零美元。非花不可，就把这 5 美元花在一台一直开着、跑 `kusanagi host` 的小电脑上，而不是
 桶。桶的 access key 跟它签的每个请求一起走，服务商的日志因此把一把钥匙写过的
-每条通道连在一起。`kusanagi host` 不要钥匙。这 5 美元买的是主机一直在线，而不是「更匿名
+每条通道连在一起。`kusanagi host` 不要钥匙。这 5 美元买的是那台电脑一直在线，而不是「更匿名
 的桶」——没有这种东西。
