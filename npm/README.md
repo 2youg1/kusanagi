@@ -31,6 +31,26 @@ rather than reaching the registry as a version nobody chose. `AGENTS.md` owns
 the grammar a release tag actually uses, stage and date included. **Never hand-edit a
 version in this directory.**
 
+## A published version is never unpublished
+
+The next version supersedes the last one; nothing is taken back. Unpublishing is
+the one npm operation that can destroy a package name, and a name that ceases to
+exist takes its trusted-publisher configuration with it, which breaks every
+release afterwards. A version published by mistake is therefore superseded, not
+retracted.
+
+What makes that safe is the `latest` dist-tag, which `release.yml` moves on every
+release: `npm install @kasanagi/cli` and `npx @kasanagi/cli` follow the tag, not
+semver order, so the newest release is what an install gets even while an older
+version remains in the registry.
+
+One version does sort above every later one and will stay visible in
+`npm view @kasanagi/cli versions`: `0.0.1-prealpha.0`, published under the tag
+grammar this repository no longer uses. Prerelease identifiers compare as text,
+so `0.0.1-Pre-alpha-260913` sorts below it. **Every tag after
+`v0.0.1-Pre-alpha-260913` therefore starts at `v0.0.2`**, which puts the version
+number itself above the residue and keeps the order monotone from there on.
+
 ## Publishing
 
 The `npm` job in `release.yml` does it on every tag: it packs the built binaries,
