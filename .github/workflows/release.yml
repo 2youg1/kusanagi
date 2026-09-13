@@ -41,12 +41,29 @@ jobs:
           mkdir -p dist
           name="kusanagi-${{ github.ref_name }}-${{ matrix.target }}"
           if [ -f "target/${{ matrix.target }}/release/kusanagi.exe" ]; then
-            cp "target/${{ matrix.target }}/release/kusanagi.exe" "dist/$name.exe"
-            (cd dist && sha256sum "$name.exe" > "$name.exe.sha256")
+            asset="$name.exe"
+            cp "target/${{ matrix.target }}/release/kusanagi.exe" "dist/$asset"
           else
-            cp "target/${{ matrix.target }}/release/kusanagi" "dist/$name"
-            (cd dist && sha256sum "$name" > "$name.sha256")
+            asset="$name"
+            cp "target/${{ matrix.target }}/release/kusanagi" "dist/$asset"
           fi
+          (cd dist && sha256sum "$asset" > "$asset.sha256")
+          # What the release page will say about this artefact, recorded by the
+          # only machine that can speak for it. The BLAKE3 comes from the binary
+          # itself, which is the hash `kusanagi doctor --here` prints for a
+          # reader, so the table on the release page and that command answer one
+          # question with one number.
+          hash="$("./dist/$asset" doctor --here --json --root "$RUNNER_TEMP/notes-site" \
+            | tr ',' '\n' | sed -ne 's/.*"binary": *"\([0-9a-f]*\)".*/\1/p')"
+          if [ -z "$hash" ]; then
+            echo "::error::the built binary reported no BLAKE3 of itself"; exit 1
+          fi
+          {
+            echo "asset=$asset"
+            echo "blake3=$hash"
+            echo "rustc=$(rustc --version)"
+            echo "image=${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          } > "dist/$asset.facts"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
@@ -56,15 +73,34 @@ jobs:
     needs: [build, glass]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+      # The body of the release page. GitHub's generated half lists the pull
+      # requests merged since the last tag and the contributors who were new
+      # among them; the authored half carries install, the hashes and the
+      # toolchain, and it is composed from the `.facts` files the build jobs
+      # wrote rather than by hand after the fact.
+      - name: compose the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="${GITHUB_REF_NAME}" -q .body > "$RUNNER_TEMP/generated.md"
+          bash scripts/release-notes.sh "${GITHUB_REF_NAME}" dist "$RUNNER_TEMP/generated.md" \
+            > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
       - uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          files: |
+            dist/*
+            !dist/*.facts
           prerelease: true
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/notes.md
 
   # The npm channel: the same binaries the release page carries, wrapped so a
   # machine that already has node or bun reaches them with one command. The
@@ -170,6 +206,14 @@ jobs:
           cp glass/zig-out/bin/glass.exe "dist/$name/"
           cp glass/zig-out/bin/kusanagi.exe "dist/$name/"
           (cd dist && powershell -NoProfile -Command "Compress-Archive -Path \"$name\" -DestinationPath \"$name.zip\"" && sha256sum "$name.zip" > "$name.zip.sha256")
+          # No `blake3=` line: an archive cannot report a hash of itself, and the
+          # release notes say so rather than leaving a reader to wonder why one
+          # row of the table is absent.
+          {
+            echo "asset=$name.zip"
+            echo "rustc=$(rustc --version)"
+            echo "image=${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          } > "dist/$name.zip.facts"
       - uses: actions/upload-artifact@v7
         with:
           name: glass-windows-x86_64
