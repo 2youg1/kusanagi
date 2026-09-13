@@ -145,18 +145,7 @@ fn a_symbolic_link_planted_at_a_record_is_replaced_and_never_followed() {
     let site = scratch("symlink");
     site.adopt(&[5; 32], Ward::from_bits(0x00ab)).unwrap();
 
-    let bait = site
-        .root()
-        .join("..")
-        .join(format!("kusanagi-unreadable-bait-{}", std::process::id()));
-    std::fs::write(&bait, b"something its owner cares about").unwrap();
-    std::fs::set_permissions(&bait, std::fs::Permissions::from_mode(0o644)).unwrap();
-
-    let channels = site.root().join("channels");
-    std::fs::create_dir_all(&channels).unwrap();
-    std::os::unix::fs::symlink(&bait, channels.join("peer")).unwrap();
-
-    site.keep(&Channel {
+    let peer = Channel {
         cadence: kusanagi_site::Cadence::OnDemand,
         retention: kusanagi_site::Retention::Keep,
         opened: kusanagi_kernel::Period::from_count(0),
@@ -167,8 +156,33 @@ fn a_symbolic_link_planted_at_a_record_is_replaced_and_never_followed() {
         locator: "./drops".to_owned(),
         standing: Standing::Root,
         peer: None,
-    })
-    .unwrap();
+    };
+
+    // Where the record goes is a keyed hash of the name under this endpoint's
+    // seed, not the name, so the attack has to be planted at the file this site
+    // will write rather than at a path guessed from the outside. Keeping the
+    // channel once is what names it; the directory then holds exactly that one
+    // entry, and the attacker on a shared machine reads it the same way.
+    site.keep(&peer).unwrap();
+    let channels = site.root().join("channels");
+    let record = std::fs::read_dir(&channels)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| !path.file_name().unwrap().to_string_lossy().starts_with('.'))
+        .expect("keeping a channel wrote no record to plant a link at");
+
+    let bait = site
+        .root()
+        .join("..")
+        .join(format!("kusanagi-unreadable-bait-{}", std::process::id()));
+    std::fs::write(&bait, b"something its owner cares about").unwrap();
+    std::fs::set_permissions(&bait, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    std::fs::remove_file(&record).unwrap();
+    std::os::unix::fs::symlink(&bait, &record).unwrap();
+
+    site.keep(&peer).unwrap();
 
     let after = std::fs::metadata(&bait).unwrap();
     assert_eq!(
@@ -184,9 +198,9 @@ fn a_symbolic_link_planted_at_a_record_is_replaced_and_never_followed() {
     );
 
     // And the record itself is now a real file of this site's own.
-    let record = std::fs::symlink_metadata(channels.join("peer")).unwrap();
-    assert!(!record.file_type().is_symlink(), "the link is still there");
-    assert_eq!(record.permissions().mode() & 0o077, 0);
+    let planted = std::fs::symlink_metadata(&record).unwrap();
+    assert!(!planted.file_type().is_symlink(), "the link is still there");
+    assert_eq!(planted.permissions().mode() & 0o077, 0);
     assert!(site.channel("peer").is_ok());
 
     std::fs::remove_file(&bait).ok();
