@@ -19,13 +19,16 @@ Every version in these four `package.json` files is the literal token
 `scripts/npm-pack.sh` replaces every occurrence with the version the release tag
 names, so the tag is the only place a release version is written.
 
+The tag minus its leading `v` is the version, verbatim:
+
 | tag | published as |
 |---|---|
+| `v0.0.1-Pre-alpha-260913` | `0.0.1-Pre-alpha-260913` |
 | `v0.0.2` | `0.0.2` |
-| `v0.0.1prealpha` | `0.0.1-prealpha.0` |
 
-A tag outside `v<major>.<minor>.<patch>[identifier]` stops the pack script
-rather than reaching the registry as a version nobody chose. **Never hand-edit a
+A tag outside `v<major>.<minor>.<patch>[-prerelease]` stops the pack script
+rather than reaching the registry as a version nobody chose. `AGENTS.md` owns
+the grammar a release tag actually uses, stage and date included. **Never hand-edit a
 version in this directory.**
 
 ## Publishing
@@ -50,8 +53,8 @@ comes from CI. Run this once, from a checkout at the tag:
 
 ```bash
 npm login                       # as a member of the kasanagi org
-gh release download v0.0.1prealpha --dir dist --pattern 'kusanagi-*'
-bash scripts/npm-pack.sh v0.0.1prealpha dist out/npm
+gh release download v0.0.1-Pre-alpha-260913 --dir dist --pattern 'kusanagi-*'
+bash scripts/npm-pack.sh v0.0.1-Pre-alpha-260913 dist out/npm
 for dir in out/npm/platform-*; do npm publish "$dir" --tag latest --otp=CODE; done
 npm publish out/npm/cli --tag latest --otp=CODE
 ```

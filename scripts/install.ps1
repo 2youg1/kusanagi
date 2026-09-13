@@ -4,8 +4,12 @@
 # what the release workflow built, and nothing more. If that is not enough
 # trust for you, build from source instead (see README.md).
 #
-# Usage: .\install.ps1 [-Version v0.0.2]
-param([string]$Version = "v0.0.2")
+# Usage: .\install.ps1 [-Version v0.0.1-Pre-alpha-260913]
+#
+# The default is the newest release tag, and it moves with each release: GitHub's
+# "latest release" endpoint skips prereleases, and every release so far is one,
+# so asking it would answer nothing.
+param([string]$Version = "v0.0.1-Pre-alpha-260913")
 
 $ErrorActionPreference = "Stop"
 $Repo = "2youg1/kusanagi"

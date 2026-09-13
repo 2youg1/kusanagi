@@ -5,10 +5,14 @@
 # what the release workflow built, and nothing more. If that is not enough
 # trust for you, build from source instead (see README.md).
 #
-# Usage: ./install.sh [VERSION]   (default: v0.0.2)
+# Usage: ./install.sh [VERSION]   (default: v0.0.1-Pre-alpha-260913)
+#
+# The default is the newest release tag, and it moves with each release: GitHub's
+# "latest release" endpoint skips prereleases, and every release so far is one,
+# so asking it would answer nothing.
 set -euo pipefail
 
-VERSION="${1:-v0.0.2}"
+VERSION="${1:-v0.0.1-Pre-alpha-260913}"
 REPO="2youg1/kusanagi"
 DEST="${KUSANAGI_DEST:-$HOME/.local/bin}"
 

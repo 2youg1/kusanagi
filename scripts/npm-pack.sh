@@ -8,7 +8,7 @@
 # anywhere, and nothing downstream invents one.
 #
 # Usage: npm-pack.sh <tag> <binary-dir> <out-dir>
-#   tag         the release tag, e.g. v0.0.1prealpha
+#   tag         the release tag, e.g. v0.0.1-Pre-alpha-260913
 #   binary-dir  holds the release assets named kusanagi-<tag>-<target>[.exe]
 #   out-dir     written fresh; receives cli/ and three platform-*/ directories
 #
@@ -26,21 +26,20 @@ out_dir="$3"
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 src="$repo/npm"
 
-# v<major>.<minor>.<patch> publishes as itself; a tag that appends an identifier
-# (v0.0.1prealpha) publishes as the semver prerelease 0.0.1-prealpha.0. npm
-# parses semver and nothing else, so a tag outside this shape stops the run here
-# rather than reaching the registry as a version nobody chose.
-if [[ "${tag#v}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)([a-z][a-z0-9]*)?$ ]]; then
-  core="${BASH_REMATCH[1]}"
-  identifier="${BASH_REMATCH[2]:-}"
+# The tag minus its leading `v` is the published version, with nothing added and
+# nothing rewritten: `v0.0.1-Pre-alpha-260913` publishes as
+# `0.0.1-Pre-alpha-260913`, so the release page, the git tag and the registry all
+# say one string, and a reader comparing them never has to translate.
+#
+# Release tags here read v<major>.<minor>.<patch>-<Stage>-<YYMMDD>, which is a
+# semver prerelease: the stage and the release date form one prerelease
+# identifier. npm parses semver and nothing else, so a tag outside that grammar
+# stops the run here rather than reaching the registry as a version nobody chose.
+if [[ "${tag#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+  version="${tag#v}"
 else
-  echo "npm-pack: tag '$tag' is not v<major>.<minor>.<patch>[identifier]" >&2
+  echo "npm-pack: tag '$tag' is not v<major>.<minor>.<patch>[-prerelease]" >&2
   exit 1
-fi
-if [ -n "$identifier" ]; then
-  version="$core-$identifier.0"
-else
-  version="$core"
 fi
 echo "npm-pack: tag $tag publishes as $version" >&2
 

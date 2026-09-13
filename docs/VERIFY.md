@@ -55,8 +55,7 @@ being checked, so a hostile binary has no say in the answer.
 Build it yourself and compare.
 
 ```bash
-git verify-tag v0.0.1          # the tag is signed
-git checkout v0.0.1
+git checkout v0.0.1-Pre-alpha-260913
 just repro                     # builds twice, refuses if the two differ
 just dist                      # the artefact and its SHA-256
 ```

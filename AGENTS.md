@@ -44,6 +44,8 @@ just check                                  # fmt + clippy (-D warnings) + tests
 
 **No tag before `release-ready.yml` is green on `main`** and the open issues and pull requests are triaged to zero or deferred with a reason. A red lane or an untriaged list means the tag waits.
 
+**A release tag reads `v<major>.<minor>.<patch>-<Stage>-<YYMMDD>`** — `v0.0.1-Pre-alpha-260913`. The three numbers are the version the code claims, `Stage` is how finished it is (`Pre-alpha`, `Alpha`, `Beta`; a stable line drops the suffix entirely), and the six digits are the day it went out, so a reader sorting release pages sees which build is which without opening any of them. The tag minus its leading `v` is also the npm version, published verbatim by `scripts/npm-pack.sh`, which refuses any tag outside this grammar.
+
 ## Read before you write
 
 1. [`ARCHITECTURE.md`](ARCHITECTURE.md) — what this is, why the dead drop is the substrate, the crate graph, the seams, the laws, the line budget, and the decisions already taken.
