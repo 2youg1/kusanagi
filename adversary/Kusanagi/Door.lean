@@ -76,7 +76,7 @@ inductive Verb where
   and burns the key with it.
   -/
   | inviteReleasing (name : ChannelName) (waypoint : System.FilePath)
-  | join (invitation : Invitation) (name : ChannelName)
+  | join (invitation : Invite) (name : ChannelName)
   /--
   What this endpoint asks to be called. The name arrives on stdin, like every
   other word that identifies somebody.

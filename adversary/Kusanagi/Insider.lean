@@ -32,13 +32,13 @@ open Kusanagi.Stage
 open Kusanagi.Veil (apart)
 
 /-- Alice, a roster of Bob and Mallory, and one sentence to both. -/
-structure Team where
+structure Fanout where
   withBob : Talk
   withMallory : Talk
   team : ChannelName
   landed : List Landed
 
-private def assemble (door : Door) (ground : Ground) : IO Team := do
+private def assemble (door : Door) (ground : Ground) : IO Fanout := do
   let bob ← talk door ground .alice .bob (fresh "with-bob-only")
   let mallory ← talk door ground .alice .mallory (fresh "with-mallory-only")
   let name := fresh "the-whole-team"

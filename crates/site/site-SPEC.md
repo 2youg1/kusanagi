@@ -320,7 +320,7 @@ version 1 byte = 1 | inviter 2592 bytes | grant 其余
 
 ### 房间（F8 · D-17）
 
-**一个房间是一份共享秘密加一份签名名册，不是 E1 的广播名单。** E1 名单的成员互不可见；房间成员共享同一 ward、同一秘密派生的流，读一次 sweep 取回全体——代价是成员互知 handle（D-17，明写）。`room.rs`（`Room`：名、32 字节秘密、ward、founder 签名的 `kernel::Roster`、`roster_at: Option<u64>`（名册取自 founder 流的高度，读端据此决定从哪走 founder；杀进程不改结果）、`ushers`（未消费的一次性邀请钥匙）、locator、opened），**记录版本 3**；`RoomOffer` v2。名册与 usher 列表**不走 `put_block`**：两者自带计数字节自定界，而 32 把钥匙 87 KiB 会让 u16 前缀饱和截断——`put_block` 的饱和对名字、locator、grant 仍不可达，对名册不成立。`Room::founder()` 是「founder = 名册第一人」的唯一定义。`holds` 与 `forget` 同时认通道与房间：cairn 与 sweep 记录以名字归档，两个命名空间会互相继承高度。**sweep 记录改键 `(name, ward)`**（`SWEEP_FILING` v2）：一次列举服务该 ward 下所有 lane，房间一份、通道两份。判据：crate 内四条（往返含 `roster_at`；尾随字节与陌生版本被拒；32 人记录与 offer 往返且记录超过 u16；offer 往返）。
+**一个房间是一份共享秘密加一份签名名册，不是 E1 的广播名单。** E1 名单的成员互不可见；房间成员共享同一 ward、同一秘密派生的流，读一次 sweep 取回全体——代价是成员互知 handle（D-17，明写）。`room.rs`（`Room`：名、32 字节秘密、ward、founder 签名的 `kernel::Muster`、`muster_at: Option<u64>`（名册取自 founder 流的高度，读端据此决定从哪走 founder；杀进程不改结果）、`ushers`（未消费的一次性邀请钥匙）、locator、opened），**记录版本 3**；`RoomOffer` v2。名册与 usher 列表**不走 `put_block`**：两者自带计数字节自定界，而 32 把钥匙 87 KiB 会让 u16 前缀饱和截断——`put_block` 的饱和对名字、locator、grant 仍不可达，对名册不成立。`Room::founder()` 是「founder = 名册第一人」的唯一定义。`holds` 与 `forget` 同时认通道与房间：cairn 与 sweep 记录以名字归档，两个命名空间会互相继承高度。**sweep 记录改键 `(name, ward)`**（`SWEEP_FILING` v2）：一次列举服务该 ward 下所有 lane，房间一份、通道两份。判据：crate 内四条（往返含 `muster_at`；尾随字节与陌生版本被拒；32 人记录与 offer 往返且记录超过 u16；offer 往返）。
 
 ### 节奏与释放（I3 · C4 · I5）
 

@@ -7,7 +7,7 @@
 //!
 //! A room holds what cannot be derived from anything else here: the shared
 //! secret every member's lane derives from, the ward every member sweeps, the
-//! signed roster that says who is in it and the founder's height it was taken
+//! signed muster that says who is in it and the founder's height it was taken
 //! at, the one-time keys of invitations still open, the locator of the host
 //! that holds the bytes, and the period it was opened in — where a reader with
 //! no sweep record starts.
@@ -15,21 +15,21 @@
 //! Apart from `channel.rs` because the two change for different reasons: a
 //! channel record gains a field when this endpoint learns something new about
 //! one conversation, and a room gains one when it learns something new about a
-//! crowd. The roster codec sits beside the one struct that carries it.
+//! crowd. The muster codec sits beside the one struct that carries it.
 //!
 //! ```text
 //! version     1 byte    = 3
 //! name_len    2 bytes   big endian, then that many utf-8 bytes
 //! secret     32 bytes   every member's lane derives from here
 //! ward        2 bytes   the bin of the host every member sweeps
-//! roster      n bytes   the founder-signed member list, which says its own width
-//! roster_at   9 bytes   0, or 1 then the founder's height the roster was read at
+//! muster      n bytes   the founder-signed member list, which says its own width
+//! muster_at   9 bytes   0, or 1 then the founder's height the muster was read at
 //! ushers    1+n bytes   a count, then that many one-time verifying keys
 //! locator_len 2 bytes   big endian, then that many utf-8 bytes
 //! opened      8 bytes   big endian; the period this record was made in
 //! ```
 //!
-//! **The roster and the ushers carry no length field**, because both say their
+//! **The muster and the ushers carry no length field**, because both say their
 //! own width and both can exceed what a two-byte length holds: thirty-two keys
 //! are eighty-one kibibytes.
 //!
@@ -37,7 +37,7 @@
 //! same reason as a channel's: a directory listing says how many rooms there
 //! are and nothing about who is in them.
 
-use kusanagi_kernel::{Handle, Period, Reader, Roster, RosterError, VerifyingKey, Ward};
+use kusanagi_kernel::{Handle, Muster, MusterError, Period, Reader, VerifyingKey, Ward};
 use kusanagi_seal::Secret;
 
 use crate::blocks::{malformed, put_block, take_text};
@@ -57,11 +57,11 @@ pub struct Room {
     /// Which bin of the host every member sweeps.
     pub ward: Ward,
     /// Who is in the room, signed by the founder.
-    pub roster: Roster,
-    /// The height on the founder's stream this roster was read at, or none
+    pub muster: Muster,
+    /// The height on the founder's stream this muster was read at, or none
     /// when it came with the invitation. A read walks the founder from here,
-    /// so a roster segment met and not yet written down is met again.
-    pub roster_at: Option<u64>,
+    /// so a muster segment met and not yet written down is met again.
+    pub muster_at: Option<u64>,
     /// The one-time keys whose streams carry greetings: one per invitation
     /// this endpoint minted. A newcomer writes on the stream of the key their
     /// invitation carried, and the founder reads every one to learn who
@@ -76,25 +76,25 @@ pub struct Room {
 }
 
 impl Room {
-    /// The founder: the first member of the roster, whose key signed it.
+    /// The founder: the first member of the muster, whose key signed it.
     #[must_use]
     pub fn founder(&self) -> Option<Handle> {
-        self.roster.members().first().map(VerifyingKey::handle)
+        self.muster.members().first().map(VerifyingKey::handle)
     }
 
     /// The wire form, which is also the on-disk form.
     ///
     /// # Errors
     ///
-    /// [`RosterError::TooMany`] when the roster or the open invitations name
+    /// [`MusterError::TooMany`] when the muster or the open invitations name
     /// more than a room holds: neither can be written down.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, RosterError> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, MusterError> {
         let mut out = vec![VERSION];
         put_block(&mut out, self.name.as_bytes());
         out.extend_from_slice(self.secret.as_bytes());
         out.extend_from_slice(&self.ward.bits().to_be_bytes());
-        out.extend_from_slice(&self.roster.to_bytes()?);
-        match self.roster_at {
+        out.extend_from_slice(&self.muster.to_bytes()?);
+        match self.muster_at {
             None => out.extend_from_slice(&[0; 9]),
             Some(height) => {
                 out.push(1);
@@ -127,11 +127,11 @@ impl Room {
         let ward = Ward::from_bits(u16::from_be_bytes(
             reader.take_array::<2>().map_err(malformed)?,
         ));
-        let roster = Roster::read(&mut reader).map_err(|error| SiteError::BadRecord {
-            what: "a room roster",
+        let muster = Muster::read(&mut reader).map_err(|error| SiteError::BadRecord {
+            what: "a room muster",
             reason: error.to_string(),
         })?;
-        let roster_at = match reader.take_byte().map_err(malformed)? {
+        let muster_at = match reader.take_byte().map_err(malformed)? {
             0 => {
                 reader.take_array::<8>().map_err(malformed)?;
                 None
@@ -143,7 +143,7 @@ impl Room {
                 return Err(SiteError::BadRecord {
                     what: "a room",
                     reason: format!(
-                        "a roster height is marked {other}, and this build knows 0 and 1"
+                        "a muster height is marked {other}, and this build knows 0 and 1"
                     ),
                 });
             }
@@ -163,8 +163,8 @@ impl Room {
             name,
             secret,
             ward,
-            roster,
-            roster_at,
+            muster,
+            muster_at,
             ushers,
             locator,
             opened,
@@ -173,11 +173,11 @@ impl Room {
 }
 
 /// Writes `count u8 ‖ keys`: a list that says its own width.
-fn put_keys(out: &mut Vec<u8>, keys: &[VerifyingKey]) -> Result<(), RosterError> {
+fn put_keys(out: &mut Vec<u8>, keys: &[VerifyingKey]) -> Result<(), MusterError> {
     let count = u8::try_from(keys.len())
         .ok()
         .filter(|_| keys.len() <= kusanagi_kernel::MOST_MEMBERS)
-        .ok_or(RosterError::TooMany {
+        .ok_or(MusterError::TooMany {
             count: keys.len(),
             limit: kusanagi_kernel::MOST_MEMBERS,
         })?;
@@ -202,27 +202,27 @@ fn take_keys(reader: &mut Reader<'_>) -> Result<Vec<VerifyingKey>, SiteError> {
 }
 
 /// What a room invitation points at: who founded the room, which ward every
-/// member sweeps, and the signed roster that says who is in it.
+/// member sweeps, and the signed muster that says who is in it.
 ///
 /// Sealed into one drop at the address [`kusanagi_seal::offer`] derives from
 /// the room secret. The room secret is what the invitation line carries, so
 /// only the holder of the line can compute the address; the founder's key and
-/// the roster beside it are public by construction, like a channel offer's.
+/// the muster beside it are public by construction, like a channel offer's.
 ///
 /// ```text
 /// version   1 byte     = 2
 /// founder 2592 bytes    the founder's verifying key
 /// ward       2 bytes    the bin of the host every member sweeps
-/// roster     n bytes    the founder-signed member list, which says its own width
+/// muster     n bytes    the founder-signed member list, which says its own width
 /// ```
 #[derive(Clone, Debug)]
 pub struct RoomOffer {
-    /// Who founded the room, and whose key signs the roster.
+    /// Who founded the room, and whose key signs the muster.
     pub founder: VerifyingKey,
     /// Which bin of the host every member sweeps.
     pub ward: Ward,
     /// Who is in the room, signed by the key above.
-    pub roster: Roster,
+    pub muster: Muster,
 }
 
 /// The layout of a room offer, versioned apart from the invitation's own.
@@ -233,13 +233,13 @@ impl RoomOffer {
     ///
     /// # Errors
     ///
-    /// [`RosterError::TooMany`] when the roster names more than a room holds:
+    /// [`MusterError::TooMany`] when the muster names more than a room holds:
     /// it cannot be sealed into an offer.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, RosterError> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, MusterError> {
         let mut out = vec![ROOM_OFFER_VERSION];
         out.extend_from_slice(self.founder.as_bytes());
         out.extend_from_slice(&self.ward.bits().to_be_bytes());
-        out.extend_from_slice(&self.roster.to_bytes()?);
+        out.extend_from_slice(&self.muster.to_bytes()?);
         Ok(out)
     }
 
@@ -267,7 +267,7 @@ impl RoomOffer {
         let ward = Ward::from_bits(u16::from_be_bytes(
             reader.take_array::<2>().map_err(mangled)?,
         ));
-        let roster = Roster::read(&mut reader).map_err(|error| SiteError::BadInvitation {
+        let muster = Muster::read(&mut reader).map_err(|error| SiteError::BadInvitation {
             reason: error.to_string(),
         })?;
         if reader.remaining() != 0 {
@@ -281,7 +281,7 @@ impl RoomOffer {
         Ok(Self {
             founder,
             ward,
-            roster,
+            muster,
         })
     }
 }
@@ -295,7 +295,7 @@ impl RoomOffer {
 )]
 mod tests {
     use super::{Room, VERSION};
-    use kusanagi_kernel::{Period, Roster, Signer, Ward};
+    use kusanagi_kernel::{Muster, Period, Signer, Ward};
     use kusanagi_seal::Secret;
 
     fn room() -> Room {
@@ -305,9 +305,9 @@ mod tests {
             name: "team".to_owned(),
             secret: Secret::from_bytes([11; 32]),
             ward: Ward::from_bits(0x00ab),
-            roster: Roster::sign(&founder, vec![founder.verifying_key(), bob.verifying_key()])
+            muster: Muster::sign(&founder, vec![founder.verifying_key(), bob.verifying_key()])
                 .unwrap(),
-            roster_at: Some(4),
+            muster_at: Some(4),
             ushers: vec![founder.verifying_key()],
             locator: "http://box.example:8963".to_owned(),
             opened: Period::from_count(2_945_376),
@@ -321,8 +321,8 @@ mod tests {
         let decoded = Room::from_bytes(&bytes).unwrap();
         assert_eq!(decoded.to_bytes().unwrap(), bytes);
         assert_eq!(decoded.name, "team");
-        assert_eq!(decoded.roster.members().len(), 2);
-        assert_eq!(decoded.roster_at, Some(4));
+        assert_eq!(decoded.muster.members().len(), 2);
+        assert_eq!(decoded.muster_at, Some(4));
         assert_eq!(
             decoded.founder(),
             Some(Signer::from_seed(&[7; 32]).handle())
@@ -338,21 +338,21 @@ mod tests {
             .map(|seed| Signer::from_seed(&[u8::try_from(seed).unwrap(); 32]).verifying_key())
             .collect();
         let mut full = room();
-        full.roster = Roster::sign(&founder, members.clone()).unwrap();
+        full.muster = Muster::sign(&founder, members.clone()).unwrap();
         full.ushers = members.clone();
         let bytes = full.to_bytes().unwrap();
         assert!(
             bytes.len() > usize::from(u16::MAX),
-            "a full roster outgrows a two-byte length"
+            "a full muster outgrows a two-byte length"
         );
         assert_eq!(
-            Room::from_bytes(&bytes).unwrap().roster.members().len(),
+            Room::from_bytes(&bytes).unwrap().muster.members().len(),
             MOST_MEMBERS
         );
         let offer = RoomOffer {
             founder: founder.verifying_key(),
             ward: Ward::from_bits(1),
-            roster: full.roster,
+            muster: full.muster,
         };
         let offered = offer.to_bytes().unwrap();
         assert!(
@@ -362,7 +362,7 @@ mod tests {
         assert_eq!(
             RoomOffer::from_bytes(&offered)
                 .unwrap()
-                .roster
+                .muster
                 .members()
                 .len(),
             MOST_MEMBERS
@@ -384,7 +384,7 @@ mod tests {
         let offer = RoomOffer {
             founder: founder.verifying_key(),
             ward: Ward::from_bits(0x00ab),
-            roster: Roster::sign(&founder, vec![founder.verifying_key()]).unwrap(),
+            muster: Muster::sign(&founder, vec![founder.verifying_key()]).unwrap(),
         };
         let bytes = offer.to_bytes().unwrap();
         let decoded = RoomOffer::from_bytes(&bytes).unwrap();

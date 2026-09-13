@@ -73,7 +73,7 @@ pub(crate) fn sent(name: &str, index: u64, address: &str) -> String {
     format!("sent in room `{name}` #{index}\n  address {address}")
 }
 
-/// A room read: one author's section per row, in roster order.
+/// A room read: one author's section per row, in muster order.
 ///
 /// An author who has written nothing gets one line rather than a section, so
 /// silence reads as silence rather than as an empty conversation.

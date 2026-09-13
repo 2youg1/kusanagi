@@ -141,15 +141,15 @@ private def distinctSizes (bodies : List ByteArray) : List Nat :=
     []
 
 /-- Says one thing and reports where the sender says it put it. -/
-private def say (door : Door) (writer : System.FilePath) (text : String) : IO (List Address) := do
+private def say (door : Door) (writer : System.FilePath) (text : String) : IO (List Drop) := do
   match ← Door.ask door writer (.send channel text) with
   | .accepted (.sent _ _ address) => return [address]
   | _ => return []
 
 /-- The bytes at each of these addresses, in the order the addresses were given. -/
-private def bodiesAt (held : List (Address × ByteArray)) (wanted : List Address) :
+private def bodiesAt (held : List (Drop × ByteArray)) (wanted : List Drop) :
     List ByteArray :=
-  let filed : TreeMap Address ByteArray :=
+  let filed : TreeMap Drop ByteArray :=
     held.foldl (fun below (address, body) => below.insert address body) ∅
   wanted.filterMap filed.get?
 

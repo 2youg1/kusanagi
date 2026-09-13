@@ -71,11 +71,11 @@ pub fn bubbles(mine: *const rows.Lane, theirs: *const rows.Lane, arena: std.mem.
     return out;
 }
 
-const Seg = struct { index: u64, acknowledged: u64 };
+const Segment = struct { index: u64, acknowledged: u64 };
 
-fn expectOrder(mine: []const Seg, theirs: []const Seg, expected: []const Side) !void {
+fn expectOrder(mine: []const Segment, theirs: []const Segment, expected: []const Side) !void {
     var out: [16]Side = undefined;
-    const n = merge(Seg, mine, theirs, &out);
+    const n = merge(Segment, mine, theirs, &out);
     try std.testing.expectEqualSlices(Side, expected, out[0..n]);
 }
 

@@ -350,7 +350,7 @@ def aLocatorNeverNamesANetworkPath (door : Door) (ground : Ground) : IO Verdict 
     match genuine with
     | .accepted (.invited _ line _) =>
       let secret := (((line.line.dropWhile (· != ':')).drop 1).take 132)
-      let forged : Invitation :=
+      let forged : Invite :=
         ⟨"kusanagi2:" ++ secret ++ hexOfString "\\\\127.0.0.1\\nothing\\drops"⟩
       some <$> Door.ask door (ground.siteOf .bob) (.join forged ⟨"forged"⟩)
     | _ => pure none

@@ -37,7 +37,7 @@ they contain either. The third is the one that catches a suite of ciphertexts
 that stopped being distinct — a key reused across two drops, or a nonce that
 repeated — which is invisible from the address side.
 -/
-def unlinkable (held : List (Address × ByteArray)) : Verdict :=
+def unlinkable (held : List (Drop × ByteArray)) : Verdict :=
   -- The address alone: the period and the ward before it are public and shared
   -- by every object in a bin, by design.
   let addressOf (key : String) : String := ((key.splitOn "/").getLast?).getD key

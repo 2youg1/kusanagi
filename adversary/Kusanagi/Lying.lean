@@ -42,7 +42,7 @@ open Kusanagi.Ground
 structure Written where
   reader : System.FilePath
   channel : ChannelName
-  addresses : List Address
+  addresses : List Drop
   deriving DecidableEq, Repr, Inhabited
 
 /-- The channel both endpoints open. Names are local, so one will do. -/
@@ -57,7 +57,7 @@ host would silently stop testing anything the day the host's layout changed.
 -/
 def writeSome (door : Door) (writer readerSite host : System.FilePath) (count : Nat) :
     IO Written := do
-  let say (n : Nat) : IO Address := do
+  let say (n : Nat) : IO Drop := do
     match ← Door.ask door writer (.send peer s!"segment {n}") with
     | .accepted (.sent _ _ address) => return address
     | other => throw <| IO.userError s!"a segment was refused: {repr other}"

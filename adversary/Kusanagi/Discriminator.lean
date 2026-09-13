@@ -158,7 +158,7 @@ Deliberately wider than what we expect to be closed. A feature nobody thought of
 is the one that catches the next mistake, and carrying an extra measurement
 costs one line.
 -/
-def features (held : List (Address × ByteArray)) : List Reading :=
+def features (held : List (Drop × ByteArray)) : List Reading :=
   let bodies := held.map (·.2)
   let sizes := bodies.map (·.size)
   let everyByte := bodies.flatMap (·.toList)
@@ -237,7 +237,7 @@ separately from the ones that were weighed would be two experiments described as
 one.
 -/
 structure Sample where
-  held : List (Address × ByteArray)
+  held : List (Drop × ByteArray)
   seen : List Observation
 
 /-- The channel every world here opens. -/

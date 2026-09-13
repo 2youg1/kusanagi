@@ -34,7 +34,7 @@ open Kusanagi.Stage
 The room every property here starts from: founded by Alice, joined by Bob
 and Mallory, admitted on Alice's first read, one sentence from each.
 -/
-structure Squad where
+structure Founded where
   handles : List (Site × Handle)
   said : List String
   deriving Inhabited
@@ -105,7 +105,7 @@ private def handleAt (door : Door) (ground : Ground) (site : Site) : IO Handle :
   | other => throw <| IO.userError s!"no identity: {repr other}"
 
 /-- Founds the room, admits both joiners, and has every member say one thing. -/
-def assemble (door : Door) (ground : Ground) : IO Squad := do
+def assemble (door : Door) (ground : Ground) : IO Founded := do
   let founded ←
     Door.typed door
       (argv ground .alice ["room", "--name", "-", "--waypoint", ground.waypoint.toString])
@@ -114,7 +114,7 @@ def assemble (door : Door) (ground : Ground) : IO Squad := do
   for site in [Site.bob, Site.mallory] do
     admit door ground site
   -- The founder's read is what admits: it reads each introduction stream,
-  -- re-signs the roster once, and carries it on her own stream.
+  -- re-signs the muster once, and carries it on her own stream.
   accepted "the founder's first read"
     (← Door.typed door (argv ground .alice ["room-read", "--name", "-"]) (some room))
   for (site, sentence) in cast.zip sentences do

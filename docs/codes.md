@@ -54,8 +54,8 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `kusanagi.bad_recovery_key` | an archive did not open under the recovery key that was offered | check the key: it is the 64 hexadecimal digits `kusanagi export` printed once, and it goes in on the first line of stdin |
 | `kusanagi.bad_name` | a name a peer declared was not signed by their key for their own handle, or is not one printable line | keep the bytes and report it: the greeting or offer authenticated and then carried somebody else's name |
 | `kusanagi.bad_greeting` | the introduction on a channel is not one this build can read | keep the bytes and report it |
-| `kusanagi.bad_roster` | a room roster is not one, names more than 32 members, or was not signed by the room's founder | keep the bytes and report it: the offer or the founder's stream authenticated and then carried a list that is not the founder's |
-| `kusanagi.not_the_founder` | only the founder of a room signs its roster, so only the founder invites | ask the founder to run `kusanagi room-invite` and hand you the line |
+| `kusanagi.bad_roster` | a room's muster is not one, names more than 32 members, or was not signed by the room's founder | keep the bytes and report it: the offer or the founder's stream authenticated and then carried a list that is not the founder's |
+| `kusanagi.not_the_founder` | only the founder of a room signs its muster, so only the founder invites | ask the founder to run `kusanagi room-invite` and hand you the line |
 | `kusanagi.cannot_revoke_root` | the peer of this channel is the authority that invited you | `kusanagi forget --channel NAME` instead |
 | `kusanagi.proxy_required` | this site never reaches a host without a proxy, and `KUSANAGI_PROXY` is not set | set `KUSANAGI_PROXY`, or `kusanagi proxy --optional` |
 | `kusanagi.channel_exists` | a channel or a room of that name is already here | pick another name, or read the one you have |
@@ -92,7 +92,7 @@ disk, `locator.*` is what was typed, and `kusanagi.*` is the door itself.
 | `segment.payload_too_large` | a segment declares a payload larger than one may carry | keep the bytes and report it |
 | `segment.payload_unrepresentable` | a segment declares a payload larger than this machine can address | keep the bytes and report it |
 | `segment.message_too_large` | one message needs more segments than this venue allows | send it in volumes of at most the named number of bytes, each as its own message; say the password in person, not on this channel |
-| `segment.purpose` | a segment says it is none of a message, a filler, a roster or a part | keep the bytes and report it |
+| `segment.purpose` | a segment says it is none of a message, a filler, a muster or a part | keep the bytes and report it |
 | `segment.tag` | a segment's first byte is neither genesis nor follows | keep the bytes and report it |
 | `segment.trailing` | bytes follow a complete segment | keep the bytes and report it |
 | `segment.truncated` | a segment ends in the middle of a field | keep the bytes and report it |

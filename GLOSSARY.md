@@ -40,6 +40,7 @@ its parts are called.
 | **Site** | `site::Site` | what one endpoint keeps on its own disk: a seed, a file per channel, a cairn per stream, a revocation list | the only state there is; anything else would be state a kill could lose |
 | **Roster** | `site::Roster` | one endpoint's own list of the channels a group name stands for, replaced whole and shared with nobody; the verb is `group` | a small group needs no group key, no agreement and no removal protocol |
 | **Room** | `site::Room` | one secret shared by up to 32 members, each writing its own stream in one ward; only the founder invites, and signs who is in | more than two parties without a group key, at a price paid knowingly: every member learns every other member's handle |
+| **Muster** | `kernel::Muster` | who is in a room, as the founder signed it: the members' keys under the founder's signature, carried on the founder's own stream as `Purpose::Muster`; the failure code stays `kusanagi.bad_roster`, because codes are stable | one signature decides membership, so no member can admit or remove another, and a change of membership looks like any other segment on the wire |
 | **Cadence** | `site::Cadence` | how often an endpoint writes on a channel: on demand, or one drop every period | the rhythm of speech stops being a function of what there is to say (D-06) |
 | **Retention** | `site::Retention` | what becomes of a drop once the peer acknowledges it: kept, or released | the combination that must not exist — release without a backup — is visible rather than accidental (D-07) |
 
@@ -62,14 +63,16 @@ nowhere — not in Rust, not in Lean, not in Zig.
 
 ## 3 Not called
 
-No name in the left column is declared as a type, enum, trait or alias anywhere
-under `crates/*/src`. Each is what a newcomer reaches for; the right column is the
-word already there.
+No name in the left column is declared as a type anywhere: not in Rust under
+`crates/*/src`, not in Lean under `adversary/`, not in Zig under `glass/src`.
+Each is what a newcomer reaches for; the right column is the word already there.
+`Msg` in `glass/` is the Native SDK's own name for the update message and is
+not a segment; it is the one framework word the table does not judge.
 
 | Not this | This |
 |---|---|
-| `Packet`, `Event`, `Post`, `Msg` | Segment, or Message |
-| `Mailbox`, `Locker`, `DeadDrop` | Drop |
+| `Packet`, `Event`, `Post`, `Seg` | Segment, or Message |
+| `Address`, `Mailbox`, `Locker`, `DeadDrop` | Drop |
 | `Feed`, `Timeline`, `Log` | Stream |
 | `HashChain`, `Lamport`, `Proof` | Trail |
 | `Cargo`, `Body`, `Content` | Freight |
@@ -84,7 +87,7 @@ word already there.
 | `Checkpoint`, `Bookmark`, `Cursor`, `Watermark` | Cairn |
 | `Token`, `Permission`, `Macaroon`, `Caveat` | Grant |
 | `Role`, `Rank` | Standing |
-| `Conversation`, `Chat`, `Contact`, `Dialog` | Channel |
+| `Chan`, `Conversation`, `Chat`, `Contact`, `Dialog` | Channel |
 | `Friend`, `Counterparty`, `Partner`, `Buddy` | Peer |
 | `Invitation`, `Ticket` | Invite |
 | `Announcement`, `Advertisement` | Offer |
@@ -94,19 +97,7 @@ word already there.
 | `Schedule`, `Interval`, `Timer` | Cadence |
 | `Policy`, `Ttl` | Retention |
 
-## 4 Two meanings today
-
-Two words from §1 are declared a second time with a second meaning. Each row is
-an exemption the gate reads, and each is closed the same way: a ruling on the new
-name, the rename carried through every crate and SPEC in one change-set, and the
-row deleted here.
-
-| Word | Second declaration |
-|---|---|
-| `Roster` | `kernel::Roster`: who is in a room, as the founder signed it; travels as `Purpose::Roster` |
-| `Standing` | `walk::Standing`: where a stream stands while a run of segments is built on it |
-
-## 5 What the gate reads
+## 4 What the gate reads
 
 `scripts/glossary.sh` is the one authority for holding this file against the
 tree; `just glossary` and the check lane both call it. It keys on the header row
@@ -115,9 +106,9 @@ of each table above, so a table keeps its columns and may move.
 - §1: the second column is one path. `crate::Name` must be declared under
   `crates/<crate>/src` as a struct, enum, trait, type alias or `identifier!`
   entry; `crate::Enum::Variant` must be a variant of an enum declared there. The
-  word itself is declared as a type in at most one file of `crates/*/src`, except
-  where §4 says otherwise.
-- §2: no declaration under `crates/*/src`, `adversary/`, or `glass/src`.
-- §3: every name in the left column is undeclared under `crates/*/src`.
-- §4: the word in the left column may be declared twice; a third declaration
-  is still refused.
+  word itself is declared as a type in at most one file of `crates/*/src`; the
+  Lean and Zig sides may declare it again only as the same concept, which the
+  gate cannot judge and review does.
+- §2 and §3: no name in either left column is declared as a type in Rust
+  (`struct`, `enum`, `trait`, `type`, `identifier!`), in Lean (`structure`,
+  `inductive`, `abbrev`, `class`, `def`), or in Zig (`const … = struct|enum|union`).

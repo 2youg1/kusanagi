@@ -6,17 +6,17 @@
 //! Who is in a room, signed so that the claim travels with the founder's key.
 //!
 //! Beside `alias.rs` because it is the same shape: a claim about members,
-//! signed by the key it belongs to, so every member reads one roster every
-//! other member can check. A roster moved under another founder's key is a
-//! forgery rather than a roster, because the founder's handle is inside what
+//! signed by the key it belongs to, so every member reads one muster every
+//! other member can check. A muster moved under another founder's key is a
+//! forgery rather than a muster, because the founder's handle is inside what
 //! was signed.
 //!
 //! **Members are keys, not handles.** A reader verifies every member's stream
-//! against the key the roster names; a handle alone would leave nothing to
+//! against the key the muster names; a handle alone would leave nothing to
 //! check a signature with, and a segment names its author without carrying the
 //! key. Thirty-two keys is eighty-one kibibytes, which a veiled drop holds.
 //!
-//! **A roster never enters a payload.** It is metadata about the room,
+//! **A muster never enters a payload.** It is metadata about the room,
 //! exchanged at invitation and on change, and rendered outside the fence that
 //! marks a member's own bytes; a list spliced into the text would be words any
 //! member could forge in another member's half of the answer.
@@ -24,7 +24,7 @@
 use crate::identity::{Handle, Signature, Signer, VerifyingKey};
 use crate::wire::Reader;
 
-/// Domain separation for the signature over a roster.
+/// Domain separation for the signature over a muster.
 const ROOM_DOMAIN: &[u8] = b"kusanagi/room/1";
 
 /// How wide an ML-DSA-87 signature is on the wire.
@@ -37,12 +37,12 @@ pub const MOST_MEMBERS: usize = 32;
 
 /// Who is in a room, as the founder signed it.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Roster {
+pub struct Muster {
     members: Vec<VerifyingKey>,
     signature: Signature,
 }
 
-/// The bytes a roster signs: domain, the founder's handle, then every member.
+/// The bytes a muster signs: domain, the founder's handle, then every member.
 fn claimed(founder: &Handle, members: &[VerifyingKey]) -> Vec<u8> {
     let mut out = ROOM_DOMAIN.to_vec();
     out.extend_from_slice(founder.as_bytes());
@@ -52,16 +52,16 @@ fn claimed(founder: &Handle, members: &[VerifyingKey]) -> Vec<u8> {
     out
 }
 
-impl Roster {
+impl Muster {
     /// Signs `members` as the room of `founder`'s making.
     ///
     /// # Errors
     ///
-    /// [`RosterError::TooMany`] when the list names more members than a room
-    /// holds: a roster that could not be written down is not signed.
-    pub fn sign(founder: &Signer, members: Vec<VerifyingKey>) -> Result<Self, RosterError> {
+    /// [`MusterError::TooMany`] when the list names more members than a room
+    /// holds: a muster that could not be written down is not signed.
+    pub fn sign(founder: &Signer, members: Vec<VerifyingKey>) -> Result<Self, MusterError> {
         if members.len() > MOST_MEMBERS {
-            return Err(RosterError::TooMany {
+            return Err(MusterError::TooMany {
                 count: members.len(),
                 limit: MOST_MEMBERS,
             });
@@ -70,7 +70,7 @@ impl Roster {
         Ok(Self { members, signature })
     }
 
-    /// The members, as claimed; [`Roster::verify`] is what makes them believed.
+    /// The members, as claimed; [`Muster::verify`] is what makes them believed.
     #[must_use]
     pub fn members(&self) -> &[VerifyingKey] {
         &self.members
@@ -80,14 +80,14 @@ impl Roster {
     ///
     /// # Errors
     ///
-    /// [`RosterError::TooMany`] when the list names more members than a room
-    /// holds, which [`Roster::sign`] refuses to make and [`Roster::from_bytes`]
+    /// [`MusterError::TooMany`] when the list names more members than a room
+    /// holds, which [`Muster::sign`] refuses to make and [`Muster::from_bytes`]
     /// refuses to read; here it is the one guard on the count byte.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, RosterError> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, MusterError> {
         let count = u8::try_from(self.members.len())
             .ok()
             .filter(|_| self.members.len() <= MOST_MEMBERS)
-            .ok_or(RosterError::TooMany {
+            .ok_or(MusterError::TooMany {
                 count: self.members.len(),
                 limit: MOST_MEMBERS,
             })?;
@@ -99,38 +99,38 @@ impl Roster {
         Ok(out)
     }
 
-    /// Reads what [`Roster::to_bytes`] wrote, without believing it.
+    /// Reads what [`Muster::to_bytes`] wrote, without believing it.
     ///
     /// # Errors
     ///
-    /// [`RosterError::Malformed`] when the bytes are not exactly a roster, and
-    /// [`RosterError::TooMany`] when the list names more members than a room
+    /// [`MusterError::Malformed`] when the bytes are not exactly a muster, and
+    /// [`MusterError::TooMany`] when the list names more members than a room
     /// holds.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, RosterError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MusterError> {
         let mut reader = Reader::new(bytes);
-        let roster = Self::read(&mut reader)?;
+        let muster = Self::read(&mut reader)?;
         if reader.remaining() != 0 {
-            return Err(RosterError::Malformed);
+            return Err(MusterError::Malformed);
         }
-        Ok(roster)
+        Ok(muster)
     }
 
-    /// Reads one roster out of `reader` and leaves whatever follows it.
+    /// Reads one muster out of `reader` and leaves whatever follows it.
     ///
-    /// A roster says its own width — the count byte, then that many keys, then
+    /// A muster says its own width — the count byte, then that many keys, then
     /// one signature — so a record that carries one needs no length in front
     /// of it, and no length field that a room of thirty-two could overflow.
     ///
     /// # Errors
     ///
-    /// [`RosterError::Malformed`] when the bytes run out, and
-    /// [`RosterError::TooMany`] when the count names more members than a room
+    /// [`MusterError::Malformed`] when the bytes run out, and
+    /// [`MusterError::TooMany`] when the count names more members than a room
     /// holds.
-    pub fn read(reader: &mut Reader<'_>) -> Result<Self, RosterError> {
-        let malformed = |_| RosterError::Malformed;
+    pub fn read(reader: &mut Reader<'_>) -> Result<Self, MusterError> {
+        let malformed = |_| MusterError::Malformed;
         let count = usize::from(reader.take_byte().map_err(malformed)?);
         if count > MOST_MEMBERS {
-            return Err(RosterError::TooMany {
+            return Err(MusterError::TooMany {
                 count,
                 limit: MOST_MEMBERS,
             });
@@ -150,22 +150,22 @@ impl Roster {
     ///
     /// # Errors
     ///
-    /// [`RosterError::Forged`] when the signature is not `key`'s over these
-    /// members and `key`'s handle — which is also what a roster moved from one
+    /// [`MusterError::Forged`] when the signature is not `key`'s over these
+    /// members and `key`'s handle — which is also what a muster moved from one
     /// founder to another fails with.
-    pub fn verify(&self, key: &VerifyingKey) -> Result<&[VerifyingKey], RosterError> {
+    pub fn verify(&self, key: &VerifyingKey) -> Result<&[VerifyingKey], MusterError> {
         key.verify(&claimed(&key.handle(), &self.members), &self.signature)
-            .map_err(|_| RosterError::Forged)?;
+            .map_err(|_| MusterError::Forged)?;
         Ok(&self.members)
     }
 }
 
-/// Why a roster was refused.
+/// Why a muster was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
-pub enum RosterError {
-    /// The bytes are not a roster.
-    #[error("these bytes are not a room roster")]
+pub enum MusterError {
+    /// The bytes are not a muster.
+    #[error("these bytes are not a room muster")]
     Malformed,
     /// The list names more members than a room holds.
     #[error("a room holds at most {limit} members, not {count}")]
@@ -176,6 +176,6 @@ pub enum RosterError {
         limit: usize,
     },
     /// The signature is not the founder's over these members.
-    #[error("this roster was not signed by the founder it is claimed for")]
+    #[error("this muster was not signed by the founder it is claimed for")]
     Forged,
 }

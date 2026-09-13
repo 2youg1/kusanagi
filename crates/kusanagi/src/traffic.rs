@@ -213,14 +213,14 @@ pub(crate) fn append(
     walked: Walked,
 ) -> Result<Appended, Complaint> {
     let trail = mine.keys.trail(me);
-    let mut standing = walked.standing();
+    let mut footing = walked.footing();
     let mut run = Vec::with_capacity(freights.len());
     for freight in freights {
-        let segment = match standing.head() {
+        let segment = match footing.head() {
             None => Segment::genesis(me, &trail, freight),
             Some(head) => Segment::extend(&trail, me.handle(), freight, head),
         }?;
-        standing.accept(&segment)?;
+        footing.accept(&segment)?;
         let sealed = seal(
             &mine.keys.key(segment.index())?,
             Fit::Veil,
@@ -273,7 +273,7 @@ pub(crate) fn append(
     // would make every send rediscover what it had just written, and a bin
     // recorded without the objects just added would make the next sweep take
     // the whole bin to find drops this endpoint wrote itself.
-    if let Some(cairn) = standing.cairn() {
+    if let Some(cairn) = footing.cairn() {
         site.mark(name, &cairn)?;
     }
     if let Some(listed) = walked.listed {

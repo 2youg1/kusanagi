@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 // Copyright (c) 2026 2youg1 and the kusanagi contributors
 
-//! A room's roster is believed only under the founder's key.
+//! A room's muster is believed only under the founder's key.
 
 #![allow(
     clippy::unwrap_used,
@@ -13,7 +13,7 @@
     reason = "test code"
 )]
 
-use kusanagi_kernel::{Roster, RosterError, Signer};
+use kusanagi_kernel::{Muster, MusterError, Signer};
 
 fn founders() -> (Signer, Signer, Signer) {
     (
@@ -27,31 +27,31 @@ fn founders() -> (Signer, Signer, Signer) {
 fn a_roster_verifies_under_the_founders_key_and_no_other() {
     let (alice, bob, carol) = founders();
     let keys = vec![bob.verifying_key(), carol.verifying_key()];
-    let roster = Roster::sign(&alice, keys.clone()).unwrap();
-    let carried = Roster::from_bytes(&roster.to_bytes().unwrap()).unwrap();
+    let muster = Muster::sign(&alice, keys.clone()).unwrap();
+    let carried = Muster::from_bytes(&muster.to_bytes().unwrap()).unwrap();
     assert_eq!(
         carried.verify(&alice.verifying_key()).unwrap(),
         keys.as_slice()
     );
-    // The same bytes moved under another founder are a forgery, not a roster.
+    // The same bytes moved under another founder are a forgery, not a muster.
     let mallory = Signer::from_seed(&[10; 32]);
     assert_eq!(
         carried.verify(&mallory.verifying_key()),
-        Err(RosterError::Forged)
+        Err(MusterError::Forged)
     );
 }
 
 #[test]
 fn a_roster_with_a_member_swapped_or_a_byte_added_is_refused() {
     let (alice, bob, carol) = founders();
-    let roster = Roster::sign(&alice, vec![bob.verifying_key(), carol.verifying_key()]).unwrap();
-    let bytes = roster.to_bytes().unwrap();
+    let muster = Muster::sign(&alice, vec![bob.verifying_key(), carol.verifying_key()]).unwrap();
+    let bytes = muster.to_bytes().unwrap();
     // One member swapped: the signature no longer covers the list.
-    let swapped = Roster::sign(&alice, vec![carol.verifying_key(), bob.verifying_key()]).unwrap();
+    let swapped = Muster::sign(&alice, vec![carol.verifying_key(), bob.verifying_key()]).unwrap();
     assert_ne!(swapped.to_bytes().unwrap(), bytes);
-    assert!(Roster::from_bytes(&swapped.to_bytes().unwrap()).is_ok());
-    // A byte added past the end is damage, not a longer roster.
+    assert!(Muster::from_bytes(&swapped.to_bytes().unwrap()).is_ok());
+    // A byte added past the end is damage, not a longer muster.
     let mut longer = bytes;
     longer.push(0);
-    assert_eq!(Roster::from_bytes(&longer), Err(RosterError::Malformed));
+    assert_eq!(Muster::from_bytes(&longer), Err(MusterError::Malformed));
 }

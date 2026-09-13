@@ -77,8 +77,8 @@ impl Walked {
 
     /// Where this walk stands, so a run can be built on top of it.
     #[must_use]
-    pub const fn standing(&self) -> Standing {
-        Standing {
+    pub const fn footing(&self) -> Footing {
+        Footing {
             verifier: self.verifier,
         }
     }
@@ -96,11 +96,11 @@ impl Walked {
 /// run follows from the head, so nothing in the building waits on a host, and
 /// the writes can then go out together.
 #[derive(Clone, Copy)]
-pub struct Standing {
+pub struct Footing {
     verifier: Verifier,
 }
 
-impl Standing {
+impl Footing {
     /// The head to build the next segment on, absent before the first one.
     #[must_use]
     pub fn head(&self) -> Option<ChainHead> {

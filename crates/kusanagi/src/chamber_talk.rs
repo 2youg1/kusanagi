@@ -4,7 +4,7 @@
 // Copyright (c) 2026 2youg1 and the kusanagi contributors
 
 //! What moves in a room: one segment out, every member's stream in, and the
-//! roster segment that admits a newcomer.
+//! muster segment that admits a newcomer.
 //!
 //! Apart from `chamber.rs` because these three write on streams and those
 //! three write only the record. Every member's lane derives from the room
@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use kusanagi_kernel::{Bin, Freight, Handle, Instant, Purpose, Roster, VerifyingKey, divide};
+use kusanagi_kernel::{Bin, Freight, Handle, Instant, Muster, Purpose, VerifyingKey, divide};
 use kusanagi_seal::{Keyring, period, rendezvous};
 use kusanagi_site::{Room, Site};
 use kusanagi_walk::{Lane, Message, Reach, Walked, messages, peek, track, track_all};
@@ -52,10 +52,10 @@ fn lane_of(room: &Room, author: &VerifyingKey, now: Instant) -> Lane {
 /// Appends one segment to this endpoint's stream in a room.
 ///
 /// The same shape as a channel send with the two-party parts removed: no
-/// standing to check, no greeting, no release. **No roster check on the way
-/// out either**: the room secret is the capability, and a member the roster
+/// standing to check, no greeting, no release. **No muster check on the way
+/// out either**: the room secret is the capability, and a member the muster
 /// does not name yet — joined, not yet admitted — writes a stream the
-/// founder's next read picks up from its genesis. What the roster decides is
+/// founder's next read picks up from its genesis. What the muster decides is
 /// who a read reports, and it decides that on every reader's machine.
 pub(crate) fn room_send(
     site: &Site,
@@ -85,14 +85,14 @@ pub(crate) fn room_send(
 /// Reads a room: one sweep of its ward, every member's stream verified.
 ///
 /// `after` holds, per author, the height the caller already has; an author not
-/// in it is shown whole. Roster segments on the founder's stream replace the
-/// roster as they are met and are never reported; a member they admit is
+/// in it is shown whole. Muster segments on the founder's stream replace the
+/// muster as they are met and are never reported; a member they admit is
 /// walked on this same read, at the cost of one more sweep on the read that
 /// first sees them.
 ///
-/// **The founder is walked from no higher than the roster was read at**, so a
+/// **The founder is walked from no higher than the muster was read at**, so a
 /// process killed between the walk marking its cairn and this record being
-/// written meets the same roster segment again on the next read instead of
+/// written meets the same muster segment again on the next read instead of
 /// resuming past it. That is what keeps a kill from changing a result.
 pub(crate) fn room_read(
     site: &Site,
@@ -108,13 +108,13 @@ pub(crate) fn room_read(
     } else {
         chamber
     };
-    let founder = chamber.roster.members().first().copied();
-    let roster_at = chamber.roster_at;
+    let founder = chamber.muster.members().first().copied();
+    let muster_at = chamber.muster_at;
     let reach = |member: &VerifyingKey| {
         let asked = after.get(&member.handle().to_string()).copied();
         let floor = if Some(*member) == founder {
             asked
-                .zip(roster_at)
+                .zip(muster_at)
                 .map(|(asked, read_at)| asked.min(read_at))
         } else {
             asked
@@ -124,7 +124,7 @@ pub(crate) fn room_read(
     let mut walked: BTreeMap<Handle, Walked> = BTreeMap::new();
     loop {
         let lanes: Vec<Lane> = chamber
-            .roster
+            .muster
             .members()
             .iter()
             .filter(|member| !walked.contains_key(&member.handle()))
@@ -146,15 +146,15 @@ pub(crate) fn room_read(
         if let Some(founder) = founder
             && let Some(done) = walked.get(&founder.handle())
         {
-            chamber.roster = latest_roster(&founder, chamber.roster, done)?;
-            chamber.roster_at = done.head().map(|head| head.index());
+            chamber.muster = latest_muster(&founder, chamber.muster, done)?;
+            chamber.muster_at = done.head().map(|head| head.index());
         }
     }
     site.keep_room(&chamber)?;
     // Every author's messages are joined before any row is built, because the
     // bytes of a divided message are made here and the report borrows them.
     let rows: Vec<(String, Option<u64>, Vec<Message<'_>>)> = chamber
-        .roster
+        .muster
         .members()
         .iter()
         .map(|member| {
@@ -193,28 +193,28 @@ pub(crate) fn room_read(
     ))
 }
 
-/// The roster as the founder last signed it on their stream, or `current`
+/// The muster as the founder last signed it on their stream, or `current`
 /// when no later one was met.
 ///
-/// A roster segment on the founder's own verified stream is already the
-/// founder's word; the signature check is what makes a roster carried out of
+/// A muster segment on the founder's own verified stream is already the
+/// founder's word; the signature check is what makes a muster carried out of
 /// a record believed, and it is repeated here so one rule holds everywhere. A
-/// roster segment that is not a roster is refused rather than skipped: the
+/// muster segment that is not a muster is refused rather than skipped: the
 /// founder's build wrote it, and a room whose founder speaks nonsense is a
 /// room to report, not one to read around.
-fn latest_roster(
+fn latest_muster(
     founder: &VerifyingKey,
-    current: Roster,
+    current: Muster,
     walked: &Walked,
-) -> Result<Roster, Complaint> {
+) -> Result<Muster, Complaint> {
     let mut latest = current;
     for held in walked.held() {
-        if held.segment.purpose() != Purpose::Roster {
+        if held.segment.purpose() != Purpose::Muster {
             continue;
         }
-        let roster = Roster::from_bytes(held.segment.payload())?;
-        roster.verify(founder)?;
-        latest = roster;
+        let muster = Muster::from_bytes(held.segment.payload())?;
+        muster.verify(founder)?;
+        latest = muster;
     }
     Ok(latest)
 }
@@ -223,8 +223,8 @@ fn latest_roster(
 ///
 /// Each invitation minted here named a one-time usher key, and each newcomer
 /// wrote their own verifying key on that key's stream at height zero. Every
-/// greeting found names a member; the roster is re-signed once with all of
-/// them and travels once, as a roster segment on the founder's stream, so
+/// greeting found names a member; the muster is re-signed once with all of
+/// them and travels once, as a muster segment on the founder's stream, so
 /// every member's next read replaces theirs. An usher whose greeting was read
 /// is spent and forgotten, so a read never asks about it again.
 fn admit(
@@ -236,7 +236,7 @@ fn admit(
     now: Instant,
 ) -> Result<Room, Complaint> {
     let rendezvous_bin = rendezvous(&chamber.secret);
-    let mut members = chamber.roster.members().to_vec();
+    let mut members = chamber.muster.members().to_vec();
     let mut waiting = Vec::with_capacity(chamber.ushers.len());
     for usher in chamber.ushers.drain(..) {
         let introduction = Lane {
@@ -263,15 +263,15 @@ fn admit(
         }
     }
     chamber.ushers = waiting;
-    if members.len() == chamber.roster.members().len() {
+    if members.len() == chamber.muster.members().len() {
         return Ok(chamber);
     }
-    chamber.roster = Roster::sign(me, members)?;
+    chamber.muster = Muster::sign(me, members)?;
     let mine = lane_of(&chamber, &me.verifying_key(), now);
     let walked = track(site, name, place, &mine, Reach::Head, now)?;
-    let freight = Freight::roster(chamber.roster.to_bytes()?)?;
+    let freight = Freight::muster(chamber.muster.to_bytes()?)?;
     let written = append(site, name, place, &mine, me, vec![freight], walked)?;
-    chamber.roster_at = Some(written.index);
+    chamber.muster_at = Some(written.index);
     site.keep_room(&chamber)?;
     Ok(chamber)
 }

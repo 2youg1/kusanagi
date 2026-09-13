@@ -171,7 +171,7 @@ pub enum Outcome {
         name: String,
         /// Which bin of the host every member sweeps.
         ward: String,
-        /// The founder's handle, the roster's only member.
+        /// The founder's handle, the muster's only member.
         founder: String,
     },
     /// An invitation into a room was minted.
@@ -209,7 +209,7 @@ pub enum Outcome {
     Room {
         /// Which room.
         name: String,
-        /// One row per author, in roster order. **Read every row**: an author
+        /// One row per author, in muster order. **Read every row**: an author
         /// that failed is an author who has not been heard.
         threads: Vec<Thread>,
     },

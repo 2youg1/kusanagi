@@ -32,7 +32,7 @@ structure Talk where
   writer : System.FilePath
   reader : System.FilePath
   channel : ChannelName
-  invitation : Invitation
+  invitation : Invite
   /-- The writer's handle, as the reader's `joined` reported it. -/
   writerHandle : Handle
   /-- The reader's handle, as its own `joined` reported it. -/
@@ -70,7 +70,7 @@ def talk (door : Door) (ground : Ground) (writer reader : Site)
 
 /-- Says one thing from one site, and reports where the host was told to put it. -/
 def say (door : Door) (site : System.FilePath) (channel : ChannelName)
-    (text : String) : IO Address := do
+    (text : String) : IO Drop := do
   match ← Door.ask door site (.send channel text) with
   | .accepted (.sent _ _ address) => return address
   | other => throw <| IO.userError s!"a segment was refused: {repr other}"
@@ -166,7 +166,7 @@ never appears is weaker than it looks — the locator is public — so this
 hands back the secret's own 128 digits and a 32-digit slice from inside them,
 which is what a partial leak would still contain.
 -/
-def secretOf (invitation : Invitation) : List ByteArray :=
+def secretOf (invitation : Invite) : List ByteArray :=
   let payload := (invitation.line.dropWhile (· != ':')).drop 1
   let secret := (payload.drop 4).take 128 |>.toString
   [secret, (secret.drop 40).take 32 |>.toString].flatMap hexOf

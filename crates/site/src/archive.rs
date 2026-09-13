@@ -227,7 +227,7 @@ pub fn export(site: &Site, recovery: &[u8; 32], nonce: [u8; 12]) -> Result<Vec<u
                 reason: error.to_string(),
             })?,
         )?;
-        for member in room.roster.members() {
+        for member in room.muster.members() {
             if let Some(cairn) = site.cairn(&name, &member.handle())? {
                 put(&mut plain, Kind::Cairn, &named(&name, &cairn.to_bytes())?)?;
             }

@@ -71,11 +71,11 @@ uses as a path. That is the one implementation detail this adversary depends
 on; when it changes, these properties fail loudly rather than silently testing
 nothing.
 -/
-def Ground.placed (ground : Ground) (address : Address) : System.FilePath :=
+def Ground.placed (ground : Ground) (address : Drop) : System.FilePath :=
   (address.key.splitOn "/").foldl (fun below part => below.join (System.FilePath.mk part)) ground.host
 
 /-- The bin a key sits in: everything before the address. -/
-def binOf (address : Address) : String :=
+def binOf (address : Drop) : String :=
   let parts := address.key.splitOn "/"
   String.intercalate "/" (parts.take (parts.length - 1))
 
@@ -85,8 +85,8 @@ Everything the host holds, which is everything the host knows.
 Sorted, so that a property about the host's view does not accidentally depend
 on the order a directory happened to be walked in.
 -/
-partial def Ground.stored (ground : Ground) : IO (List (Address × ByteArray)) := do
-  let rec walk (directory : System.FilePath) : IO (List (Address × ByteArray)) := do
+partial def Ground.stored (ground : Ground) : IO (List (Drop × ByteArray)) := do
+  let rec walk (directory : System.FilePath) : IO (List (Drop × ByteArray)) := do
     let mut found := []
     for entry in ← directory.readDir do
       if entry.fileName == ".staging" then
@@ -103,11 +103,11 @@ partial def Ground.stored (ground : Ground) : IO (List (Address × ByteArray)) :
   return (← walk ground.host).mergeSort fun left right => left.1.key ≤ right.1.key
 
 /-- The bytes the host holds at one address. -/
-def Ground.holding (ground : Ground) (address : Address) : IO ByteArray :=
+def Ground.holding (ground : Ground) (address : Drop) : IO ByteArray :=
   IO.FS.readBinFile (ground.placed address)
 
 /-- Flips one bit of an object, the way damage or a hostile host would. -/
-def Ground.corrupt (ground : Ground) (address : Address) : IO Unit := do
+def Ground.corrupt (ground : Ground) (address : Drop) : IO Unit := do
   let path := ground.placed address
   let bytes ← IO.FS.readBinFile path
   if h : 0 < bytes.size then
@@ -119,7 +119,7 @@ def Ground.corrupt (ground : Ground) (address : Address) : IO Unit := do
 Changes the byte at one offset, which is how damage and a hostile host both
 look from the reader's side. Offsets past the end change nothing.
 -/
-def Ground.damage (ground : Ground) (offset : Nat) (address : Address) : IO Unit := do
+def Ground.damage (ground : Ground) (offset : Nat) (address : Drop) : IO Unit := do
   let path := ground.placed address
   let bytes ← IO.FS.readBinFile path
   if h : offset < bytes.size then
@@ -130,7 +130,7 @@ Puts whatever bytes the host likes at an address, whether or not anything was
 there. A host that can write its own disk can do this; the question is only
 ever what a reader makes of it.
 -/
-def Ground.plant (ground : Ground) (address : Address) (bytes : ByteArray) : IO Unit := do
+def Ground.plant (ground : Ground) (address : Drop) (bytes : ByteArray) : IO Unit := do
   let path := ground.placed address
   if let some parent := path.parent then
     IO.FS.createDirAll parent
@@ -144,7 +144,7 @@ refusing selectively is a lie about history rather than an outage. Nothing
 stops it; what it must not achieve is a reader believing less than that reader
 has already verified.
 -/
-def Ground.vanish (ground : Ground) (address : Address) : IO Unit :=
+def Ground.vanish (ground : Ground) (address : Drop) : IO Unit :=
   IO.FS.removeFile (ground.placed address)
 
 /--
@@ -157,7 +157,7 @@ answers that with the key rather than with a check — an address derives the ke
 its contents are sealed under, so bytes that arrive at the wrong address do not
 open at all.
 -/
-def Ground.transplant (ground : Ground) (from' to : Address) : IO Unit := do
+def Ground.transplant (ground : Ground) (from' to : Drop) : IO Unit := do
   IO.FS.writeBinFile (ground.placed to) (← IO.FS.readBinFile (ground.placed from'))
 
 end Kusanagi.Ground

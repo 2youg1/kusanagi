@@ -34,12 +34,12 @@ pub enum Purpose {
     /// sees a stream that never goes quiet. It is never reported, so a reader
     /// sees only what somebody meant.
     Filler,
-    /// The founder re-signed the room roster, and every member replaces theirs.
+    /// The founder re-signed the room muster, and every member replaces theirs.
     ///
-    /// It is sealed, chained and counted exactly like a message, so a roster
+    /// It is sealed, chained and counted exactly like a message, so a muster
     /// change is indistinguishable on the wire from a sentence. It is never
-    /// reported as a message: a reader replaces its roster and shows nothing.
-    Roster,
+    /// reported as a message: a reader replaces its muster and shows nothing.
+    Muster,
     /// One segment of a message too large to be said in one.
     ///
     /// A separate purpose rather than a marker inside the payload, because a
@@ -51,7 +51,7 @@ pub enum Purpose {
 
 const PURPOSE_MESSAGE: u8 = 0;
 const PURPOSE_FILLER: u8 = 1;
-const PURPOSE_ROSTER: u8 = 2;
+const PURPOSE_MUSTER: u8 = 2;
 const PURPOSE_PART: u8 = 3;
 
 impl Purpose {
@@ -60,7 +60,7 @@ impl Purpose {
         match self {
             Self::Message => PURPOSE_MESSAGE,
             Self::Filler => PURPOSE_FILLER,
-            Self::Roster => PURPOSE_ROSTER,
+            Self::Muster => PURPOSE_MUSTER,
             Self::Part => PURPOSE_PART,
         }
     }
@@ -70,7 +70,7 @@ impl Purpose {
         match byte {
             PURPOSE_MESSAGE => Ok(Self::Message),
             PURPOSE_FILLER => Ok(Self::Filler),
-            PURPOSE_ROSTER => Ok(Self::Roster),
+            PURPOSE_MUSTER => Ok(Self::Muster),
             PURPOSE_PART => Ok(Self::Part),
             other => Err(SegmentError::UnknownPurpose { purpose: other }),
         }
@@ -118,16 +118,16 @@ impl Freight {
         })
     }
 
-    /// A roster the founder re-signed, carried so every member replaces theirs.
+    /// A muster the founder re-signed, carried so every member replaces theirs.
     ///
     /// # Errors
     ///
     /// [`SegmentError::PayloadTooLarge`] when the bytes exceed
     /// [`MAX_PAYLOAD`](crate::MAX_PAYLOAD).
-    pub fn roster(payload: Vec<u8>) -> Result<Self, SegmentError> {
+    pub fn muster(payload: Vec<u8>) -> Result<Self, SegmentError> {
         Ok(Self {
             payload: Payload::new(payload)?,
-            purpose: Purpose::Roster,
+            purpose: Purpose::Muster,
             acknowledged: 0,
         })
     }

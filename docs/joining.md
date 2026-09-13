@@ -117,7 +117,7 @@ disk without the password is noise.
 |---|---|---|---|
 | `identity` | signing seed and ward | this account | every channel and room this endpoint is in |
 | `channels/<hash>` | one channel: secret, locator, standing, peer | this account | that channel; only an `export` archive restores it |
-| `rooms/<hash>` | one room: secret, founder, roster height | this account | that room, same as a channel |
+| `rooms/<hash>` | one room: secret, founder, muster height | this account | that room, same as a channel |
 | `groups/<hash>` | which channels a local group name fans out to | this account | the name; the channels remain |
 | `cairns/<hash>/<hash>` | how far one author's stream is verified | this account | the next read walks again; it reports the same result and costs more requests |
 | `sweeps/<hash>/<hash>` | the last listing of one bin | this account | the next read lists from the channel's opening; same result, more listings |

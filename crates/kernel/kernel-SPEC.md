@@ -74,6 +74,7 @@ kernel **不**负责：链的规则（`chain`）、地址派生（`seal`）、�
 | `Handle` | —— | 身份的**名字**：公钥的 BLAKE3，32 字节，与签名算法无关 |
 | `VerifyingKey` / `Signer` / `Signature` | —— | 公钥 / 私钥 / 签名 |
 | `Instant` / `Clock` | —— | 时刻 / 时刻的来源 |
+| `Muster` | Muster | 房间名册：建房者签名的成员公钥列表，以 `Purpose::Muster` 走在建房者的流上。与 `site::Roster`（一个端点私有的群组列表）是两个概念，所以不同名；失败码 `kusanagi.bad_roster` 是稳定接口，不随类型改名 |
 
 ## 7 模块边界
 
@@ -265,7 +266,7 @@ ack 区翻转则照常解码。
 
 ### 房间名册（F8 · D-17）
 
-`roster.rs`：`Roster { members: Vec<VerifyingKey>, signature }` 由建房者密钥签在 `"kusanagi/room/1" ‖ founder_handle ‖ members` 上，线上形式 `count u8 ‖ keys ‖ sig 4627`，**自定界**（`Roster::read(&mut Reader)` 留下其后字节，`from_bytes` 要求恰好读完），因为 32 把钥匙 87 KiB 超出站点记录的 u16 块前缀。成员是**公钥**不是 handle：读端要拿它验每条流，段不携钥匙。`verify(&VerifyingKey)` 过则借出 `&[VerifyingKey]`，不过即 `RosterError::Forged`；`sign` 与 `to_bytes` 都在 `MOST_MEMBERS`（32）处以 `TooMany` 拒绝。`Purpose::Roster` 是第三种段目的：名册变更以段的形式走 founder 自己的流（trail 证明、可否认），读者替换名册且永不报告。判据：`tests/roster.rs`。
+`muster.rs`：`Muster { members: Vec<VerifyingKey>, signature }` 由建房者密钥签在 `"kusanagi/room/1" ‖ founder_handle ‖ members` 上，线上形式 `count u8 ‖ keys ‖ sig 4627`，**自定界**（`Muster::read(&mut Reader)` 留下其后字节，`from_bytes` 要求恰好读完），因为 32 把钥匙 87 KiB 超出站点记录的 u16 块前缀。成员是**公钥**不是 handle：读端要拿它验每条流，段不携钥匙。`verify(&VerifyingKey)` 过则借出 `&[VerifyingKey]`，不过即 `MusterError::Forged`；`sign` 与 `to_bytes` 都在 `MOST_MEMBERS`（32）处以 `TooMany` 拒绝。`Purpose::Muster` 是第三种段目的：名册变更以段的形式走 founder 自己的流（trail 证明、可否认），读者替换名册且永不报告。判据：`tests/muster.rs`。
 
 ## 14 硬编码声明
 

@@ -207,7 +207,7 @@ fn channels(site: &Site, now: Instant) -> Result<Outcome, Complaint> {
             Ok(Grouping {
                 name,
                 members: room
-                    .roster
+                    .muster
                     .members()
                     .iter()
                     .map(|member| member.handle().to_string())

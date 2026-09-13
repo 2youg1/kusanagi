@@ -87,7 +87,7 @@ pub fn messages(held: &[Held]) -> Vec<Message<'_>> {
                     });
                 }
             }
-            Purpose::Filler | Purpose::Roster => run.clear(),
+            Purpose::Filler | Purpose::Muster => run.clear(),
         }
     }
     said

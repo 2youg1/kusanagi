@@ -16,7 +16,7 @@
 
 use kusanagi_chain::ChainError;
 use kusanagi_grant::GrantError;
-use kusanagi_kernel::{AliasError, RosterError, SegmentError, WaypointError};
+use kusanagi_kernel::{AliasError, MusterError, SegmentError, WaypointError};
 use kusanagi_seal::OpenFailed;
 use kusanagi_waypoint::LocatorError;
 use serde::Serialize;
@@ -45,9 +45,9 @@ pub enum Complaint {
     /// A name a peer declared was not signed by their key, or is not a name.
     #[error(transparent)]
     Alias(#[from] AliasError),
-    /// A room roster is not one, names too many, or was not signed by its founder.
+    /// A room's muster is not one, names too many, or was not signed by its founder.
     #[error(transparent)]
-    Roster(#[from] RosterError),
+    Muster(#[from] MusterError),
     /// The waypoint locator does not name a place.
     #[error(transparent)]
     Locator(#[from] LocatorError),
@@ -330,7 +330,7 @@ impl Complaint {
             Self::Sealed(error) => error.code(),
             Self::Grant(error) => error.code(),
             Self::Alias(_) => "kusanagi.bad_name",
-            Self::Roster(_) => "kusanagi.bad_roster",
+            Self::Muster(_) => "kusanagi.bad_roster",
             Self::NotTheFounder { .. } => "kusanagi.not_the_founder",
             Self::Locator(error) => error.code(),
             Self::Listening { .. } => "kusanagi.address_unavailable",

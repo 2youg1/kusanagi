@@ -33,12 +33,12 @@ structure ChannelName where
   deriving DecidableEq, Ord, Repr, Inhabited
 
 /-- One line of text that admits exactly one endpoint to one channel. -/
-structure Invitation where
+structure Invite where
   line : String
   deriving DecidableEq, Ord, Repr, Inhabited
 
 /-- An opaque place on a host where exactly one segment lives. -/
-structure Address where
+structure Drop where
   key : String
   deriving DecidableEq, Ord, Repr, Inhabited
 
@@ -49,14 +49,14 @@ structure Code where
 
 instance : FromJson Handle where fromJson? j := Handle.mk <$> fromJson? j
 instance : FromJson ChannelName where fromJson? j := ChannelName.mk <$> fromJson? j
-instance : FromJson Invitation where fromJson? j := Invitation.mk <$> fromJson? j
-instance : FromJson Address where fromJson? j := Address.mk <$> fromJson? j
+instance : FromJson Invite where fromJson? j := Invite.mk <$> fromJson? j
+instance : FromJson Drop where fromJson? j := Drop.mk <$> fromJson? j
 instance : FromJson Code where fromJson? j := Code.mk <$> fromJson? j
 
 instance : ToString Handle := ⟨Handle.rendered⟩
 instance : ToString ChannelName := ⟨ChannelName.said⟩
-instance : ToString Invitation := ⟨Invitation.line⟩
-instance : ToString Address := ⟨Address.key⟩
+instance : ToString Invite := ⟨Invite.line⟩
+instance : ToString Drop := ⟨Drop.key⟩
 instance : ToString Code := ⟨Code.stable⟩
 
 /--
@@ -145,7 +145,7 @@ structure Landed where
   member : ChannelName
   status : String
   code : Option Code
-  address : Option Address
+  address : Option Drop
   deriving DecidableEq, Repr, Inhabited
 
 instance : FromJson Landed where
@@ -153,16 +153,16 @@ instance : FromJson Landed where
     let member ← j.getObjValAs? ChannelName "member"
     let status ← j.getObjValAs? String "status"
     let code ← optional j Code "code"
-    let address ← optional j Address "address"
+    let address ← optional j Drop "address"
     .ok { member, status, code, address }
 
 /-- What the program reports when it did what was asked. -/
 inductive Outcome where
   | identity (handle : Handle)
   | channels (listed : List Summary)
-  | invited (name : ChannelName) (invitation : Invitation) (expiresAt : UInt64)
+  | invited (name : ChannelName) (invitation : Invite) (expiresAt : UInt64)
   | joined (name : ChannelName) (handle peer : Handle)
-  | sent (name : ChannelName) (index : UInt64) (address : Address)
+  | sent (name : ChannelName) (index : UInt64) (address : Drop)
   /--
   The channel, the handle that signed every segment reported, the verified
   head, and the segments themselves.
@@ -193,14 +193,14 @@ instance : FromJson Outcome where
     | "identity" => return .identity (← j.getObjValAs? Handle "handle")
     | "channels" => return .channels (← j.getObjValAs? (List Summary) "channels")
     | "invited" =>
-      return .invited (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? Invitation "invite")
+      return .invited (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? Invite "invite")
         (← counted j "expires_at")
     | "joined" =>
       return .joined (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? Handle "handle")
         (← j.getObjValAs? Handle "peer")
     | "sent" =>
       return .sent (← j.getObjValAs? ChannelName "name") (← counted j "index")
-        (← j.getObjValAs? Address "address")
+        (← j.getObjValAs? Drop "address")
     | "read" =>
       return .read (← j.getObjValAs? ChannelName "name") (← j.getObjValAs? Handle "author")
         (← counted? j "height") (← j.getObjValAs? (List Entry) "segments")

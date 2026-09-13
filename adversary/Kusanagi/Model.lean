@@ -60,7 +60,7 @@ structure Mint where
   deriving DecidableEq, Repr, Inhabited
 
 /-- One side of one channel. -/
-structure Chan where
+structure Channel where
   standing : Standing
   far : Option Slot
   met : Bool
@@ -68,7 +68,7 @@ structure Chan where
   cut : Bool
   deriving DecidableEq, Repr, Inhabited
 
-private def opened (standing : Standing) (far : Option Slot) (met : Bool) : Chan :=
+private def opened (standing : Standing) (far : Option Slot) (met : Bool) : Channel :=
   { standing, far, met, said := [], cut := false }
 
 /--
@@ -92,7 +92,7 @@ inductive Blunting where
 /-- Everything a person could know after a trace. -/
 structure World where
   minted : TreeMap Nat Mint := ∅
-  channels : TreeMap Slot Chan := ∅
+  channels : TreeMap Slot Channel := ∅
   /-- Which of its own rules this world has been made to forget. -/
   blunted : Blunting := .nothing
   deriving Inhabited
@@ -116,9 +116,9 @@ def Action.described : Action → String
   | .read site channel => s!"Read {site} {channel}"
   | .revoke site channel => s!"Revoke {site} {channel}"
 
-private def World.at? (world : World) (slot : Slot) : Option Chan := world.channels.get? slot
+private def World.at? (world : World) (slot : Slot) : Option Channel := world.channels.get? slot
 
-private def World.alter (world : World) (slot : Slot) (change : Chan → Chan) : World :=
+private def World.alter (world : World) (slot : Slot) (change : Channel → Channel) : World :=
   { world with channels := world.channels.alter slot (·.map change) }
 
 /-- What a use of a channel needs from the standing that allows it. -/
@@ -277,7 +277,7 @@ structure Kit where
 
 /-- What a step handed back, in the only shapes this model's actions produce. -/
 inductive Realized where
-  | minted (invitation : Invitation)
+  | minted (invitation : Invite)
   | done
   | texts (said : List String)
   deriving Repr, Inhabited
@@ -350,7 +350,7 @@ def revocationIsFinal : Script World Action Unit := do
   let _ ← Script.step (.revoke .alice one)
   Script.anyActions
   let world ← Script.modelState
-  if ((world.channels.get? ⟨.alice, one⟩).map Chan.cut).getD false then
+  if ((world.channels.get? ⟨.alice, one⟩).map Channel.cut).getD false then
     Script.failing (.read .alice one)
 
 end Kusanagi.Model

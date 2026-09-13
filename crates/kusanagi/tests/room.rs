@@ -153,10 +153,10 @@ fn a_read_of_three_members_lists_the_host_as_often_as_a_read_of_one() {
     read(&carol, "team", BTreeMap::new());
     let site = Site::at(carol.site_root());
     let room = site.room("team").unwrap();
-    assert_eq!(room.roster.members().len(), 3);
+    assert_eq!(room.muster.members().len(), 3);
     let now = SystemClock.now();
     let lanes: Vec<Lane> = room
-        .roster
+        .muster
         .members()
         .iter()
         .map(|member: &VerifyingKey| Lane {

@@ -11,7 +11,7 @@
 2. `Sweeping`：逐 period 把 ward 的 bin 交出来（`take() -> Option<Taken>`：列举 + 只 GET 上次列举之外的键）；`CAP` 只是默认，`over()` 收的 `cap` 是读者定的，见 `site-SPEC.md` 的 sweep 记录。
 3. `Stepping`：一条 lane 在手头 bin 里能走多远走多远——开封、解码、验作者、验链——下一个高度不在就停，等下一个 bin。
 4. `messages`：一串 `Part` 变回一条消息的唯一权威——凑满即产出、终段高度即消息高度；半截的串不上报、不阻塞、不落盘；`--after` 滤的是消息高度。
-5. `Standing`：一次走到头之后、一串写出之前的位置；`append` 整串建完再一起 PUT。
+5. `Footing`：一次走到头之后、一串写出之前的位置；`append` 整串建完再一起 PUT。
 6. `track_all`/`track`/`peek`：`track_all` 是唯一的取回路径——N 条同 ward 的 lane 共用一个 `Sweeping`，每个 bin 逐 lane `advance`，翻页前丢弃 bin；决定每条 lane 从哪个 cairn 续、sweep 从哪个 period 起（有一条 lane 整链行走即从 `opened` 起、不带 known）、最后写 N 条 cairn 与一条 `(name, ward)` sweep 记录。`track` = 一条 lane 的 `track_all`。`peek` 是唯一按地址点名的读（rendezvous bin 里的介绍流）。
    **删除**：`Source` seam 与 `walk()`——按地址取的实现在生产里没有调用者，1→2→4→8 窗口在 W1 后只是本机 HashMap 查找。
 
@@ -27,7 +27,7 @@ F8 加一条：`room.rs::a_read_of_three_members_lists_the_host_as_often_as_a_re
 
 ## 5 权威信源 · 6 命名统一
 
-`GLOSSARY.md` 的 Stream、Waypoint、Cairn、Ward/Period/Bin；`kusanagi-SPEC.md` 附录 D-20。
+`GLOSSARY.md` 的 Stream、Waypoint、Cairn、Ward/Period/Bin；`kusanagi-SPEC.md` 附录 D-20。`Footing` 是本 crate 自己的词——一串写出之前链所处的位置；不叫 `Standing`，那是词表里「凭什么在通道上」的词，一名一义。
 
 ## 7 模块边界
 
@@ -36,7 +36,7 @@ lib.rs       索引与再导出
 lane.rs      Lane、verified
 sweep.rs     Sweeping、Taken、CAP、DIGITS
 stepping.rs  Stepping、Held、decode
-walk.rs      track_all / track / peek、Reach、Walked、Standing、starting、confirm
+walk.rs      track_all / track / peek、Reach、Walked、Footing、starting、confirm
 message.rs   messages、Message
 ```
 

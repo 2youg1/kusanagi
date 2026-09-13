@@ -12,14 +12,14 @@
 //! other.
 //!
 //! **The founder is the room's one authority.** Only the founder's key signs
-//! the roster, so only the founder can admit, and so only the founder mints
+//! the muster, so only the founder can admit, and so only the founder mints
 //! invitations: a line minted by anybody else would be a promise nobody can
 //! keep. A founder that goes away leaves a room nobody can join — that is a
 //! boundary this build states rather than hides; a successor rule is a later
-//! change to the roster's signing, not to this file.
+//! change to the muster's signing, not to this file.
 
 use kusanagi_kernel::{
-    Freight, Instant, Object, PutOutcome, Roster, Segment, Signer, Waypoint as _,
+    Freight, Instant, Muster, Object, PutOutcome, Segment, Signer, Waypoint as _,
 };
 use kusanagi_seal::{Fit, Secret, derive, offer, open as open_sealed, period, rendezvous, seal};
 use kusanagi_site::{Invite, Room, RoomOffer, Site};
@@ -31,7 +31,7 @@ use crate::world::{fresh_seed, fresh_ward};
 use kusanagi_door::{Complaint, Outcome};
 use zeroize::Zeroize as _;
 
-/// Founds a room: a shared secret, a ward every member sweeps, and a roster
+/// Founds a room: a shared secret, a ward every member sweeps, and a muster
 /// naming only the founder, signed by them.
 pub(crate) fn room(
     site: &Site,
@@ -50,13 +50,13 @@ pub(crate) fn room(
     let secret = Secret::from_bytes(seed);
     seed.zeroize();
     let ward = fresh_ward()?;
-    let roster = Roster::sign(&me, vec![me.verifying_key()])?;
+    let muster = Muster::sign(&me, vec![me.verifying_key()])?;
     site.keep_room(&Room {
         name: name.to_owned(),
         secret,
         ward,
-        roster,
-        roster_at: None,
+        muster,
+        muster_at: None,
         ushers: Vec::new(),
         locator: waypoint.to_owned(),
         opened: period(now.as_unix_seconds()),
@@ -72,7 +72,7 @@ pub(crate) fn room(
 ///
 /// The line carries the room secret, so whoever holds it can read the offer
 /// and join; the offer carries the founder's key, the shared ward, and the
-/// signed roster. The offer goes to the host before anything is written here,
+/// signed muster. The offer goes to the host before anything is written here,
 /// so the two failures are the two harmless ones. The one-time key the line
 /// carries is remembered beside the room as an usher: the newcomer greets on
 /// that key's stream, and the founder's next read admits them from it.
@@ -94,7 +94,7 @@ pub(crate) fn room_invite(
     let announcement = RoomOffer {
         founder: me.verifying_key(),
         ward: chamber.ward,
-        roster: chamber.roster.clone(),
+        muster: chamber.muster.clone(),
     };
     let sealed = seal(&key, Fit::Veil, &announcement.to_bytes()?)?;
     let at = Object::new(rendezvous(&chamber.secret), address);
@@ -119,12 +119,12 @@ pub(crate) fn room_invite(
     })
 }
 
-/// Accepts a room invitation: reads the founder's offer, checks the roster
+/// Accepts a room invitation: reads the founder's offer, checks the muster
 /// signature against the founder's key, greets, and records the room.
 ///
-/// The roster is believed only under the founder's own key, which the same
-/// drop carries: a roster moved under another founder's key fails here rather
-/// than being shown. A newcomer is not on that roster yet, and that is
+/// The muster is believed only under the founder's own key, which the same
+/// drop carries: a muster moved under another founder's key fails here rather
+/// than being shown. A newcomer is not on that muster yet, and that is
 /// expected: they announce themselves on the introduction stream the
 /// invitation's one-time key derives, and the founder admits them from it.
 /// Joining one's own room is refused, for the same reason joining one's own
@@ -154,10 +154,10 @@ pub(crate) fn room_join(
         return Err(Complaint::OwnInvitation);
     }
     announcement
-        .roster
+        .muster
         .verify(&announcement.founder)
         .map_err(|_| Complaint::BadInvitation {
-            reason: "this room's roster was not signed by its founder".to_owned(),
+            reason: "this room's muster was not signed by its founder".to_owned(),
         })?;
     // The greeting carries the newcomer's key and nothing else: the founder
     // learns who arrived beside nothing else to trust, and reads it once.
@@ -179,8 +179,8 @@ pub(crate) fn room_join(
         name: name.to_owned(),
         secret: invitation.secret.clone(),
         ward: announcement.ward,
-        roster: announcement.roster,
-        roster_at: None,
+        muster: announcement.muster,
+        muster_at: None,
         ushers: Vec::new(),
         locator: invitation.locator.clone(),
         opened: period(now.as_unix_seconds()),

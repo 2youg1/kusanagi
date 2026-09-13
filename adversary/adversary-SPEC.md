@@ -173,9 +173,9 @@ inductive Answer where | accepted (outcome : Outcome) | refused (complaint : Com
 structure Complaint where code : Code; message recover : String
 inductive Outcome where
   | identity (handle : Handle) | channels (listed : List Summary)
-  | invited (name : ChannelName) (invitation : Invitation) (expiresAt : UInt64)
+  | invited (name : ChannelName) (invitation : Invite) (expiresAt : UInt64)
   | joined (name : ChannelName) (handle peer : Handle)
-  | sent (name : ChannelName) (index : UInt64) (address : Address)
+  | sent (name : ChannelName) (index : UInt64) (address : Drop)
   | read (name : ChannelName) (author : Handle) (height : Option UInt64) (segments : List Entry)
   | revoked … | forgotten … | examined … | hosted | …
 
@@ -195,8 +195,8 @@ advice  : String → List (List String)                -- 从 recover 里抽出�
 withGround (act : Ground → IO α) : IO α
 Ground.siteOf (site : Site) : System.FilePath
 Ground.waypoint : System.FilePath
-Ground.stored : IO (List (Address × ByteArray))
-Ground.corrupt (address : Address) : IO Unit         -- 翻一位
+Ground.stored : IO (List (Drop × ByteArray))
+Ground.corrupt (address : Drop) : IO Unit         -- 翻一位
 
 -- 丢弃与重放属于「撒谎的宿主」那一单元：`vanish` 与 `transplant`。
 -- 一个没有调用者的敌意动作，与一句没有被证伪过的断言等价。
