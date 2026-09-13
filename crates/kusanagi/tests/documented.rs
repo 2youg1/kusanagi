@@ -27,10 +27,11 @@
 use std::path::{Path, PathBuf};
 
 /// The documents a reader is expected to believe.
-const DOCUMENTS: [&str; 5] = [
+const DOCUMENTS: [&str; 6] = [
     "README.md",
     "README.zh-CN.md",
     "ARCHITECTURE.md",
+    "GLOSSARY.md",
     "docs/box-protocol.md",
     "docs/joining.md",
 ];

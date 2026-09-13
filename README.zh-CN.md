@@ -174,7 +174,7 @@ kusanagi proxy --require     # 从此没有 KUSANAGI_PROXY 就一个请求也不
 
 本地保存的东西只有三样：一颗身份种子、每条 channel 一个文件，以及每条流验证到哪里的记录。三样里只有最后一样可以重算。
 
-`ARCHITECTURE.md` 是详细版本，包含每个选择背后的理由，以及那些被否决的方案。
+`ARCHITECTURE.md` 是详细版本，包含每个选择背后的理由，以及那些被否决的方案；`GLOSSARY.md` 是每个部件的名字，以及为什么这样叫。
 
 ## 还没做的部分
 
@@ -194,12 +194,12 @@ kusanagi proxy --require     # 从此没有 KUSANAGI_PROXY 就一个请求也不
 ## 参与开发
 
 ```bash
-just check        # fmt、clippy（-D warnings）、测试、行数预算、cargo-deny
+just check        # fmt、clippy（-D warnings）、测试、行数预算、词表、cargo-deny
 just demo         # 在一个用完即删的目录里跑通整个故事
 just adversary    # Lean 反例猎手，装了 Lean 才跑
 ```
 
-`just check` 是每一次改动的收工条件。它会跑整套测试——写下这句话时是 328 个，外加窗口 42 个，其中包括两个端点通过真实 TCP 对话——外加 rustfmt、`-D warnings` 的 clippy、行数预算与 `cargo-deny`。
+`just check` 是每一次改动的收工条件。它会跑整套测试——写下这句话时是 328 个，外加窗口 42 个，其中包括两个端点通过真实 TCP 对话——外加 rustfmt、`-D warnings` 的 clippy、行数预算、词表与 `cargo-deny`。
 
 动第一行代码之前先读 [`AGENTS.md`](AGENTS.md)，开 pull request 之前读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。每个 crate 都有一份 `<crate>-SPEC.md`，它先于代码改动。
 

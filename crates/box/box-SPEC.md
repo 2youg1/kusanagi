@@ -51,7 +51,7 @@
 
 ## 6 命名统一
 
-`Box` 已进入 `ARCHITECTURE.md` §4 词表：**一台别人运行的宿主**。`Server` 是它的服务端类型，
+`Box` 已进入 `GLOSSARY.md`：**一台别人运行的宿主**。`Server` 是它的服务端类型，
 `Request`/`Response` 是一次交换的两端，都不出 crate。
 
 ## 7 模块边界
@@ -168,5 +168,5 @@ TcpListener → serve（每连接一线程）→ answer → Request::read（有�
 
 1. 本文。
 2. `docs/box-protocol.md`——协议的任何改动。
-3. `ARCHITECTURE.md` §4 词表、§5 crate 图与行数表。
+3. `GLOSSARY.md`；`ARCHITECTURE.md` §5 crate 图与行数表。
 4. `crates/waypoint/waypoint-SPEC.md` §7——两半的边界。

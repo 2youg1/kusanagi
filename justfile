@@ -1,7 +1,7 @@
 # The closing condition for every change.
 default: check
 
-check: fmt lint test budget boxes deny
+check: fmt lint test budget boxes glossary deny
 
 # The inner loop, for while a change is still being written.
 #
@@ -89,6 +89,13 @@ deps:
 # only; `just boxes` still decides where a test may stand.
 budget:
     bash scripts/budget.sh
+
+# One name per concept, held against the tree. `GLOSSARY.md` names the one
+# declaration behind every word, the names a word is not called by, and the
+# three reserved for work not yet done; `scripts/glossary.sh` is the one
+# authority for checking it, so this recipe and CI cannot drift.
+glossary:
+    bash scripts/glossary.sh
 
 # Two identities, one host, one verifiable exchange — in a directory that is
 # deleted afterwards. The same story over TCP is asserted by

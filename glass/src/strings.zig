@@ -8,7 +8,7 @@
 //! The markup binds `{t.key}` and nothing else, so a label that exists in one
 //! language and not the other cannot compile: `Strings` is generated from the
 //! table, and `of` fills every field from the column the language names.
-//! Concept words stay as they are in `ARCHITECTURE.md` §4 — handle, drop,
+//! Concept words stay as they are in `GLOSSARY.md` — handle, drop,
 //! cairn, waypoint — because a translated concept word is a second authority.
 //!
 //! Chinese here is only ever drawn through the body face `font.zig` found, so

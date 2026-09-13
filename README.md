@@ -247,7 +247,8 @@ hash-linked. Permission is a chain of signed delegations that can only narrow.
 Locally an endpoint keeps an identity seed, one file per channel, and a record of
 how far each stream has been verified. Only the last of those can be recomputed.
 
-`ARCHITECTURE.md` is the long version, including the choices that were rejected.
+`ARCHITECTURE.md` is the long version, including the choices that were rejected;
+`GLOSSARY.md` is what every part is called, and why.
 
 ## What is not built
 
@@ -267,7 +268,7 @@ Listed so that each absence is a decision rather than something we forgot to men
 ## Working on it
 
 ```bash
-just check        # fmt, clippy at -D warnings, tests, line budget, cargo-deny
+just check        # fmt, clippy at -D warnings, tests, line budget, glossary, cargo-deny
 just demo         # the whole story in a throwaway directory
 just adversary    # the Lean counterexample hunter, if you have Lean
 ```
@@ -275,7 +276,7 @@ just adversary    # the Lean counterexample hunter, if you have Lean
 `just check` is the closing condition for every change. It runs the whole test
 suite — 328 tests as of this writing, including two endpoints talking over real
 TCP, and 42 more for the window — plus rustfmt, clippy at `-D warnings`, the
-line budget and `cargo-deny`.
+line budget, the glossary and `cargo-deny`.
 
 Read [`AGENTS.md`](AGENTS.md) before your first edit, and
 [`CONTRIBUTING.md`](CONTRIBUTING.md) before you open a pull request. Each crate

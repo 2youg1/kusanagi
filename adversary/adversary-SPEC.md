@@ -133,7 +133,7 @@ var1 <- Invite Alice "one" Forever {send,read}
 
 ## 6 命名统一
 
-`Segment`、`Drop`、`Channel`、`Grant`、`Standing` 一律沿用 `ARCHITECTURE.md` §4 的词表，Lean 侧不得另起名字。本目录只新增三个词，各自只指一件事：
+`Segment`、`Drop`、`Channel`、`Grant`、`Standing` 一律沿用 `GLOSSARY.md`，Lean 侧不得另起名字。本目录只新增三个词，各自只指一件事：
 
 | 词 | 它是什么 |
 |---|---|

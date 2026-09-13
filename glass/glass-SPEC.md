@@ -136,7 +136,7 @@ D5 折行器不认 CJK 断点;D6 变体字面只有默认字重,markdown 粗体�
 
 ## 5 权威信源
 
-`ARCHITECTURE.md` §1–§4（定义、词汇、七条性质——它们决定了界面不能显示什么）；`door-SPEC.md` §3
+`ARCHITECTURE.md` §1–§3 与 `GLOSSARY.md`（定义、七条性质、词汇——它们决定了界面不能显示什么）；`door-SPEC.md` §3
 （`acknowledged`）；`kusanagi-SPEC.md`（动词与 `-` 约定）。Native SDK 0.10.1：`native-ui.md`
 （元素表、Style token attributes、Effects、Testing pattern、automation）；SDK 源码
 `primitives/canvas/tokens.zig`（`DesignTokens.theme/withOverrides`、`accentOverrides`）、
@@ -146,7 +146,7 @@ D5 折行器不认 CJK 断点;D6 变体字面只有默认字重,markdown 粗体�
 
 ## 6 命名统一
 
-Glass（本目录）；Channel / Roster / Cadence / Retention / Offer / Cairn 沿用 §4；`check` 沿用
+Glass（本目录）；Channel / Roster / Cadence / Retention / Offer / Cairn 沿用 `GLOSSARY.md`；`check` 沿用
 `Outcome::Invited.check`。glass 自己的三个词：**rail**（左栏，直接坐在纸面上）、**plate**（对话面板，
 glass 画的唯一一块面）、**theme**（token 语域）。界面文案英文，中文文档在 README。
 
@@ -335,6 +335,6 @@ Native SDK 0.10.1（Zig 0.16）；`std.json` 解析。字面：Geist Mono（SIL 
 
 ## 17 文档同步
 
-`glass/README.md`（命令、字体来源与许可证、主题说明）；`ARCHITECTURE.md` §4 加 Glass 一行
+`glass/README.md`（命令、字体来源与许可证、主题说明）；`GLOSSARY.md` 不收 Glass——它是目录名，不是网络概念
 （原地换行，不加行数——本轮不动，列为待办）；`.process/Roadmap.md` F1–F3 关闭；
 `.process/HANDOFF.md` 下一次重写时记录 D2（CLI 路径缺陷）与字体下载步骤。

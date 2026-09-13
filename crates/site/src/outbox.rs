@@ -11,7 +11,7 @@
 //! slot comes round.
 //!
 //! **This is state, and it is allowed to be, because a site is the one place
-//! state is allowed to live** (`ARCHITECTURE.md` §4). It does not weaken law 1:
+//! state is allowed to live** (`GLOSSARY.md`, Site). It does not weaken law 1:
 //! killing a `tick` either leaves the payload queued or leaves it written, and
 //! both are states the next `tick` reads correctly from the host and the disk.
 //! What it must never do is decide a *height* — that still comes from the

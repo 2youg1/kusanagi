@@ -53,7 +53,7 @@
 
 ## 6 命名统一
 
-`Waypoint` 取自 `ARCHITECTURE.md` §4。`Place` 是已打开的具体地点，`Locator` 是尚未打开的字符串形式；`Server`（盒子的服务端一半）已移到 `kusanagi-box`。`Capability` 的四个名字（`write-once`、`conditional-read`、`stable-validator`、`expiry`）是**公开标识符**，会出现在 `doctor` 输出与读它的脚本里，改名即改公开接口。
+`Waypoint` 取自 `GLOSSARY.md`。`Place` 是已打开的具体地点，`Locator` 是尚未打开的字符串形式；`Server`（盒子的服务端一半）已移到 `kusanagi-box`。`Capability` 的四个名字（`write-once`、`conditional-read`、`stable-validator`、`expiry`）是**公开标识符**，会出现在 `doctor` 输出与读它的脚本里，改名即改公开接口。
 
 ## 7 模块边界
 

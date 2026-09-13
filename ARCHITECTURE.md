@@ -133,32 +133,10 @@ another account — mode bits on Unix, a protected access list on Windows (`site
 
 ## 4 The words
 
-One name per concept. A word with no implementation does not enter the code.
-
-| Word | What it is | What it fixes |
-|---|---|---|
-| **Segment** | the only thing that travels: signed, hash-linked bytes | there is no separate "message"; a segment is the event |
-| **Drop** | an opaque address that receives exactly one segment | addresses never repeat, so relationships never appear |
-| **Stream** | one author's sequence of drops inside a channel | two people sharing one secret never contend for an address |
-| **Waypoint** | anything that stores bytes under a key | the store is never trusted; everything is checked against a hash |
-| **Grant** | offline-verifiable authority that can only narrow | permission exists in this form and no other |
-| **Channel** | one conversation: a secret, a locator, a standing, a peer | the unit an endpoint joins, lists, and revokes |
-| **Standing** | why somebody is allowed on a channel — root, or granted | "the authority holds no grant" is a fact, not a missing value |
-| **Site** | what one endpoint keeps on its own disk: a seed, a file per channel, a cairn per stream, a revocation list | the only state there is; anything else would be state a kill could lose |
-| **Cairn** | how far one author's stream has been verified: a handle and a head, 73 bytes | a reader resumes instead of re-naming a stream, and cannot be talked back down below it |
-| **Box** | a host somebody runs: it holds sealed bytes at opaque addresses and refuses to overwrite one | the untrusted half is a program, not a promise |
-| **Veil** | the one size every sealed drop has: 131 072 bytes, a checked pad, no exceptions | how much was said stops being a thing anybody holds |
-| **Trail** | one author's private sequence of one-time proofs for one stream: each segment shows the current proof and commits to the next | a peer can check who wrote a message and can never prove it to anybody else |
-| **Offer** | what an invitation points at rather than carries: the inviter's key and the grant, sealed in one drop the channel secret addresses | the secret stops being held hostage by the public bytes beside it |
-| **Roster** | one endpoint's own list of the channels a name stands for, replaced whole and shared with nobody | a small group needs no group key, no agreement and no removal protocol |
-| **Freight** | what a segment carries besides its place in the chain: the payload, the purpose, and how far its author had verified the other side | three facts one caller settles at once, so two of them cannot disagree |
-| **Filler** | a segment written because a slot came round and nothing was queued; sealed, chained and counted like any other, never reported | an endpoint with everything to say and one with nothing produce the same traffic |
-| **Cadence** | how often an endpoint writes on a channel: on demand, or one drop every period | the rhythm of speech stops being a function of what there is to say (D-06) |
-| **Retention** | what becomes of a drop once the peer acknowledges it: kept, or released | the combination that must not exist — release without a backup — is visible rather than accidental (D-07) |
-| **Ratchet** | a key that only moves forward, its predecessor overwritten | a host that kept a copy of a released drop holds bytes nobody can open (D-01) |
-| **Carrier** | a real client of a real service, invoked rather than imitated, that moves the bytes | what crosses the network is that client's traffic because it is |
-
-Reserved for work not yet done, and therefore **not** in the code: `Bell`, `Cohort`, `Depot`.
+One name per concept, and one concept per name. The words are in
+[`GLOSSARY.md`](GLOSSARY.md): what each is, the one declaration that implements
+it, what it fixes, the names it is not called by, and the three reserved for
+work not yet done. `just glossary` holds that file against the tree.
 
 ## 5 The crates
 

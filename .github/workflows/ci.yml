@@ -59,6 +59,11 @@ jobs:
       - name: budget
         shell: bash
         run: bash scripts/budget.sh
+      # One name per concept. `GLOSSARY.md` says which declaration stands behind
+      # each word; `scripts/glossary.sh` is the one authority for holding it.
+      - name: glossary
+        shell: bash
+        run: bash scripts/glossary.sh
 
   # The adversary compiles as part of the gate even though it never runs here.
   # Building it costs seconds and catches the one way this directory can break a

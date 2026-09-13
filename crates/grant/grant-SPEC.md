@@ -52,7 +52,7 @@
 
 ## 6 命名统一
 
-`Grant` 取自 `ARCHITECTURE.md` §4 词表。链的一节称 `Step`——不用 `Link`，因为 `kernel::Link` 已经指「段在链中的位置」，一名一义。
+`Grant` 取自 `GLOSSARY.md`。链的一节称 `Step`——不用 `Link`，因为 `kernel::Link` 已经指「段在链中的位置」，一名一义。
 
 ## 7 模块边界
 

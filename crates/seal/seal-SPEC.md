@@ -57,7 +57,7 @@
 
 ## 6 命名统一
 
-`Secret`、`Stream`、`Key` 与 `ARCHITECTURE.md` §4 的词表一致。`Stream` 是本 crate 引入的新词，含义唯一：**一个作者在一条通道内的 drop 序列**。
+`Secret`、`Stream`、`Key` 与 `GLOSSARY.md` 一致。`Stream` 是本 crate 引入的新词，含义唯一：**一个作者在一条通道内的 drop 序列**。
 
 ## 7 模块边界
 
@@ -224,5 +224,5 @@ key_i       = KDF("…ratchet key…",  state_i)
 ## 17 文档同步
 
 1. 本文。
-2. `ARCHITECTURE.md` §3 的隐私表、§4 的词表（`Stream`）、§5 的行数表。
+2. `ARCHITECTURE.md` §3 的隐私表、§5 的行数表；`GLOSSARY.md`（`Stream`）。
 3. `README.md` 的「How it works」段。

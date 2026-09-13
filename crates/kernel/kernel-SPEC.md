@@ -297,7 +297,7 @@ ack 区翻转则照常解码。
 ## 17 文档同步
 
 1. 本文。
-2. `ARCHITECTURE.md` §4 词表、§5 行数表、§6 seam 表、§8「签名」条目。
+2. `GLOSSARY.md`；`ARCHITECTURE.md` §5 行数表、§6 seam 表、§8「签名」条目。
 3. `AGENTS.md` 若模块清单变化。
 
 

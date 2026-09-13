@@ -75,7 +75,7 @@
 
 ## 6 命名统一
 
-`Channel`、`Standing`、`Peer` 已进入 `ARCHITECTURE.md` §4 的词表。`Site` 指本端点的磁盘状态；`Request`/`Outcome`/`Complaint` 分别是入、正常出、异常出，一名一义。
+`Channel`、`Standing`、`Peer` 已进入 `GLOSSARY.md`。`Site` 指本端点的磁盘状态；`Request`/`Outcome`/`Complaint` 分别是入、正常出、异常出，一名一义。
 
 ## 7 模块边界
 

@@ -128,7 +128,7 @@ pub fn fork(left: &Segment, right: &Segment) -> Option<Fork>;
 ## 17 文档同步
 
 1. 本文。
-2. `ARCHITECTURE.md` §4.2 的行数表。
+2. `ARCHITECTURE.md` §5 的行数表。
 3. `kusanagi-SPEC.md` 的 `verify` 子命令一节。
 
 ---

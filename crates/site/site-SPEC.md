@@ -63,7 +63,7 @@
 
 ## 6 命名统一
 
-`Site` 已进入 `ARCHITECTURE.md` §4 词表。`Channel`、`Standing`、`Peer`、`Invite` 沿用原义，
+`Site` 已进入 `GLOSSARY.md`。`Channel`、`Standing`、`Peer`、`Invite` 沿用原义，
 一名一义；`SiteError` 是本 crate 唯一的失败类型。
 
 **一份记录里哪些字段是名字、哪些是钥匙，只有一条判据：本端点是否要拿它去验一个签名。** `root` 是名字，因为验 grant 的公钥就在 grant 自己里；`peer.key` 与 `introduction` 是钥匙，因为一个 segment 只报作者的名字、不带验它的公钥（`kernel-SPEC.md` §10 步骤 6）。`Peer::handle()` 是从钥匙算出来的，不单存一份——否则一条记录里就有两个可以不一致的真相。
@@ -373,7 +373,7 @@ retention     1 byte    0 = 保留；1 = 对端确认后释放
 ## 17 文档同步
 
 1. 本文。
-2. `ARCHITECTURE.md` §4 词表（`Site`）、§5 crate 图与行数表。
+2. `GLOSSARY.md`（`Site`）；`ARCHITECTURE.md` §5 crate 图与行数表。
 3. `crates/kusanagi/kusanagi-SPEC.md` §7 模块边界。
 4. `AGENTS.md`「机器持有的规则」的 `unsafe` 一行与允许清单条数；根 `Cargo.toml` 的允许清单；`crates/vault/vault-SPEC.md`。
 5. `crates/door/door-SPEC.md` §12——`site.permissions` 这个码。

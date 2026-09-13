@@ -27,7 +27,7 @@ F8 加一条：`room.rs::a_read_of_three_members_lists_the_host_as_often_as_a_re
 
 ## 5 权威信源 · 6 命名统一
 
-`ARCHITECTURE.md` §4 的 Stream、Waypoint、Cairn、Ward/Period/Bin；`kusanagi-SPEC.md` 附录 D-20。
+`GLOSSARY.md` 的 Stream、Waypoint、Cairn、Ward/Period/Bin；`kusanagi-SPEC.md` 附录 D-20。
 
 ## 7 模块边界
 
