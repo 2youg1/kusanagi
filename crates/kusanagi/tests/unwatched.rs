@@ -230,19 +230,16 @@ fn two_readers_of_one_ward_ask_the_host_for_the_same_things() {
     merge(&two.join("host"), &one.join("host"));
     let host = one.join("host");
 
+    // One instant for both readers. An address depends on the period it is asked
+    // in, so reading the clock twice lets a period boundary fall between the two
+    // walks and makes the two request sets differ for a reason this test is not
+    // about.
+    let now = SystemClock.now();
     let asked = |reader: &Endpoint| {
         let site = Site::at(reader.site_root());
         let lane = peer_lane(&site);
         let watching = Watching::new(&host);
-        let walked = track(
-            &site,
-            "alice",
-            &watching,
-            &lane,
-            Reach::Whole,
-            SystemClock.now(),
-        )
-        .unwrap();
+        let walked = track(&site, "alice", &watching, &lane, Reach::Whole, now).unwrap();
         assert_eq!(
             walked.held().len(),
             HEIGHT,
