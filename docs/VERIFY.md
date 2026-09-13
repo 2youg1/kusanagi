@@ -33,7 +33,8 @@ kusanagi doctor --here
 ```
 
 The `binary` line is the BLAKE3 of the file the process was started from,
-computed by the process itself. Compare it with the tag message.
+computed by the process itself. Compare it with the BLAKE3 the release notes
+record for that asset.
 
 **What this catches:** a file that was altered in transit, on a mirror, or on
 disk. **What it does not catch:** a binary that was built to lie about its own
@@ -47,8 +48,9 @@ the check that closes the interesting one.
 sha256sum kusanagi-x86_64-pc-windows-msvc.exe
 ```
 
-Compare with the tag message. This is computed by a tool that is not the file
-being checked, so a hostile binary has no say in the answer.
+Compare with the `.sha256` file published beside the asset. This is computed by a
+tool that is not the file being checked, so a hostile binary has no say in the
+answer.
 
 ## 4 The check that does not trust the release either
 
@@ -61,9 +63,9 @@ just dist                      # the artefact and its SHA-256
 ```
 
 `just repro` proves that *this machine* produces the same bytes twice.
-Reproducing the *released* bytes needs the toolchain from the tag message: the
-pinned `rustc` comes from `rust-toolchain.toml`, and on Windows the linker does
-not, so a different Visual Studio installation will produce a different — and
+Reproducing the *released* bytes needs the toolchain the release notes record:
+the pinned `rustc` comes from `rust-toolchain.toml`, and on Windows the linker
+does not, so a different Visual Studio installation will produce a different — and
 equally correct — binary. When the hashes match, you have established that the
 published file is what the published source compiles to, without trusting
 whoever published it.
