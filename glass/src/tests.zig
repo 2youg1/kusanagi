@@ -296,7 +296,9 @@ test "chinese is offered only once a face can draw it, and then every label foll
     // The choice is remembered beside the font preference, as one tag.
     // Remembered as one tag; a newer choice replaces an unlanded write.
     const remembered = f.fx.pendingFileAt(0).?;
-    try testing.expectEqualStrings("H\\kusanagi-glass.language", remembered.path);
+    // The window ships on Windows and this lane also runs on Linux, so the
+    // assertion names the separator the code joins with rather than one of them.
+    try testing.expectEqualStrings("H" ++ std.fs.path.sep_str ++ "kusanagi-glass.language", remembered.path);
     try testing.expectEqualStrings("zh", remembered.bytes);
     f.dispatch(.show_settings);
     tree = try f.tree();
