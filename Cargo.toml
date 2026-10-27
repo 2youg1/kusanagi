@@ -52,7 +52,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The signature scheme, ML-DSA-87 (FIPS 204). Pure Rust with no C toolchain,
 # which `kernel-SPEC.md` §13 requires of anything that signs here.
-fips204 = { version = "0.4.6", default-features = false, features = [
+fips204 = { version = "0.5.0", default-features = false, features = [
     "ml-dsa-87",
 ] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = [
